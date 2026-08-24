@@ -1,43 +1,38 @@
+using Avalonia;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace Circle_Tracker
 {
-    static class Program
+    class Program
     {
-        /// <summary>
-        ///  The main entry point for the application.
-        /// </summary>
         [STAThread]
-        static void Main()
+        public static void Main(string[] args)
         {
             if (!EnsureSingleInstance())
             {
-                MessageBox.Show("Another instance of circle tracker is already running.", "Error");
+                Console.Error.WriteLine("Another instance of circle tracker is already running.");
                 return;
             }
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
-        static bool EnsureSingleInstance()
+
+        public static AppBuilder BuildAvaloniaApp()
+            => AppBuilder.Configure<App>()
+                .UsePlatformDetect()
+                .WithInterFont()
+                .LogToTrace();
+
+        private static bool EnsureSingleInstance()
         {
             Process currentProcess = Process.GetCurrentProcess();
-
-            var runningProcess = (from process in Process.GetProcesses()
-                                  where
-                                    process.Id != currentProcess.Id &&
-                                    process.ProcessName.Equals(
-                                      currentProcess.ProcessName,
-                                      StringComparison.Ordinal)
-                                  select process).FirstOrDefault();
-
-            return (runningProcess != null) ? false : true;
+            Process? runningProcess = Process.GetProcesses()
+                .FirstOrDefault(p =>
+                    p.Id != currentProcess.Id &&
+                    p.ProcessName.Equals(currentProcess.ProcessName, StringComparison.Ordinal));
+            return runningProcess == null;
         }
     }
 }

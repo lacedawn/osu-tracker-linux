@@ -1,0 +1,277 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Circle_Tracker.MainWindow"
+        Title="Circle Tracker"
+        Width="600"
+        MinWidth="580"
+        Height="465"
+        MinHeight="440"
+        CanResize="True"
+        WindowStartupLocation="CenterScreen"
+        Background="#1e1e2e">
+
+  <Window.Styles>
+    <Style Selector="Border.group-box">
+      <Setter Property="BorderBrush" Value="#555577"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Padding" Value="8,10,8,8"/>
+      <Setter Property="Margin" Value="4"/>
+    </Style>
+    <Style Selector="TextBlock.group-header">
+      <Setter Property="Foreground" Value="#aaaacc"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="6,-6,0,4"/>
+    </Style>
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="Foreground" Value="#aaaacc"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="MinWidth" Value="70"/>
+    </Style>
+    <Style Selector="TextBox.readonly-field">
+      <Setter Property="IsReadOnly" Value="True"/>
+      <Setter Property="Background" Value="#2a2a3e"/>
+      <Setter Property="Foreground" Value="#ccccee"/>
+      <Setter Property="BorderBrush" Value="#444466"/>
+      <Setter Property="Padding" Value="4,2"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="MinHeight" Value="24"/>
+    </Style>
+    <Style Selector="TextBox.readonly-field:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="#6666aa"/>
+    </Style>
+    <Style Selector="TextBox.readonly-field.bad-value">
+      <Setter Property="Background" Value="#3d1a1a"/>
+    </Style>
+    <Style Selector="TextBox.input-field">
+      <Setter Property="Background" Value="#252535"/>
+      <Setter Property="Foreground" Value="#ddddff"/>
+      <Setter Property="BorderBrush" Value="#444466"/>
+      <Setter Property="Padding" Value="4,2"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="MinHeight" Value="24"/>
+    </Style>
+    <Style Selector="TextBlock.status-connected">
+      <Setter Property="Foreground" Value="#55cc77"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.status-disconnected">
+      <Setter Property="Foreground" Value="#cc5555"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.connect-btn">
+      <Setter Property="Background" Value="#3a3a6a"/>
+      <Setter Property="Foreground" Value="#ddddff"/>
+      <Setter Property="BorderBrush" Value="#5555aa"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="8,8"/>
+      <Setter Property="Margin" Value="0,4,0,0"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.connect-btn:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#4a4a8a"/>
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="#aaaacc"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Margin" Value="0,3,0,0"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+    <!-- ROW 0: Top strip (tosu/Sheets status + Client + current beatmap) -->
+    <Border Grid.Row="0"
+            Background="#181826"
+            Padding="8,6">
+      <Grid RowDefinitions="Auto,Auto">
+        <!-- Status Row -->
+        <Border Grid.Row="0"
+                Background="#141420"
+                Padding="8,4"
+                CornerRadius="4"
+                Margin="0,0,0,6">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,0">
+              <Ellipse x:Name="TosuStatusDot" Width="10" Height="10" Fill="#cc5555"/>
+              <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#ddddff" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,0">
+              <TextBlock Text="Client:" Foreground="#8888aa" FontSize="12" VerticalAlignment="Center"/>
+              <TextBlock x:Name="ClientDetectedText" Text="-" Foreground="#88ccff" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Ellipse x:Name="SheetsStatusDot" Width="10" Height="10" Fill="#cc5555"/>
+              <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#ddddff" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- Current Beatmap -->
+        <Grid Grid.Row="1" ColumnDefinitions="70,*">
+          <TextBlock Grid.Column="0"
+                     Classes="field-label"
+                     Text="beatmap"/>
+          <TextBox   Grid.Column="1"
+                     x:Name="BeatmapTextBox"
+                     Classes="readonly-field"
+                     IsReadOnly="True"/>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <!-- ROW 1: Main body (Left & Right panes) -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,200" Margin="4,2">
+
+      <!-- LEFT: Configuration & Google Sheets -->
+      <StackPanel Grid.Column="0" Spacing="2">
+
+        <!-- Google Sheets Integration Group Box -->
+        <Border Classes="group-box" Margin="0,0,4,4">
+          <Grid RowDefinitions="Auto,*">
+            <TextBlock Grid.Row="0" Classes="group-header" Text="Google Sheets Integration"/>
+            <StackPanel Grid.Row="1" Spacing="2">
+
+              <!-- Status row -->
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,3">
+                <TextBlock Grid.Column="0" Classes="field-label" Text="Status:" MinWidth="0" Margin="0,0,4,0"/>
+                <TextBlock Grid.Column="1" x:Name="StatusLabel"
+                           Classes="status-disconnected"
+                           Text="Not connected"
+                           VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Foreground="#666688" FontSize="11"
+                           Text="credentials.json:"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Grid.Column="4" x:Name="CredentialsLabel"
+                           Classes="status-disconnected"
+                           Text="Missing"
+                           VerticalAlignment="Center"/>
+              </Grid>
+
+              <!-- Spreadsheet ID -->
+              <TextBlock Classes="field-label" Text="Spreadsheet ID" MinWidth="0" Margin="0,2,0,1"/>
+              <TextBox x:Name="SpreadsheetIdTextBox"
+                       Classes="input-field"
+                       TextChanged="SpreadsheetIdTextBox_TextChanged"/>
+
+              <!-- Sheet Name -->
+              <TextBlock Classes="field-label" Text="Sheet Name" MinWidth="0" Margin="0,4,0,1"/>
+              <TextBox x:Name="SheetNameTextBox"
+                       Classes="input-field"
+                       TextChanged="SheetNameTextBox_TextChanged"/>
+
+              <!-- Connect button -->
+              <Button x:Name="ConnectApiButton"
+                      Classes="connect-btn"
+                      Content="Connect Google Sheets API"
+                      Click="ConnectApiButton_Click"/>
+
+              <!-- Checkboxes -->
+              <CheckBox x:Name="SoundEnabledCheckbox"
+                        Content="Play sound when writing a new entry"
+                        IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"
+                        Margin="0,4,0,0"/>
+              <CheckBox x:Name="AltSepCheckBox"
+                        Content="Toggle this to fix #ERROR! in Beatmap column"
+                        IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- tosu Connection Settings -->
+        <Border Classes="group-box" Margin="0,0,4,0">
+          <Grid RowDefinitions="Auto,*">
+            <TextBlock Grid.Row="0" Classes="group-header" Text="tosu Settings"/>
+            <Grid Grid.Row="1" ColumnDefinitions="*,8,80">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="field-label" Text="tosu Host" FontSize="11" Margin="0,0,0,2"/>
+                <TextBox x:Name="TosuHostTextBox"
+                         Classes="input-field"
+                         Text="127.0.0.1"
+                         TextChanged="TosuHostTextBox_TextChanged"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Classes="field-label" Text="Port" FontSize="11" Margin="0,0,0,2"/>
+                <TextBox x:Name="TosuPortTextBox"
+                         Classes="input-field"
+                         Text="24050"
+                         TextChanged="TosuPortTextBox_TextChanged"/>
+              </StackPanel>
+            </Grid>
+          </Grid>
+        </Border>
+      </StackPanel>
+
+      <!-- RIGHT: Beatmap Info -->
+      <Border Grid.Column="1" Classes="group-box">
+        <Grid RowDefinitions="Auto,*">
+          <TextBlock Grid.Row="0" Classes="group-header" Text="Beatmap Info"/>
+          <Grid Grid.Row="1"
+                ColumnDefinitions="Auto,*,Auto,Auto"
+                RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                x:Name="BeatmapInfoGrid">
+
+            <!-- Row 0: mods -->
+            <TextBlock Grid.Row="0" Grid.Column="0" Classes="field-label" Text="mods" Margin="0,0,4,4"/>
+            <TextBox   Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3"
+                       x:Name="ModsTextBox" Classes="readonly-field" Margin="0,0,0,4"/>
+
+            <!-- Row 1: stars -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Classes="field-label" Text="stars" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="1" Grid.Column="1" x:Name="StarsTextBox" Classes="readonly-field" Margin="0,0,4,3"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" Classes="field-label" Text="CS" Margin="0,0,4,3" MinWidth="24"/>
+            <TextBox   Grid.Row="1" Grid.Column="3" x:Name="TextBoxCS" Classes="readonly-field" Margin="0,0,0,3" Width="40"/>
+
+            <!-- Row 2: aim -->
+            <TextBlock Grid.Row="2" Grid.Column="0" Classes="field-label" Text="aim" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AimTextBox" Classes="readonly-field" Margin="0,0,4,3"/>
+            <TextBlock Grid.Row="2" Grid.Column="2" Classes="field-label" Text="AR" Margin="0,0,4,3" MinWidth="24"/>
+            <TextBox   Grid.Row="2" Grid.Column="3" x:Name="TextBoxAR" Classes="readonly-field" Margin="0,0,0,3" Width="40"/>
+
+            <!-- Row 3: speed -->
+            <TextBlock Grid.Row="3" Grid.Column="0" Classes="field-label" Text="speed" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="3" Grid.Column="1" x:Name="SpeedTextBox" Classes="readonly-field" Margin="0,0,4,3"/>
+            <TextBlock Grid.Row="3" Grid.Column="2" Classes="field-label" Text="OD" Margin="0,0,4,3" MinWidth="24"/>
+            <TextBox   Grid.Row="3" Grid.Column="3" x:Name="TextBoxOD" Classes="readonly-field" Margin="0,0,0,3" Width="40"/>
+
+            <!-- Row 4: time -->
+            <TextBlock Grid.Row="4" Grid.Column="0" Classes="field-label" Text="time" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="4" Grid.Column="1" x:Name="TimeTextBox" Classes="readonly-field" Margin="0,0,4,3"/>
+            <TextBlock Grid.Row="4" Grid.Column="2" Classes="field-label" Text="bpm" Margin="0,0,4,3" MinWidth="24"/>
+            <TextBox   Grid.Row="4" Grid.Column="3" x:Name="BpmTextBox" Classes="readonly-field" Margin="0,0,0,3" Width="40"/>
+
+            <!-- Row 5: hits -->
+            <TextBlock Grid.Row="5" Grid.Column="0" Classes="field-label" Text="hits" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3"
+                       x:Name="HitsTextBox" Classes="readonly-field" Margin="0,0,0,3"/>
+
+            <!-- Row 6: acc -->
+            <TextBlock Grid.Row="6" Grid.Column="0" Classes="field-label" Text="acc" Margin="0,0,4,3"/>
+            <TextBox   Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="3"
+                       x:Name="AccTextBox" Classes="readonly-field" Margin="0,0,0,3"/>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- ROW 2: Bottom status bar -->
+    <Border Grid.Row="2"
+            Background="#181826"
+            Padding="10,6">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="TimeLabelText"
+                   Grid.Column="0"
+                   Foreground="#8888aa"
+                   FontSize="12"
+                   VerticalAlignment="Center"
+                   Text="Playing: 0  Idle: 0  Efficiency: 0%"/>
+        <CheckBox  x:Name="StartupCheckBox"
+                   Grid.Column="1"
+                   Content="Launch on Startup"
+                   IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

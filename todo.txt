@@ -1,5 +1,5 @@
 --- BUGS ---
-[] Plays get submitted while watching replays or spectating
+[DONE] Plays get submitted while watching replays or spectating
    -> Check user to ignore replays/spectates from other users
 [DONE] Map Complete doesn't work when playing multi
 [DONE] Play time is inaccurate; need to subtract starting object time
@@ -11,7 +11,7 @@
 [DONE] Fixed incorrect number of hits being submitted
 
 --- FEATURES ---
-[] ignore non-std game modes
+[DONE] ignore non-std game modes
 [DONE] ignore relax, autopilot
 [DONE] Calculate accuracy manually from 300s, 100s, 50s, misses (accuracy reading sometimes takes a while to update)
 [] Store plays in local buffer while internet unavailable

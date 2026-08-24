@@ -1,82 +1,88 @@
-﻿using FsBeatmapProcessor;
 using Google;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
-using Newtonsoft.Json.Linq;
-using OsuMemoryDataProvider;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Media;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace Circle_Tracker
 {
+    public enum GameStatus
+    {
+        Menu = 0,
+        Edit = 1,
+        Playing = 2,
+        SongSelect = 5,
+        ResultsScreen = 7,
+        MultiplayerRoom = 11,
+        MultiplayerSongSelect = 12,
+        Unknown = -1
+    }
+
     class Tracker
     {
-        private readonly IOsuMemoryReader osuReader;
-        private MainForm form;
+        private readonly IMainWindow _form;
+        private readonly TosuClient _tosuClient;
 
+        private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
+        private static string CredentialsFilePath => Path.Combine(AppContext.BaseDirectory, "credentials.json");
+        private static string SoundFilePath => Path.Combine(AppContext.BaseDirectory, "assets", "sectionpass.wav");
 
-        private static List<(string, string)> DataRanges = new List<(string, string)>()
+        private static readonly List<(string, string)> DataRanges = new List<(string, string)>()
         {
             ("Date and Time", "play_date"),
-            ("Beatmap", "beatmap_string"),
-            ("HD", "HD"),
-            ("HR", "HR"),
-            ("DT", "DT"),
-            ("BPM", "bpm"),
-            ("Aim", "aim"),
-            ("Speed", "speed"),
-            ("Stars", "stars"),
-            ("CS", "CS"),
-            ("AR", "AR"),
-            ("OD", "OD"),
-            ("Objects Hit", "hits"),
-            ("Acc", "acc"),
-            ("300s", "num300s"),
-            ("100s", "num100s"),
-            ("50s", "num50s"),
-            ("Miss", "misses"),
-            ("EZ", "EZ"),
-            ("HT", "HT"),
-            ("FL", "FL"),
-            ("Map Complete", "complete"),
-            ("Playcount", "playcount"),
-            ("Time (s)", "time_seconds")
+            ("Beatmap",       "beatmap_string"),
+            ("HD",            "HD"),
+            ("HR",            "HR"),
+            ("DT",            "DT"),
+            ("BPM",           "bpm"),
+            ("Aim",           "aim"),
+            ("Speed",         "speed"),
+            ("Stars",         "stars"),
+            ("CS",            "CS"),
+            ("AR",            "AR"),
+            ("OD",            "OD"),
+            ("Objects Hit",   "hits"),
+            ("Acc",           "acc"),
+            ("300s",          "num300s"),
+            ("100s",          "num100s"),
+            ("50s",           "num50s"),
+            ("Miss",          "misses"),
+            ("EZ",            "EZ"),
+            ("HT",            "HT"),
+            ("FL",            "FL"),
+            ("Map Complete",  "complete"),
+            ("Playcount",     "playcount"),
+            ("Time (s)",      "time_seconds"),
         };
 
         public int IdleSeconds = 0;
         public int PlayingSeconds = 0;
 
-        // Beatmap
-        public string SongsFolder { get; set; }
-        private Beatmap currentBeatmap;
-        public string BeatmapPath { get; set; }
+        public string TosuHost { get; set; } = "127.0.0.1";
+        public int TosuPort { get; set; } = 24050;
+        public string DetectedClient { get; private set; } = "Unknown";
+
+        private string _currentBeatmapChecksum = "";
         public int BeatmapID { get; set; }
         public int BeatmapSetID { get; set; }
-        public string BeatmapString { get; set; }
+        public string BeatmapString { get; set; } = "";
         public int BeatmapBpm { get; set; }
 
-        // Sound
-        private string soundFilename;
         public bool SubmitSoundEnabled { get; set; }
 
-        // game variables
-        public bool IsReplay { get; set; } = false;
+        public GameStatus GameState { get; private set; } = GameStatus.Menu;
+        public bool IsPlaying => GameState == GameStatus.Playing;
+        public bool IsReplay { get; private set; } = false;
         public bool MemoryReadError { get; set; } = false;
-        public OsuMemoryStatus GameState { get; set; }
-        public string Username { get; set; }
-        public string PlayingUser { get; set; }
+
+        public string Username { get; set; } = "";
         public int RawMods { get; set; } = 0;
         public bool Hidden { get; set; } = false;
         public bool Hardrock { get; set; } = false;
@@ -97,333 +103,108 @@ namespace Circle_Tracker
         public int Play50c { get; set; } = 0;
         public int PlayMissc { get; set; } = 0;
         public int TotalBeatmapHits { get; set; } = 0;
-        public decimal LastPostedAcc { get; set; } = 0;
         public decimal Accuracy { get; set; } = 0;
         public int Time { get; set; } = 0;
 
-        // Google Sheets API
+        private int _firstHitObjectTime = 0;
+        private float _lastClockRate = 1f;
+        private int _currentGameMode = 0;
+
         private DateTime LastPostTime { get; set; }
         private bool TickLock { get; set; } = false;
         private bool SpreadsheetTimezoneVerified { get; set; } = false;
         public bool SheetsApiReady { get; set; } = false;
         public bool UseAltFuncSeparator { get; set; } = false;
-        public string SpreadsheetId { get; set; }
-        public string SheetName { get; set; }
+        public string SpreadsheetId { get; set; } = "";
+        public string SheetName { get; set; } = "";
         public int SheetRows { get; set; }
-        SheetsService GoogleSheetsService;
-        Spreadsheet UserSpreadsheet = null;
-        Sheet RawDataSheet = null;
+        private SheetsService? GoogleSheetsService;
+        private Spreadsheet? UserSpreadsheet;
+        private Sheet? RawDataSheet;
 
-        public Tracker(MainForm f)
+        public Tracker(IMainWindow form, TosuClient tosuClient)
         {
-            form = f;
+            _form = form;
+            _tosuClient = tosuClient;
             LoadSettings();
-            osuReader = OsuMemoryReader.Instance.GetInstanceForWindowTitleHint("");
-            int _;
-            GameState = osuReader.GetCurrentStatus(out _);
-            soundFilename = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "assets", "sectionpass.wav");
+
+            _tosuClient.Host = TosuHost;
+            _tosuClient.Port = TosuPort;
+
+            GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
-            // First time running circle tracker
-            if (!File.Exists("user_settings.txt"))
+            if (!File.Exists(SettingsFilePath))
             {
-                MessageBox.Show($"Thank you for trying out circle tracker!{Environment.NewLine}" +
-                    $"For instructions on how to get set up, watch my tutorial video on Youtube. " +
-                    $"If you need help with anything, feel free to message FunOrange on osu!, twitter, discord, etc.",
-                    "Welcome!");
+                string welcomeMsg = "Welcome to circle tracker!\n\n" +
+                    "This app requires 'tosu' to be running alongside osu!\n\n" +
+                    "On Arch Linux, install tosu from AUR:\n" +
+                    "  yay -S tosu\n\n" +
+                    "Grant it memory reading permission:\n" +
+                    "  sudo setcap cap_sys_ptrace=eip /opt/tosu/tosu\n\n" +
+                    "Then run tosu before starting osu!\n\n" +
+                    "Circle tracker works with both osu!stable (Wine) and osu!lazer (AppImage).";
+                _form.ShowMessage(welcomeMsg, "Welcome to Circle Tracker!");
             }
         }
 
         public void SaveSettings()
         {
-            string[] lines = {
-                SongsFolder,
-                SpreadsheetId,
-                SheetName,
-                SubmitSoundEnabled ? "1" : "0",
-                SpreadsheetTimezoneVerified ? "1" : "0",
-                UseAltFuncSeparator ? "1" : "0",
-                Username
-            };
-            File.WriteAllLines("user_settings.txt", lines, Encoding.UTF8);
+            try
+            {
+                string[] lines =
+                {
+                    SpreadsheetId,
+                    SheetName,
+                    SubmitSoundEnabled ? "1" : "0",
+                    SpreadsheetTimezoneVerified ? "1" : "0",
+                    UseAltFuncSeparator ? "1" : "0",
+                    Username,
+                    TosuHost,
+                    TosuPort.ToString()
+                };
+                File.WriteAllLines(SettingsFilePath, lines, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to save settings: {ex.Message}");
+            }
         }
+
         private void LoadSettings()
         {
-            // Defaults
-            SongsFolder = "";
             SpreadsheetId = "";
             SheetName = "Raw Data";
             SubmitSoundEnabled = true;
             SpreadsheetTimezoneVerified = false;
             UseAltFuncSeparator = false;
             Username = "";
+            TosuHost = "127.0.0.1";
+            TosuPort = 24050;
 
-            // Load Settings
-            if (File.Exists("user_settings.txt"))
+            if (!File.Exists(SettingsFilePath)) return;
+
+            try
             {
-                var lines = File.ReadAllLines("user_settings.txt");
+                var lines = File.ReadAllLines(SettingsFilePath);
                 for (int i = 0; i < lines.Length; i++)
                 {
                     switch (i)
                     {
-                        case 0: SongsFolder                 = lines[0];        break;
-                        case 1: SpreadsheetId               = lines[1];        break;
-                        case 2: SheetName                   = lines[2];        break;
-                        case 3: SubmitSoundEnabled          = lines[3] == "1"; break;
-                        case 4: SpreadsheetTimezoneVerified = lines[4] == "1"; break;
-                        case 5: UseAltFuncSeparator         = lines[5] == "1"; break;
-                        case 6: Username                    = lines[6];        break;
+                        case 0: SpreadsheetId = lines[0]; break;
+                        case 1: SheetName = lines[1]; break;
+                        case 2: SubmitSoundEnabled = lines[2] == "1"; break;
+                        case 3: SpreadsheetTimezoneVerified = lines[3] == "1"; break;
+                        case 4: UseAltFuncSeparator = lines[4] == "1"; break;
+                        case 5: Username = lines[5]; break;
+                        case 6: TosuHost = !string.IsNullOrWhiteSpace(lines[6]) ? lines[6] : "127.0.0.1"; break;
+                        case 7: if (int.TryParse(lines[7], out int port) && port > 0) TosuPort = port; break;
                     }
                 }
             }
-        }
-
-        private bool PlayDataValid (PlayContainer pc) {
-            try
+            catch (Exception ex)
             {
-               decimal acc = (decimal)pc.Acc;
-            }
-            catch (Exception)
-            {
-                return false;
-            }            
-            return !(
-                pc.Acc      == 100 &&
-                pc.C300     == 0   &&
-                pc.C100     == 0   &&
-                pc.C50      == 0   &&
-                pc.CGeki    == 0   &&
-                pc.CKatsu   == 0   &&
-                pc.CMiss    == 0   &&
-                pc.Combo    == 0   &&
-                pc.Hp       == 200 &&
-                pc.MaxCombo == 0   &&
-                pc.Score    == 0
-            );
-        }
-
-        internal void SetSongsFolder(string folder)
-        {
-            SongsFolder = folder;
-        }
-
-        private Beatmap BeatmapConstructorWrapper(string beatmapFilename)
-        {
-            Beatmap newBeatmap = new Beatmap(beatmapFilename);
-            if (newBeatmap.ApproachRate == -1M)
-                newBeatmap.ApproachRate = newBeatmap.OverallDifficulty;　// i can't believe this is how old maps used to work...
-            return newBeatmap;
-        }
-        public bool TrySwitchBeatmap()
-        {
-            string beatmapPathTemp = "";
-            try
-            {
-                beatmapPathTemp = Path.Combine(SongsFolder, osuReader.GetMapFolderName(), osuReader.GetOsuFileName());
-            }
-            catch
-            {
-                return false;
-            }
-
-            if (!File.Exists(beatmapPathTemp))
-                return false;
-
-            if (beatmapPathTemp == "")
-                return false;
-
-            var beatmapLines = File.ReadLines(beatmapPathTemp);
-            if (beatmapLines.Count() == 0)
-                return false;
-            string versionLine = beatmapLines.First();
-            Match m = Regex.Match(versionLine, @"osu file format v(\d+)");
-            if (!m.Success)
-                return false;
-            int version = int.Parse(m.Groups[1].ToString());
-
-            // commit to new beatmap
-            BeatmapPath    = beatmapPathTemp;
-            currentBeatmap = BeatmapConstructorWrapper(BeatmapPath);
-            BeatmapBpm     = (int)System.Math.Round(currentBeatmap.Bpm);
-            BeatmapString  = osuReader.GetSongString();
-            BeatmapSetID   = (int)osuReader.GetMapSetId();
-            BeatmapID      = osuReader.GetMapId();
-
-            // oppai
-            (BeatmapStars, BeatmapAim, BeatmapSpeed) = oppai(BeatmapPath, GetModsString());
-
-            return true;
-        }
-        public void TickEverySecond()
-        {
-            int _;
-            OsuMemoryStatus newGameState = osuReader.GetCurrentStatus(out _);
-            if (newGameState == OsuMemoryStatus.Playing)
-                PlayingSeconds += 1;
-            else
-                IdleSeconds += 1;
-            form.UpdateTime();
-        }
-        public void Tick()
-        {
-            // update current game state
-            int _;
-            OsuMemoryStatus newGameState = osuReader.GetCurrentStatus(out _);
-            bool songSelectGameState =
-                newGameState == OsuMemoryStatus.SongSelect
-                || newGameState == OsuMemoryStatus.MultiplayerRoom
-                || newGameState == OsuMemoryStatus.MultiplayerSongSelect;
-
-            // update current beatmap
-            string beatmapFilename = osuReader.GetOsuFileName();
-            if (beatmapFilename != Path.GetFileName(BeatmapPath) && beatmapFilename != "")
-            {
-                TrySwitchBeatmap();
-            }
-
-            // look for read error
-            MemoryReadError = songSelectGameState && (beatmapFilename == "");
-            if (MemoryReadError)
-                BeatmapString = null;
-
-
-            if (newGameState != GameState) // state transition
-            {
-                if (GameState == OsuMemoryStatus.Playing && newGameState != OsuMemoryStatus.Playing) // beatmap quit
-                {
-                    bool beatmapCompleted = newGameState == OsuMemoryStatus.ResultsScreen;
-                    TryPostBeatmapEntryToGoogleSheets(beatmapCompleted);
-                    // reset game variables
-                    Play300c = 0;
-                    Play100c = 0;
-                    Play50c = 0;
-                    PlayMissc = 0;
-                    Accuracy = 0;
-                    TotalBeatmapHits = 0;
-                    Time = 0;
-                }
-                GameState = newGameState;
-            }
-
-            // update mods
-            if (songSelectGameState && currentBeatmap != null)
-            {
-                RawMods = osuReader.GetMods();
-                if (RawMods != -1) // invalid
-                {
-                    //Console.WriteLine(RawMods);
-                    Hidden     = (RawMods & 8) != 0 ? true : false;
-                    Hardrock   = (RawMods & 16) != 0 ? true : false;
-                    Doubletime = ((RawMods & 64) != 0 || (RawMods & 0b001001000000) != 0) ? true : false;
-                    EZ         = (RawMods & 2) != 0 ? true : false;
-                    Halftime   = (RawMods & 256) != 0 ? true : false;
-                    Flashlight = (RawMods & 1024) != 0 ? true : false;
-                    Auto       = (RawMods & 2048) != 0 ? true : false;
-                    (BeatmapStars, BeatmapAim, BeatmapSpeed) = oppai(BeatmapPath, GetModsString());
-
-                    // CS AR OD
-                    // FIXME: no support for HalfTime
-                    BeatmapCs = currentBeatmap.CircleSize * (Hardrock ? 1.3M : EZ ? 0.5M : 1);
-                    if (Halftime && !Doubletime && !Hardrock && EZ) // HTEZ
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithHTEZ(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithHTEZ(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (Halftime && !Doubletime && !Hardrock && !EZ) // HT
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithHT(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithHT(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (Halftime && !Doubletime && Hardrock && !EZ) // HTHR
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithHTHR(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithHTHR(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (!Halftime && !Doubletime && !Hardrock && EZ) // EZ
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithEZ(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithEZ(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (!Halftime && !Doubletime && Hardrock && !EZ) // HR
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithHR(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithHR(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (!Halftime && Doubletime && !Hardrock && EZ) // DTEZ
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithDTEZ(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithDTEZ(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (!Halftime && Doubletime && !Hardrock && !EZ) // DT
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithDT(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithDT(currentBeatmap.OverallDifficulty);
-                    }
-                    else if (!Halftime && Doubletime && Hardrock && !EZ) // DTHR
-                    {
-                        BeatmapAr = DifficultyCalculator.CalculateARWithDTHR(currentBeatmap.ApproachRate);
-                        BeatmapOd = DifficultyCalculator.CalculateODWithDTHR(currentBeatmap.OverallDifficulty);
-                    }
-                    else // NoMod
-                    {
-                        BeatmapCs = currentBeatmap.CircleSize;
-                        BeatmapAr = currentBeatmap.ApproachRate;
-                        BeatmapOd = currentBeatmap.OverallDifficulty;
-                    }
-                }
-            }
-
-            // read gameplay data
-            if (newGameState == OsuMemoryStatus.Playing)
-            {
-                // read in new game variables
-                IsReplay = osuReader.IsReplay();
-                PlayContainer playData = new PlayContainer();
-                osuReader.GetPlayData(playData);
-
-                if (PlayDataValid(playData))
-                {
-                    decimal newAcc = (decimal)playData.Acc;
-                    int new300c = playData.C300;
-                    int new100c = playData.C100;
-                    int new50c = playData.C50;
-                    int newMissc = playData.CMiss;
-                    int newHits = playData.C300 + playData.C100 + playData.C50;
-                    int newSongTime = osuReader.ReadPlayTime();
-
-                    // update hits
-                    if (newMissc > PlayMissc)
-                    {
-                        PlayMissc = newMissc;
-                    }
-                    if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < 50) // safety measure: counters can't decrease; can't increment by more than 50
-                    {
-                        Accuracy         = newAcc;
-                        Play300c         = new300c;
-                        Play100c         = new100c;
-                        Play50c          = new50c;
-                        TotalBeatmapHits = newHits;
-                    }
-
-                    // detect retry
-                    if (newSongTime < Time && Time > 0)
-                    {
-                        //Console.WriteLine($"Beatmap retry; newSongTime {newSongTime} cachedSongTime {Time} Hits {TotalBeatmapHits}");
-                        TryPostBeatmapEntryToGoogleSheets(false);
-                        // reset game variables
-                        Play300c = 0;
-                        Play100c = 0;
-                        Play50c = 0;
-                        PlayMissc = 0;
-                        TotalBeatmapHits = 0;
-                        Time = 0;
-                    }
-                    else
-                    {
-                        // update time
-                        Time = newSongTime;
-                    }
-                }
+                Console.Error.WriteLine($"Failed to load settings: {ex.Message}");
             }
         }
 
@@ -440,95 +221,315 @@ namespace Circle_Tracker
             return mods;
         }
 
-        public string getFunctionSeparator()
+        public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
+        private string getFunctionSeparator() => GetFunctionSeparator();
+
+        private static string DetectClient(TosuState state)
         {
-            return UseAltFuncSeparator ? ";" : ",";
+            string ver = state.Settings?.Client?.Version ?? "";
+            if (string.IsNullOrEmpty(ver))
+                return "osu!lazer";
+
+            if (ver.Contains("cuttingedge", StringComparison.OrdinalIgnoreCase) ||
+                ver.Contains("stable", StringComparison.OrdinalIgnoreCase) ||
+                ver.Contains("beta", StringComparison.OrdinalIgnoreCase) ||
+                ver.StartsWith("b20", StringComparison.OrdinalIgnoreCase))
+            {
+                return "osu!stable";
+            }
+
+            return "osu!lazer";
         }
 
-        private (decimal, decimal, decimal) oppai(string beatmapPath, string mods)
+        private static bool DetectReplay(TosuState state)
         {
-            if (!File.Exists(beatmapPath))
-                return (0, 0, 0);
+            if (state.Settings?.ReplayUIVisible == true)
+                return true;
 
-            if (mods != "") mods = $" +{mods}";
-            Process oppai = new Process
+            string? playName = state.Play?.PlayerName;
+            string? profileName = state.Profile?.Name;
+            if (!string.IsNullOrWhiteSpace(playName) &&
+                !string.IsNullOrWhiteSpace(profileName) &&
+                !string.Equals(playName.Trim(), profileName.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "assets", "oppai.exe"),
-                    Arguments = $"\"{beatmapPath}\" {mods} -ojson",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8
-                }
-            };
-            oppai.Start();
-            string oppaiOutput = oppai.StandardOutput.ReadToEnd();
-            oppai.WaitForExit();
+                return true;
+            }
 
-            // json parsing
-            JObject oppaiData;
+            return false;
+        }
+
+        private static GameStatus ParseGameState(int stateNumber)
+        {
+            return stateNumber switch
+            {
+                0 => GameStatus.Menu,
+                1 => GameStatus.Edit,
+                2 => GameStatus.Playing,
+                5 => GameStatus.SongSelect,
+                7 => GameStatus.ResultsScreen,
+                11 => GameStatus.MultiplayerRoom,
+                12 => GameStatus.MultiplayerSongSelect,
+                _ => GameStatus.Unknown
+            };
+        }
+
+        private static bool IsSongSelectState(GameStatus gs)
+        {
+            return gs == GameStatus.SongSelect
+                || gs == GameStatus.MultiplayerRoom
+                || gs == GameStatus.MultiplayerSongSelect;
+        }
+
+        private void UpdateModsFromBitfield(int rawMods)
+        {
+            RawMods = rawMods;
+            Hidden = (rawMods & 8) != 0;
+            Hardrock = (rawMods & 16) != 0;
+            Doubletime = (rawMods & 64) != 0 || (rawMods & 576) != 0;
+            EZ = (rawMods & 2) != 0;
+            Halftime = (rawMods & 256) != 0;
+            Flashlight = (rawMods & 1024) != 0;
+            Auto = (rawMods & 2048) != 0;
+        }
+
+        private void UpdateBeatmapFromState(TosuState state)
+        {
+            var bm = state.Beatmap;
+            if (bm == null) return;
+
+            BeatmapID = bm.Id;
+            BeatmapSetID = bm.Set;
+            BeatmapString = $"{bm.Artist} - {bm.Title} [{bm.Version}]";
+            BeatmapBpm = (int)Math.Round((double)(bm.Stats?.Bpm?.Common ?? 0));
+
+            _firstHitObjectTime = bm.Time?.FirstObject ?? 0;
+
+            decimal totalStars = bm.Stats?.Stars?.Total ?? 0;
+            decimal liveStars = bm.Stats?.Stars?.Live ?? 0;
+            BeatmapStars = totalStars > 0 ? totalStars : liveStars;
+            BeatmapAim = bm.Stats?.Stars?.Aim ?? 0;
+            BeatmapSpeed = bm.Stats?.Stars?.Speed ?? 0;
+
+            BeatmapCs = bm.Stats?.Cs?.Converted ?? bm.Stats?.Cs?.Original ?? 0;
+            BeatmapAr = bm.Stats?.Ar?.Converted ?? bm.Stats?.Ar?.Original ?? 0;
+            BeatmapOd = bm.Stats?.Od?.Converted ?? bm.Stats?.Od?.Original ?? 0;
+        }
+
+        private async Task UpdateDifficultyFromPpApi(int modNumber)
+        {
             try
             {
-                oppaiData = JObject.Parse(oppaiOutput);
+                var ppResult = await _tosuClient.CalculatePpAsync(modNumber);
+                var diff = ppResult?.Difficulty ?? ppResult?.Performance?.Difficulty;
+                if (diff != null)
+                {
+                    if (BeatmapAim == 0 && diff.Aim > 0) BeatmapAim = diff.Aim;
+                    if (BeatmapSpeed == 0 && diff.Speed > 0) BeatmapSpeed = diff.Speed;
+                    if (BeatmapStars == 0 && diff.Stars > 0) BeatmapStars = diff.Stars;
+                    if (BeatmapAr == 0 && diff.Ar > 0) BeatmapAr = diff.Ar;
+                    if (BeatmapOd == 0 && diff.Od > 0) BeatmapOd = diff.Od;
+                    if (BeatmapCs == 0 && diff.Cs > 0) BeatmapCs = diff.Cs;
+                    if (BeatmapBpm == 0 && diff.Bpm > 0) BeatmapBpm = (int)Math.Round((double)diff.Bpm);
+                    if (diff.ClockRate > 0)
+                        _lastClockRate = (float)diff.ClockRate;
+                }
+                if (ppResult?.Attributes != null)
+                {
+                    var attr = ppResult.Attributes;
+                    if (BeatmapAr == 0 && attr.Ar > 0) BeatmapAr = attr.Ar;
+                    if (BeatmapOd == 0 && attr.Od > 0) BeatmapOd = attr.Od;
+                    if (BeatmapCs == 0 && attr.Cs > 0) BeatmapCs = attr.Cs;
+                    if (BeatmapBpm == 0 && attr.Bpm > 0) BeatmapBpm = (int)Math.Round((double)attr.Bpm);
+                    if (attr.ClockRate > 0)
+                        _lastClockRate = (float)attr.ClockRate;
+                }
             }
             catch
             {
-                return (0, 0, 0);
             }
-            string errstr = oppaiData.GetValue("errstr").ToObject<string>();
-            if (errstr != "no error")
+        }
+
+        public void Tick()
+        {
+            if (!_tosuClient.IsConnected)
             {
-                //Console.WriteLine("Could not calculate difficulty");
-                return (0, 0, 0);
+                DetectedClient = "Disconnected";
+                return;
             }
-            decimal stars = oppaiData.GetValue("stars").ToObject<decimal>();
-            decimal aimStars = oppaiData.GetValue("aim_stars").ToObject<decimal>();
-            decimal speedStars = oppaiData.GetValue("speed_stars").ToObject<decimal>();
-            return (stars, aimStars, speedStars);
+
+            var state = _tosuClient.LatestState;
+            if (state == null)
+            {
+                DetectedClient = "Connecting...";
+                return;
+            }
+
+            DetectedClient = DetectClient(state);
+
+            GameStatus newGameState = ParseGameState(state.State?.Number ?? -1);
+            bool songSelectGameState = IsSongSelectState(newGameState);
+
+            if (!string.IsNullOrEmpty(state.Profile?.Name))
+                Username = state.Profile.Name;
+
+            string newChecksum = state.Beatmap?.Checksum ?? "";
+            if (newChecksum != _currentBeatmapChecksum && newChecksum != "")
+            {
+                _currentBeatmapChecksum = newChecksum;
+                UpdateBeatmapFromState(state);
+                _ = UpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
+            }
+
+            _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
+            IsReplay = DetectReplay(state);
+
+            MemoryReadError = songSelectGameState && string.IsNullOrEmpty(state.Files?.Beatmap);
+            if (MemoryReadError)
+                BeatmapString = "";
+
+            if (state.Beatmap?.Stats?.Stars != null)
+            {
+                var stars = state.Beatmap.Stats.Stars;
+                if (stars.Total > 0) BeatmapStars = stars.Total;
+                if (stars.Aim > 0) BeatmapAim = stars.Aim;
+                if (stars.Speed > 0) BeatmapSpeed = stars.Speed;
+            }
+
+            if (newGameState != GameState)
+            {
+                if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
+                {
+                    bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
+                    TryPostBeatmapEntryToGoogleSheets(beatmapCompleted);
+
+                    Play300c = 0;
+                    Play100c = 0;
+                    Play50c = 0;
+                    PlayMissc = 0;
+                    Accuracy = 0;
+                    TotalBeatmapHits = 0;
+                    Time = 0;
+                }
+                GameState = newGameState;
+            }
+
+            if (songSelectGameState && state.Play?.Mods != null)
+            {
+                int newMods = state.Play.Mods.Number;
+                if (newMods != RawMods)
+                {
+                    UpdateModsFromBitfield(newMods);
+                    UpdateBeatmapFromState(state);
+                    _ = UpdateDifficultyFromPpApi(newMods);
+                }
+            }
+
+            if (newGameState == GameStatus.Playing && state.Play != null)
+            {
+                var hits = state.Play.Hits;
+                if (hits != null)
+                {
+                    decimal newAcc = state.Play.Accuracy;
+                    int new300c = hits.H300;
+                    int new100c = hits.H100;
+                    int new50c = hits.H50;
+                    int newMissc = hits.Misses;
+                    int newHits = new300c + new100c + new50c;
+                    int newSongTime = state.Beatmap?.Time?.Live ?? 0;
+
+                    if (newMissc > PlayMissc)
+                        PlayMissc = newMissc;
+
+                    if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < 50)
+                    {
+                        Accuracy = newAcc;
+                        Play300c = new300c;
+                        Play100c = new100c;
+                        Play50c = new50c;
+                        TotalBeatmapHits = newHits;
+                    }
+
+                    // detect retry when song time rewinds
+                    if (newSongTime < Time && Time > 0)
+                    {
+                        TryPostBeatmapEntryToGoogleSheets(false);
+                        Play300c = 0;
+                        Play100c = 0;
+                        Play50c = 0;
+                        PlayMissc = 0;
+                        TotalBeatmapHits = 0;
+                        Time = 0;
+                    }
+                    else
+                    {
+                        Time = newSongTime;
+                    }
+                }
+
+                if (state.Play.Mods != null)
+                    UpdateModsFromBitfield(state.Play.Mods.Number);
+            }
+        }
+
+        public void TickWrapper()
+        {
+            if (TickLock) return;
+            TickLock = true;
+            try
+            {
+                Tick();
+            }
+            finally
+            {
+                TickLock = false;
+            }
+        }
+
+        public void TickEverySecond()
+        {
+            if (IsPlaying)
+                PlayingSeconds++;
+            else
+                IdleSeconds++;
+            _form.UpdateTime();
         }
 
         public void InitGoogleAPI(bool silent = false)
         {
-            bool credentialsFound = File.Exists("credentials.json");
-            form.SetCredentialsFound(credentialsFound);
+            bool credentialsFound = File.Exists(CredentialsFilePath);
+            _form.SetCredentialsFound(credentialsFound);
             if (!credentialsFound)
             {
-                if (!silent)
-                    MessageBox.Show("credentials.json not found.");
+                if (!silent) _form.ShowMessage("credentials.json not found.");
                 SetSheetsApiReady(false);
                 return;
             }
-            if (SpreadsheetId == "")
+            if (string.IsNullOrEmpty(SpreadsheetId))
             {
-                if (!silent)
-                    MessageBox.Show("Please enter a spreadsheet ID.");
+                if (!silent) _form.ShowMessage("Please enter a spreadsheet ID.");
                 SetSheetsApiReady(false);
                 return;
             }
-            if (SheetName == "")
+            if (string.IsNullOrEmpty(SheetName))
             {
-                if (!silent)
-                    MessageBox.Show("Please enter a sheet name.");
+                if (!silent) _form.ShowMessage("Please enter a sheet name.");
                 SetSheetsApiReady(false);
                 return;
             }
+
             string[] Scopes = { SheetsService.Scope.Spreadsheets };
-            string ApplicationName = "Circle Tracker";
             GoogleCredential credential;
-            using (var stream = new FileStream("credentials.json", FileMode.Open, FileAccess.Read))
+            using (var stream = new FileStream(CredentialsFilePath, FileMode.Open, FileAccess.Read))
             {
-                credential = GoogleCredential.FromStream(stream)
-                    .CreateScoped(Scopes);
+                credential = GoogleCredential.FromStream(stream).CreateScoped(Scopes);
             }
+
             GoogleSheetsService = new SheetsService(new Google.Apis.Services.BaseClientService.Initializer()
             {
                 HttpClientInitializer = credential,
-                ApplicationName = ApplicationName
+                ApplicationName = "Circle Tracker"
             });
 
-            // Get entire Spreadsheet
             var getSheetRequest = GoogleSheetsService.Spreadsheets.Get(SpreadsheetId);
             try
             {
@@ -536,129 +537,82 @@ namespace Circle_Tracker
             }
             catch (GoogleApiException e)
             {
-                if (!silent)
-                    MessageBox.Show(e.Message, "Google Sheets API Error");
+                if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error");
                 SetSheetsApiReady(false);
                 return;
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message);
+                _form.ShowMessage(e.Message);
                 return;
             }
 
-            // Get Raw Data sheet
             try
             {
-                RawDataSheet = UserSpreadsheet.Sheets.First((shit) => shit.Properties.Title == SheetName);
+                RawDataSheet = UserSpreadsheet.Sheets.First(s => s.Properties.Title == SheetName);
             }
             catch
             {
-                if (!silent)
-                    MessageBox.Show($"No sheet with the name {SheetName} found.");
+                if (!silent) _form.ShowMessage($"No sheet named \"{SheetName}\" found.", "Error");
                 SetSheetsApiReady(false);
                 return;
             }
-            SheetRows = (int)RawDataSheet.Properties.GridProperties.RowCount;
+            SheetRows = RawDataSheet.Properties.GridProperties.RowCount ?? 1000;
 
-            // Write headers (Row 1)
-            try
-            {
-                WriteHeaders();
-            }
+            try { WriteHeaders(); }
             catch (GoogleApiException e)
             {
                 if (!silent)
                 {
-                    MessageBox.Show(e.Message, "Google Sheets API Error");
-                    
+                    _form.ShowMessage(e.Message, "Google Sheets API Error");
                     if (e.Message.Contains("Unable to parse range"))
-                        MessageBox.Show("Try checking if you entered the correct thing for sheet name. Sheet name refers to the name of a 'tab' in the spreadsheet, not the name of the entire spreadsheet");
+                        _form.ShowMessage("Check that the Sheet Name matches an actual tab in your spreadsheet.");
                     if (e.Message.Contains("Requested entity was not found"))
-                        MessageBox.Show("Try double checking to see if the Spreadsheet ID is correct.");
+                        _form.ShowMessage("Check that the Spreadsheet ID is correct.");
                 }
                 SetSheetsApiReady(false);
                 return;
             }
 
-            // Try to write playcount to W2
             string range = $"'{SheetName}'!W2";
-            ValueRange valueRange = new ValueRange();
-            valueRange.Values = new List<IList<object>> { new List<object>() { $"=ARRAYFORMULA(IF(ISBLANK(hits) = false{getFunctionSeparator()} hits^0{getFunctionSeparator()}))" } };
+            var valueRange = new ValueRange();
+            valueRange.Values = new List<IList<object>>
+            {
+                new List<object>
+                {
+                    $"=ARRAYFORMULA(IF(ISBLANK(hits) = false{getFunctionSeparator()} hits^0{getFunctionSeparator()}))"
+                }
+            };
             var writeRequest = GoogleSheetsService.Spreadsheets.Values.Update(valueRange, SpreadsheetId, range);
             writeRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            try
-            {
-                writeRequest.Execute();
-            }
+            try { writeRequest.Execute(); }
             catch (GoogleApiException e)
             {
-                if (!silent)
-                    MessageBox.Show(e.Message, $"Google Sheets API Error: Unable to Write Playcount to {range}");
+                if (!silent) _form.ShowMessage(e.Message, $"Google Sheets API Error: Unable to Write Playcount to {range}");
                 SetSheetsApiReady(false);
                 return;
             }
 
-            // Add in Missing Named Ranges (if any)
-            try
-            {
-                AddMissingNamedRanges(UserSpreadsheet, RawDataSheet);
-            }
+            try { AddMissingNamedRanges(UserSpreadsheet, RawDataSheet); }
             catch (GoogleApiException e)
             {
-                if (!silent)
-                    MessageBox.Show(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
+                if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
                 SetSheetsApiReady(false);
                 return;
             }
 
-            // Extend ranges if necessary
             ResizeNamedRanges(UserSpreadsheet, SheetRows);
-
-            // Prompt Correct Timezone
             PromptTimezone(UserSpreadsheet);
-
             SetSheetsApiReady(true);
-        }
-
-        private void ResizeNamedRanges(Spreadsheet spreadsheet, int rows)
-        {
-            var definedNamedRanges = DataRanges.Select(x => x.Item2).ToList();
-            var rangesToUpdate = new List<NamedRange>();
-            if (spreadsheet.NamedRanges != null)
-            {
-                rangesToUpdate = spreadsheet.NamedRanges
-                    .Where(nr => definedNamedRanges.Contains(nr.Name))
-                    .Where(nr => nr.Range.EndRowIndex != rows)
-                    .ToList();
-            }
-            List<Request> rangeUpdateRequests = new List<Request>();
-            foreach (NamedRange nr in rangesToUpdate)
-            {
-                var req = new Request();
-                req.UpdateNamedRange = new UpdateNamedRangeRequest();
-                req.UpdateNamedRange.NamedRange = nr;
-                req.UpdateNamedRange.NamedRange.Range.EndRowIndex = rows;
-                req.UpdateNamedRange.Fields = "Range";
-                rangeUpdateRequests.Add(req);
-            }
-
-            if (rangeUpdateRequests.Count > 0)
-            {
-                var reqs = new BatchUpdateSpreadsheetRequest();
-                reqs.Requests = rangeUpdateRequests;
-                SpreadsheetsResource.BatchUpdateRequest batchRequest = GoogleSheetsService.Spreadsheets.BatchUpdate(reqs, SpreadsheetId);
-                batchRequest.Execute();
-            }
         }
 
         private void WriteHeaders()
         {
             string range = $"'{SheetName}'!A1:1";
-            ValueRange valueRange = new ValueRange();
+            var valueRange = new ValueRange();
             var rawDataHeaders = DataRanges.Select(x => (object)x.Item1).ToList();
             valueRange.Values = new List<IList<object>> { rawDataHeaders };
-            SpreadsheetsResource.ValuesResource.UpdateRequest writeRequest = GoogleSheetsService.Spreadsheets.Values.Update(valueRange, SpreadsheetId, range);
+            var writeRequest = GoogleSheetsService!.Spreadsheets.Values.Update(valueRange, SpreadsheetId, range);
             writeRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             writeRequest.Execute();
         }
@@ -667,68 +621,93 @@ namespace Circle_Tracker
         {
             if (!SpreadsheetTimezoneVerified)
             {
-                var userResponse = MessageBox.Show($"Your spreadsheet timezone is set to {spreadsheet.Properties.TimeZone}.{Environment.NewLine}{Environment.NewLine}" +
-                    "Is this correct?",
-                    "Confirm Timezone",
-                    MessageBoxButtons.YesNo);
-                if (userResponse == DialogResult.Yes)
+                _ = Task.Run(async () =>
                 {
-                    SpreadsheetTimezoneVerified = true;
-                    MessageBox.Show("cool", "Cool");
-                }
-                else
-                {
-                    MessageBox.Show("Please change this in your spreadsheet. Go to File > Spreadsheet Settings and then change the timezone there.");
-                }
+                    bool confirmed = await _form.ShowYesNoDialog(
+                        $"Your spreadsheet timezone is set to {spreadsheet.Properties.TimeZone}.\n\nIs this correct?",
+                        "Confirm Timezone");
+                    if (confirmed)
+                    {
+                        SpreadsheetTimezoneVerified = true;
+                        _form.ShowMessage("Timezone confirmed.", "Cool");
+                    }
+                    else
+                    {
+                        _form.ShowMessage(
+                            "Please change this in your spreadsheet.\n" +
+                            "Go to File > Spreadsheet Settings and change the timezone there.");
+                    }
+                });
             }
         }
 
         private void AddMissingNamedRanges(Spreadsheet spreadsheet, Sheet rawDataSheet)
         {
             var namedRanges = DataRanges.Select(x => x.Item2).ToList();
-            var existingRanges = new List<string>();
-            if (spreadsheet.NamedRanges != null)
-                existingRanges = spreadsheet.NamedRanges.Select((namedRange) => namedRange.Name).ToList();
-            List<Request> addMissingRangeRequests = new List<Request>();
+            var existingRanges = spreadsheet.NamedRanges != null
+                ? spreadsheet.NamedRanges.Select(nr => nr.Name).ToList()
+                : new List<string>();
+
+            var addRequests = new List<Request>();
             for (int i = 0; i < namedRanges.Count; i++)
             {
                 if (!existingRanges.Contains(namedRanges[i]))
                 {
-                    // update named ranges to include this data column
                     var req = new Request();
                     req.AddNamedRange = new AddNamedRangeRequest();
                     req.AddNamedRange.NamedRange = new NamedRange();
                     req.AddNamedRange.NamedRange.Name = namedRanges[i];
-                    req.AddNamedRange.NamedRange.Range = new GridRange();
-                    req.AddNamedRange.NamedRange.Range.SheetId = rawDataSheet.Properties.SheetId;
-                    req.AddNamedRange.NamedRange.Range.StartColumnIndex = i;
-                    req.AddNamedRange.NamedRange.Range.EndColumnIndex = i + 1;
-                    req.AddNamedRange.NamedRange.Range.StartRowIndex = 1;
-                    req.AddNamedRange.NamedRange.Range.EndRowIndex = SheetRows;
-                    addMissingRangeRequests.Add(req);
+                    req.AddNamedRange.NamedRange.Range = new GridRange
+                    {
+                        SheetId = rawDataSheet.Properties.SheetId,
+                        StartColumnIndex = i,
+                        EndColumnIndex = i + 1,
+                        StartRowIndex = 1,
+                        EndRowIndex = SheetRows
+                    };
+                    addRequests.Add(req);
                 }
             }
-            if (addMissingRangeRequests.Count > 0)
+
+            if (addRequests.Count > 0)
             {
-                var reqs = new BatchUpdateSpreadsheetRequest();
-                reqs.Requests = addMissingRangeRequests;
-                SpreadsheetsResource.BatchUpdateRequest batchRequest = GoogleSheetsService.Spreadsheets.BatchUpdate(reqs, SpreadsheetId);
-                batchRequest.Execute();
-                string message = $"The following Named Ranges have been added to your spreadsheet:{Environment.NewLine}{Environment.NewLine}";
-                message += String.Join(Environment.NewLine, addMissingRangeRequests.Select(r => $"・{r.AddNamedRange.NamedRange.Name}"));
-                MessageBox.Show(message, "Congratulations");
+                var reqs = new BatchUpdateSpreadsheetRequest { Requests = addRequests };
+                GoogleSheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).Execute();
+                string message = "The following Named Ranges have been added to your spreadsheet:\n\n";
+                message += string.Join("\n", addRequests.Select(r => $"• {r.AddNamedRange.NamedRange.Name}"));
+                _form.ShowMessage(message, "Congratulations");
             }
         }
 
-        public void TickWrapper()
+        private void ResizeNamedRanges(Spreadsheet spreadsheet, int rows)
         {
-            if (TickLock)
-                return;
-            TickLock = true; // acquire lock
-            Tick();
-            TickLock = false; // release lock
+            var definedNames = DataRanges.Select(x => x.Item2).ToList();
+            var rangesToUpdate = spreadsheet.NamedRanges != null
+                ? spreadsheet.NamedRanges
+                    .Where(nr => definedNames.Contains(nr.Name) && nr.Range.EndRowIndex != rows)
+                    .ToList()
+                : new List<NamedRange>();
+
+            var rangeUpdateRequests = rangesToUpdate.Select(nr =>
+            {
+                var req = new Request();
+                req.UpdateNamedRange = new UpdateNamedRangeRequest
+                {
+                    NamedRange = nr,
+                    Fields = "Range"
+                };
+                req.UpdateNamedRange.NamedRange.Range.EndRowIndex = rows;
+                return req;
+            }).ToList();
+
+            if (rangeUpdateRequests.Count > 0)
+            {
+                var reqs = new BatchUpdateSpreadsheetRequest { Requests = rangeUpdateRequests };
+                GoogleSheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).Execute();
+            }
         }
-        private void TryPostBeatmapEntryToGoogleSheets(bool complete)
+
+        public void TryPostBeatmapEntryToGoogleSheets(bool complete)
         {
             try
             {
@@ -736,40 +715,30 @@ namespace Circle_Tracker
             }
             catch (NullReferenceException)
             {
-                // Game variable probably wasn't loaded or read (blame OsuMemoryDataProvider)
-                MessageBox.Show("Could not detect current beatmap. " +
-                    $"Sorry, this part of the program is RNG and I don't know how to get it working consistently. " +
-                    $"This problem is not related to which version of Circle Tracker you are using. {Environment.NewLine}" +
-                    $"From experience, the following things will sometimes get it working again:{Environment.NewLine}{Environment.NewLine}" +
-                    $"  1. Restart Circle Tracker{ Environment.NewLine}" +
-                    $"  2. Restart osu! and Circle Tracker{ Environment.NewLine}" +
-                    $"  3. Restart your PC{ Environment.NewLine}"
-                    , "oops");
-                form.StopUpdateTimer();
+                _form.ShowMessage(
+                    "Could not detect current beatmap.\n\n" +
+                    "Things that sometimes help:\n" +
+                    "  1. Restart Circle Tracker\n" +
+                    "  2. Restart osu! and Circle Tracker\n" +
+                    "  3. Restart your PC",
+                    "oops");
+                _form.StopUpdateTimer();
             }
         }
 
         private void PostBeatmapEntryToGoogleSheets(bool complete)
         {
-            if (!SheetsApiReady)
-            {
-                //Console.WriteLine("PostBeatmapEntryToGoogleSheets: Google Sheets API has not yet been setup.");
-                return;
-            }
+            if (!SheetsApiReady) return;
+            if (IsReplay) return;
+            if (_currentGameMode != 0) return;
+            if ((RawMods & 2048) != 0 || (RawMods & 128) != 0 || (RawMods & 8192) != 0) return;
 
-            if (IsReplay)
-                return;
-
-            // duplicate post bug. Fix -> set a 5 second cooldown in between consecutive posts
             var timeSinceLastPost = DateTime.Now.Subtract(LastPostTime);
-            if (timeSinceLastPost.TotalSeconds < 5)
-                return;
+            if (timeSinceLastPost.TotalSeconds < 5) return;
             LastPostTime = DateTime.Now;
 
-            // minimum hits to submit
             if (TotalBeatmapHits < 40) return;
 
-            // Calculate accuracy manually (readings of 0% or 100% are usually inaccurate)
             decimal calculatedAccuracy =
                 100 * (300M * Play300c + 100M * Play100c + 50M * Play50c)
                 / (300M * (Play300c + Play100c + Play50c + PlayMissc));
@@ -778,17 +747,21 @@ namespace Circle_Tracker
             string escapedName = BeatmapString.Replace("\"", "\"\"");
             string mods = GetModsString();
             if (mods != "") mods = $" +{mods}";
-            int playTime = (int)((Time - currentBeatmap.FirstHitObjectTime) / (Doubletime ? 1.5f : Halftime ? 0.75f : 1) / 1000);
+
+            float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
+            int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
 
             var range = $"'{SheetName}'!A:J";
             var valueRange = new ValueRange();
-            var writeData = new List<object>() {
+            string sep = getFunctionSeparator();
+            var writeData = new List<object>
+            {
                 /*A: Date & Time*/ DateTime.Now.ToString(dateTimeFormat, CultureInfo.InvariantCulture),
-                /*B: Beatmap    */ $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{BeatmapSetID}#osu/{BeatmapID}\"{getFunctionSeparator()} \"{escapedName + mods}\")",
-                /*C: Hidden     */ Hidden ? "1":"",
-                /*D: Hardrock   */ Hardrock ? "1":"",
-                /*E: Doubletime */ Doubletime ? "1":"",
-                /*F: BPM        */ BeatmapBpm * (Doubletime ? 1.5M : Halftime ? 0.75M : 1),
+                /*B: Beatmap    */ $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{BeatmapSetID}#osu/{BeatmapID}\"{sep} \"{escapedName + mods}\")",
+                /*C: Hidden     */ Hidden     ? "1" : "",
+                /*D: Hardrock   */ Hardrock   ? "1" : "",
+                /*E: Doubletime */ Doubletime ? "1" : "",
+                /*F: BPM        */ BeatmapBpm,
                 /*G: Aim        */ BeatmapAim,
                 /*H: Speed      */ BeatmapSpeed,
                 /*I: Stars      */ BeatmapStars,
@@ -801,75 +774,66 @@ namespace Circle_Tracker
                 /*P: 100c       */ Play100c,
                 /*Q: 50c        */ Play50c,
                 /*R: Missc      */ PlayMissc,
-                /*S: EZ         */ EZ ? "1":"",
-                /*T: HT         */ Halftime ? "1":"",
-                /*U: FL         */ Flashlight ? "1":"",
-                /*V: complete   */ complete ? "1":"0",
-                /*W: playcount  */ "",                 // (this is provided by a formula in row 2)
+                /*S: EZ         */ EZ         ? "1" : "",
+                /*T: HT         */ Halftime   ? "1" : "",
+                /*U: FL         */ Flashlight ? "1" : "",
+                /*V: complete   */ complete ? "1" : "0",
+                /*W: playcount  */ "",
                 /*X: time       */ playTime
             };
             valueRange.Values = new List<IList<object>> { writeData };
-            var appendRequest = GoogleSheetsService.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
+
+            var appendRequest = GoogleSheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
-            AppendValuesResponse TryExecuteAppendRequest(SpreadsheetsResource.ValuesResource.AppendRequest appReq, bool rethrowException)
-            {
-                try { return appReq.Execute(); }
-                catch (Exception e)
-                {
-                    if (!rethrowException)
-                        return null;
-                    throw e; // max retry count exceeded; throw exception
-                }
-            }
-            AppendValuesResponse appendResponse = null;
-            int MAX_SUBMIT_ATTEMPTS = 4;
+            AppendValuesResponse? appendResponse = null;
+            const int MAX_SUBMIT_ATTEMPTS = 4;
             for (int i = 0; i < MAX_SUBMIT_ATTEMPTS; i++)
             {
-                appendResponse = TryExecuteAppendRequest(appendRequest, rethrowException: i == (MAX_SUBMIT_ATTEMPTS - 1));
-                if (appendResponse != null)
-                    break; // success
-            }
-
-            // play submit success
-            if (SubmitSoundEnabled)
-            {
-                using (SoundPlayer player = new SoundPlayer(soundFilename))
+                try
                 {
-                    player.Play();
+                    appendResponse = appendRequest.Execute();
+                    break;
+                }
+                catch (Exception)
+                {
+                    if (i == MAX_SUBMIT_ATTEMPTS - 1) throw;
                 }
             }
 
-            int updatedRow = 0;
-            foreach (Match m in new Regex(@"\d+").Matches(appendResponse.Updates.UpdatedRange))
-            {
-                int parsedInt = int.Parse(m.Value);
-                if (parsedInt > updatedRow)
-                    updatedRow = parsedInt;
-            }
-            if (updatedRow > SheetRows)
-            {
-                // Add 100 more rows and update named ranges
-                var req = new Request();
-                req.AppendDimension = new AppendDimensionRequest();
-                req.AppendDimension.Dimension = "ROWS";
-                req.AppendDimension.SheetId = RawDataSheet.Properties.SheetId;
-                req.AppendDimension.Length = 100;
-                var b1 = new BatchUpdateSpreadsheetRequest();
-                b1.Requests = new List<Request>() { req };
-                var b2 = GoogleSheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId);
-                b2.Execute();
+            if (SubmitSoundEnabled)
+                SoundHelper.PlaySound(SoundFilePath);
 
-                // Update Named Ranges
-                ResizeNamedRanges(UserSpreadsheet, updatedRow + 100);
-                SheetRows = updatedRow + 100;
+            if (appendResponse != null)
+            {
+                int updatedRow = 0;
+                foreach (Match m in new Regex(@"\d+").Matches(appendResponse.Updates.UpdatedRange))
+                {
+                    int parsed = int.Parse(m.Value);
+                    if (parsed > updatedRow) updatedRow = parsed;
+                }
+
+                if (updatedRow > SheetRows)
+                {
+                    var req = new Request();
+                    req.AppendDimension = new AppendDimensionRequest
+                    {
+                        Dimension = "ROWS",
+                        SheetId = RawDataSheet!.Properties.SheetId,
+                        Length = 100
+                    };
+                    var b1 = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { req } };
+                    GoogleSheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId).Execute();
+                    ResizeNamedRanges(UserSpreadsheet!, updatedRow + 100);
+                    SheetRows = updatedRow + 100;
+                }
             }
         }
-        void SetSheetsApiReady(bool val)
+
+        private void SetSheetsApiReady(bool val)
         {
             SheetsApiReady = val;
-            form.SetSheetsApiReady(val);
+            _form.SetSheetsApiReady(val);
         }
-
     }
 }

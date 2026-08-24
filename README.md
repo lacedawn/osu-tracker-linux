@@ -1,11 +1,37 @@
-# circle-tracker
-A program I made for tracking training progress in osu.
+# circle-tracker (lazer & linux port)
 
-Please watch this video for more information:
-https://www.youtube.com/watch?v=_65AvmAjlpY
+A port of [FunOrange's circle-tracker](https://github.com/FunOrange/circle-tracker) that works on Linux and supports osu!lazer
 
-TODO: add more stuff here
+## what changed
+- rewritten with Avalonia UI on .NET 8 (tested on Arch Linux, untested on Windows/macOS)
+- uses [tosu](https://github.com/tosuapp/tosu) for memory reading instead of the old Windows-only memory reader
+- works with osu!lazer
+- removed oppai.exe, winforms, and Windows-specific dependencies
 
-## Build troubleshooting
-Make sure all projects are set to build in Configuration Manager
-https://www.primordialcode.com/blog/post/referenced-project-targeted-different-framework-family
+## setup
+
+### 1. install tosu
+On Arch:
+```bash
+yay -S tosu
+sudo setcap cap_sys_ptrace=eip /opt/tosu/tosu
+```
+
+### 2. run
+```bash
+# make sure tosu and osu! are running, then:
+dotnet run
+```
+Paste your spreadsheet ID into the app, click connect, and that's it ! 
+
+## build
+```bash
+dotnet build
+
+# or standalone linux binary:
+dotnet publish -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o publish/
+```
+
+## credits
+- [FunOrange](https://github.com/FunOrange) for the original circle-tracker
+- [tosu](https://github.com/tosuapp/tosu) for the memory reader
