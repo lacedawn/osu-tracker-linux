@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 
@@ -8,34 +9,31 @@ namespace Circle_Tracker
         public static void PlaySound(string path)
         {
             if (!File.Exists(path))
-                return;
-
-            if (System.OperatingSystem.IsLinux())
             {
-                try
-                {
-                    var psi = new ProcessStartInfo("paplay", $"\"{path}\"")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    Process.Start(psi);
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var psi = new ProcessStartInfo("aplay", $"\"{path}\"")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    Process.Start(psi);
-                }
-                catch { }
+                Console.WriteLine($"[SoundHelper] Sound file not found: {path}");
+                return;
             }
-            else if (System.OperatingSystem.IsMacOS())
+
+            if (OperatingSystem.IsLinux())
+            {
+                string[] players = { "pw-play", "paplay", "aplay" };
+                foreach (var player in players)
+                {
+                    try
+                    {
+                        var psi = new ProcessStartInfo(player, $"\"{path}\"")
+                        {
+                            CreateNoWindow = true,
+                            UseShellExecute = false
+                        };
+                        using var proc = Process.Start(psi);
+                        return;
+                    }
+                    catch { }
+                }
+                Console.WriteLine("[SoundHelper] Failed to play sound: no supported audio player found (pw-play, paplay, aplay).");
+            }
+            else if (OperatingSystem.IsMacOS())
             {
                 try
                 {
@@ -44,11 +42,14 @@ namespace Circle_Tracker
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
-                    Process.Start(psi);
+                    using var proc = Process.Start(psi);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SoundHelper] macOS audio error: {ex.Message}");
+                }
             }
-            else if (System.OperatingSystem.IsWindows())
+            else if (OperatingSystem.IsWindows())
             {
                 try
                 {
@@ -59,9 +60,12 @@ namespace Circle_Tracker
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
-                    Process.Start(psi);
+                    using var proc = Process.Start(psi);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SoundHelper] Windows audio error: {ex.Message}");
+                }
             }
         }
     }

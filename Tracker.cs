@@ -30,9 +30,18 @@ namespace Circle_Tracker
         private readonly IMainWindow _form;
         private readonly TosuClient _tosuClient;
 
+        private static string FindFile(string relativePath)
+        {
+            string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
+            if (File.Exists(p1)) return p1;
+            string p2 = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
+            if (File.Exists(p2)) return p2;
+            return p1;
+        }
+
         private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
-        private static string CredentialsFilePath => Path.Combine(AppContext.BaseDirectory, "credentials.json");
-        private static string SoundFilePath => Path.Combine(AppContext.BaseDirectory, "assets", "sectionpass.wav");
+        private static string CredentialsFilePath => FindFile("credentials.json");
+        private static string SoundFilePath => FindFile(Path.Combine("assets", "sectionpass.wav"));
 
         private static readonly List<(string, string)> DataRanges = new List<(string, string)>()
         {
@@ -137,13 +146,8 @@ namespace Circle_Tracker
             if (!File.Exists(SettingsFilePath))
             {
                 string welcomeMsg = "Welcome to circle tracker!\n\n" +
-                    "This app requires 'tosu' to be running alongside osu!\n\n" +
-                    "On Arch Linux, install tosu from AUR:\n" +
-                    "  yay -S tosu\n\n" +
-                    "Grant it memory reading permission:\n" +
-                    "  sudo setcap cap_sys_ptrace=eip /opt/tosu/tosu\n\n" +
-                    "Then run tosu before starting osu!\n\n" +
-                    "Circle tracker works with both osu!stable (Wine) and osu!lazer (AppImage).";
+                    "This app connects to 'tosu' running alongside osu!.\n\n" +
+                    "Works with both osu!stable (Wine) and osu!lazer.";
                 _form.ShowMessage(welcomeMsg, "Welcome to Circle Tracker!");
             }
         }
@@ -243,9 +247,8 @@ namespace Circle_Tracker
 
         private static bool DetectReplay(TosuState state)
         {
-            if (state.Settings?.ReplayUIVisible == true)
-                return true;
-
+            // Do NOT check state.Settings.ReplayUIVisible because in osu!stable that is true by default.
+            // Check if playing username does not match profile username
             string? playName = state.Play?.PlayerName;
             string? profileName = state.Profile?.Name;
             if (!string.IsNullOrWhiteSpace(playName) &&
@@ -384,7 +387,7 @@ namespace Circle_Tracker
             IsReplay = DetectReplay(state);
 
             MemoryReadError = songSelectGameState && string.IsNullOrEmpty(state.Files?.Beatmap);
-            if (MemoryReadError)
+            if (MemoryReadError && string.IsNullOrEmpty(BeatmapString))
                 BeatmapString = "";
 
             if (state.Beatmap?.Stats?.Stars != null)
@@ -400,6 +403,7 @@ namespace Circle_Tracker
                 if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
                 {
                     bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
+                    Console.WriteLine($"[CircleTracker] Transitioned from Playing to {newGameState}. Completed={beatmapCompleted}. Hits={TotalBeatmapHits}");
                     TryPostBeatmapEntryToGoogleSheets(beatmapCompleted);
 
                     Play300c = 0;
@@ -452,6 +456,7 @@ namespace Circle_Tracker
                     // detect retry when song time rewinds
                     if (newSongTime < Time && Time > 0)
                     {
+                        Console.WriteLine($"[CircleTracker] Retry detected (Time rewound: {newSongTime} < {Time}). Hits={TotalBeatmapHits}");
                         TryPostBeatmapEntryToGoogleSheets(false);
                         Play300c = 0;
                         Play100c = 0;
@@ -500,7 +505,7 @@ namespace Circle_Tracker
             _form.SetCredentialsFound(credentialsFound);
             if (!credentialsFound)
             {
-                if (!silent) _form.ShowMessage("credentials.json not found.");
+                if (!silent) _form.ShowMessage($"credentials.json not found at {CredentialsFilePath}");
                 SetSheetsApiReady(false);
                 return;
             }
@@ -519,31 +524,34 @@ namespace Circle_Tracker
 
             string[] Scopes = { SheetsService.Scope.Spreadsheets };
             GoogleCredential credential;
-            using (var stream = new FileStream(CredentialsFilePath, FileMode.Open, FileAccess.Read))
-            {
-                credential = GoogleCredential.FromStream(stream).CreateScoped(Scopes);
-            }
-
-            GoogleSheetsService = new SheetsService(new Google.Apis.Services.BaseClientService.Initializer()
-            {
-                HttpClientInitializer = credential,
-                ApplicationName = "Circle Tracker"
-            });
-
-            var getSheetRequest = GoogleSheetsService.Spreadsheets.Get(SpreadsheetId);
             try
             {
+                using (var stream = new FileStream(CredentialsFilePath, FileMode.Open, FileAccess.Read))
+                {
+                    credential = GoogleCredential.FromStream(stream).CreateScoped(Scopes);
+                }
+
+                GoogleSheetsService = new SheetsService(new Google.Apis.Services.BaseClientService.Initializer()
+                {
+                    HttpClientInitializer = credential,
+                    ApplicationName = "Circle Tracker"
+                });
+
+                var getSheetRequest = GoogleSheetsService.Spreadsheets.Get(SpreadsheetId);
                 UserSpreadsheet = getSheetRequest.Execute();
             }
             catch (GoogleApiException e)
             {
+                Console.Error.WriteLine($"[CircleTracker] Google API Exception in InitGoogleAPI: {e.Message}");
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error");
                 SetSheetsApiReady(false);
                 return;
             }
             catch (Exception e)
             {
-                _form.ShowMessage(e.Message);
+                Console.Error.WriteLine($"[CircleTracker] Exception in InitGoogleAPI: {e.Message}");
+                if (!silent) _form.ShowMessage(e.Message, "Error");
+                SetSheetsApiReady(false);
                 return;
             }
 
@@ -604,11 +612,12 @@ namespace Circle_Tracker
             ResizeNamedRanges(UserSpreadsheet, SheetRows);
             PromptTimezone(UserSpreadsheet);
             SetSheetsApiReady(true);
+            Console.WriteLine("[CircleTracker] Google Sheets API successfully initialized and connected.");
         }
 
         private void WriteHeaders()
         {
-            string range = $"'{SheetName}'!A1:1";
+            string range = $"'{SheetName}'!A1:X1";
             var valueRange = new ValueRange();
             var rawDataHeaders = DataRanges.Select(x => (object)x.Item1).ToList();
             valueRange.Values = new List<IList<object>> { rawDataHeaders };
@@ -629,13 +638,7 @@ namespace Circle_Tracker
                     if (confirmed)
                     {
                         SpreadsheetTimezoneVerified = true;
-                        _form.ShowMessage("Timezone confirmed.", "Cool");
-                    }
-                    else
-                    {
-                        _form.ShowMessage(
-                            "Please change this in your spreadsheet.\n" +
-                            "Go to File > Spreadsheet Settings and change the timezone there.");
+                        SaveSettings();
                     }
                 });
             }
@@ -673,9 +676,6 @@ namespace Circle_Tracker
             {
                 var reqs = new BatchUpdateSpreadsheetRequest { Requests = addRequests };
                 GoogleSheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).Execute();
-                string message = "The following Named Ranges have been added to your spreadsheet:\n\n";
-                message += string.Join("\n", addRequests.Select(r => $"• {r.AddNamedRange.NamedRange.Name}"));
-                _form.ShowMessage(message, "Congratulations");
             }
         }
 
@@ -713,45 +713,64 @@ namespace Circle_Tracker
             {
                 PostBeatmapEntryToGoogleSheets(complete);
             }
-            catch (NullReferenceException)
+            catch (Exception ex)
             {
-                _form.ShowMessage(
-                    "Could not detect current beatmap.\n\n" +
-                    "Things that sometimes help:\n" +
-                    "  1. Restart Circle Tracker\n" +
-                    "  2. Restart osu! and Circle Tracker\n" +
-                    "  3. Restart your PC",
-                    "oops");
-                _form.StopUpdateTimer();
+                Console.Error.WriteLine($"[CircleTracker] Exception in PostBeatmapEntryToGoogleSheets: {ex}");
             }
         }
 
         private void PostBeatmapEntryToGoogleSheets(bool complete)
         {
-            if (!SheetsApiReady) return;
-            if (IsReplay) return;
-            if (_currentGameMode != 0) return;
-            if ((RawMods & 2048) != 0 || (RawMods & 128) != 0 || (RawMods & 8192) != 0) return;
+            Console.WriteLine($"[CircleTracker] Checking submission: Complete={complete}, Hits={TotalBeatmapHits}, Replay={IsReplay}, Mode={_currentGameMode}, SheetsReady={SheetsApiReady}");
+
+            if (!SheetsApiReady)
+            {
+                Console.WriteLine("[CircleTracker] Skipped post: Sheets API not connected.");
+                return;
+            }
+            if (IsReplay)
+            {
+                Console.WriteLine("[CircleTracker] Skipped post: Replay play detected.");
+                return;
+            }
+            if (_currentGameMode != 0)
+            {
+                Console.WriteLine($"[CircleTracker] Skipped post: Game mode ({_currentGameMode}) is not osu!standard.");
+                return;
+            }
+            if ((RawMods & 2048) != 0 || (RawMods & 128) != 0 || (RawMods & 8192) != 0)
+            {
+                Console.WriteLine($"[CircleTracker] Skipped post: Disallowed mods active ({RawMods}).");
+                return;
+            }
 
             var timeSinceLastPost = DateTime.Now.Subtract(LastPostTime);
-            if (timeSinceLastPost.TotalSeconds < 5) return;
+            if (timeSinceLastPost.TotalSeconds < 3)
+            {
+                Console.WriteLine($"[CircleTracker] Skipped post: Rate limited (<3s since last post).");
+                return;
+            }
             LastPostTime = DateTime.Now;
 
-            if (TotalBeatmapHits < 40) return;
+            if (TotalBeatmapHits < 40)
+            {
+                Console.WriteLine($"[CircleTracker] Skipped post: Total hits ({TotalBeatmapHits}) is below 40.");
+                return;
+            }
 
             decimal calculatedAccuracy =
                 100 * (300M * Play300c + 100M * Play100c + 50M * Play50c)
                 / (300M * (Play300c + Play100c + Play50c + PlayMissc));
 
             string dateTimeFormat = "yyyy'-'MM'-'dd h':'mm tt";
-            string escapedName = BeatmapString.Replace("\"", "\"\"");
+            string escapedName = (BeatmapString ?? "").Replace("\"", "\"\"");
             string mods = GetModsString();
             if (mods != "") mods = $" +{mods}";
 
             float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
             int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
 
-            var range = $"'{SheetName}'!A:J";
+            var range = $"'{SheetName}'!A:X";
             var valueRange = new ValueRange();
             string sep = getFunctionSeparator();
             var writeData = new List<object>
@@ -783,6 +802,7 @@ namespace Circle_Tracker
             };
             valueRange.Values = new List<IList<object>> { writeData };
 
+            Console.WriteLine($"[CircleTracker] Sending append request to Google Sheets ({range})...");
             var appendRequest = GoogleSheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
@@ -795,14 +815,20 @@ namespace Circle_Tracker
                     appendResponse = appendRequest.Execute();
                     break;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Console.Error.WriteLine($"[CircleTracker] Submit attempt {i + 1} failed: {ex.Message}");
                     if (i == MAX_SUBMIT_ATTEMPTS - 1) throw;
                 }
             }
 
+            Console.WriteLine($"[CircleTracker] Play successfully logged to Google Sheets!");
+
             if (SubmitSoundEnabled)
+            {
+                Console.WriteLine($"[CircleTracker] Playing submission sound ({SoundFilePath})...");
                 SoundHelper.PlaySound(SoundFilePath);
+            }
 
             if (appendResponse != null)
             {

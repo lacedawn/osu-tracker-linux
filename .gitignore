@@ -5,7 +5,6 @@ publish/
 .vs/
 .idea/
 
-# User secrets & local configuration
 credentials.json
 user_settings.txt
 errorlog.txt

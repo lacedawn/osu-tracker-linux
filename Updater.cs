@@ -91,7 +91,7 @@ namespace Circle_Tracker
 
     class Updater
     {
-        static readonly string CURRENT_RELEASE_TAG = "v17-lazer-linux";
+        static readonly string CURRENT_RELEASE_TAG = "v16";
         static readonly HttpClient client;
 
         static Updater()
@@ -129,17 +129,6 @@ namespace Circle_Tracker
                 $"Update available: {latestRelease.tag_name}\n" +
                 $"Release notes: {latestRelease.body}\n" +
                 $"Download: {latestRelease.html_url}");
-
-            try
-            {
-                Process.Start(new ProcessStartInfo(latestRelease.html_url ?? "")
-                {
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
-            }
         }
     }
 }
