@@ -6,8 +6,6 @@
     <AssemblyName>circle-tracker</AssemblyName>
     <ApplicationIcon>ct.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
 
