@@ -126,9 +126,12 @@ namespace Circle_Tracker
 
         public void SetCredentialsFound(bool found)
         {
-            CredentialsLabel.Text = found ? "Found" : "Missing";
-            CredentialsLabel.Classes.Remove(found ? "status-disconnected" : "status-connected");
-            CredentialsLabel.Classes.Add(found ? "status-connected" : "status-disconnected");
+            Dispatcher.UIThread.Post(() =>
+            {
+                CredentialsLabel.Text = found ? "Found" : "Missing";
+                CredentialsLabel.Classes.Remove(found ? "status-disconnected" : "status-connected");
+                CredentialsLabel.Classes.Add(found ? "status-connected" : "status-disconnected");
+            });
         }
 
         public void SetSheetsApiReady(bool val)
@@ -341,7 +344,11 @@ namespace Circle_Tracker
 
         private void ConnectApiButton_Click(object? sender, RoutedEventArgs e)
         {
-            _tracker.InitGoogleAPI();
+            _ = Task.Run(() =>
+            {
+                try { _tracker.InitGoogleAPI(); }
+                catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
+            });
         }
 
         private void StartupCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)

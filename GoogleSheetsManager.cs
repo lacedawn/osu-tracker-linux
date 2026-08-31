@@ -171,7 +171,7 @@ namespace Circle_Tracker
             }
             SheetRows = _rawDataSheet.Properties.GridProperties.RowCount ?? 1000;
 
-            try { WriteHeaders().GetAwaiter().GetResult(); }
+            try { Task.Run(() => WriteHeaders()).GetAwaiter().GetResult(); }
             catch (GoogleApiException e)
             {
                 if (!silent)
@@ -186,7 +186,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            try { AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet).GetAwaiter().GetResult(); }
+            try { Task.Run(() => AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet)).GetAwaiter().GetResult(); }
             catch (GoogleApiException e)
             {
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
@@ -194,7 +194,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            ResizeNamedRanges(_userSpreadsheet, SheetRows).GetAwaiter().GetResult();
+            Task.Run(() => ResizeNamedRanges(_userSpreadsheet, SheetRows)).GetAwaiter().GetResult();
             PromptTimezone(_userSpreadsheet);
             SetSheetsApiReady(true);
             _log.LogInformation("Google Sheets API successfully initialized and connected");
