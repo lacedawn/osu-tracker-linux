@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -23,6 +24,27 @@ namespace Circle_Tracker
         MultiplayerRoom = 11,
         MultiplayerSongSelect = 12,
         Unknown = -1
+    }
+
+    [Flags]
+    public enum OsuMods
+    {
+        None = 0,
+        NoFail = 1,
+        Easy = 1 << 1,
+        TouchDevice = 1 << 2,
+        Hidden = 1 << 3,
+        HardRock = 1 << 4,
+        SuddenDeath = 1 << 5,
+        DoubleTime = 1 << 6,
+        Relax = 1 << 7,
+        HalfTime = 1 << 8,
+        Nightcore = 1 << 9,
+        Flashlight = 1 << 10,
+        Autoplay = 1 << 11,
+        SpunOut = 1 << 12,
+        Autopilot = 1 << 13,
+        Perfect = 1 << 14,
     }
 
     class Tracker
@@ -120,7 +142,7 @@ namespace Circle_Tracker
         private int _currentGameMode = 0;
 
         private DateTime LastPostTime { get; set; }
-        private bool TickLock { get; set; } = false;
+        private int _tickLock = 0;
         private bool SpreadsheetTimezoneVerified { get; set; } = false;
         public bool SheetsApiReady { get; set; } = false;
         public bool UseAltFuncSeparator { get; set; } = false;
@@ -286,13 +308,14 @@ namespace Circle_Tracker
         private void UpdateModsFromBitfield(int rawMods)
         {
             RawMods = rawMods;
-            Hidden = (rawMods & 8) != 0;
-            Hardrock = (rawMods & 16) != 0;
-            Doubletime = (rawMods & 64) != 0 || (rawMods & 576) != 0;
-            EZ = (rawMods & 2) != 0;
-            Halftime = (rawMods & 256) != 0;
-            Flashlight = (rawMods & 1024) != 0;
-            Auto = (rawMods & 2048) != 0;
+            var mods = (OsuMods)rawMods;
+            Hidden = mods.HasFlag(OsuMods.Hidden);
+            Hardrock = mods.HasFlag(OsuMods.HardRock);
+            Doubletime = mods.HasFlag(OsuMods.DoubleTime) || mods.HasFlag(OsuMods.Nightcore);
+            EZ = mods.HasFlag(OsuMods.Easy);
+            Halftime = mods.HasFlag(OsuMods.HalfTime);
+            Flashlight = mods.HasFlag(OsuMods.Flashlight);
+            Auto = mods.HasFlag(OsuMods.Autoplay);
         }
 
         private void UpdateBeatmapFromState(TosuState state)
@@ -347,8 +370,9 @@ namespace Circle_Tracker
                         _lastClockRate = (float)attr.ClockRate;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine($"[CircleTracker] Failed to update difficulty from PP API: {ex.Message}");
             }
         }
 
@@ -478,15 +502,15 @@ namespace Circle_Tracker
 
         public void TickWrapper()
         {
-            if (TickLock) return;
-            TickLock = true;
+            if (Interlocked.CompareExchange(ref _tickLock, 1, 0) != 0)
+                return;
             try
             {
                 Tick();
             }
             finally
             {
-                TickLock = false;
+                Interlocked.Exchange(ref _tickLock, 0);
             }
         }
 
@@ -738,7 +762,8 @@ namespace Circle_Tracker
                 Console.WriteLine($"[CircleTracker] Skipped post: Game mode ({_currentGameMode}) is not osu!standard.");
                 return;
             }
-            if ((RawMods & 2048) != 0 || (RawMods & 128) != 0 || (RawMods & 8192) != 0)
+            var mods = (OsuMods)RawMods;
+            if (mods.HasFlag(OsuMods.Autoplay) || mods.HasFlag(OsuMods.Relax) || mods.HasFlag(OsuMods.Autopilot))
             {
                 Console.WriteLine($"[CircleTracker] Skipped post: Disallowed mods active ({RawMods}).");
                 return;
@@ -764,8 +789,8 @@ namespace Circle_Tracker
 
             string dateTimeFormat = "yyyy'-'MM'-'dd h':'mm tt";
             string escapedName = (BeatmapString ?? "").Replace("\"", "\"\"");
-            string mods = GetModsString();
-            if (mods != "") mods = $" +{mods}";
+            string modsString = GetModsString();
+            if (modsString != "") modsString = $" +{modsString}";
 
             float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
             int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
@@ -776,7 +801,7 @@ namespace Circle_Tracker
             var writeData = new List<object>
             {
                 /*A: Date & Time*/ DateTime.Now.ToString(dateTimeFormat, CultureInfo.InvariantCulture),
-                /*B: Beatmap    */ $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{BeatmapSetID}#osu/{BeatmapID}\"{sep} \"{escapedName + mods}\")",
+                /*B: Beatmap    */ $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{BeatmapSetID}#osu/{BeatmapID}\"{sep} \"{escapedName + modsString}\")",
                 /*C: Hidden     */ Hidden     ? "1" : "",
                 /*D: Hardrock   */ Hardrock   ? "1" : "",
                 /*E: Doubletime */ Doubletime ? "1" : "",

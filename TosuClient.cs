@@ -172,8 +172,9 @@ namespace Circle_Tracker
                 connectCts.CancelAfter(TimeSpan.FromSeconds(3));
                 await ws.ConnectAsync(wsUri, connectCts.Token);
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[TosuClient] WebSocket connect failed: {ex.GetType().Name}");
                 return false;
             }
 
@@ -218,8 +219,9 @@ namespace Circle_Tracker
                                 IsConnected = true;
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            Console.Error.WriteLine($"[TosuClient] Failed to deserialize WebSocket message: {ex.Message}");
                         }
                     }
                 }
@@ -227,8 +229,9 @@ namespace Circle_Tracker
             catch (OperationCanceledException)
             {
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine($"[TosuClient] WebSocket session error: {ex.Message}");
             }
             finally
             {
@@ -256,8 +259,9 @@ namespace Circle_Tracker
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[TosuClient] HTTP poll failed: {ex.GetType().Name}");
             }
 
             IsConnected = false;
@@ -278,8 +282,9 @@ namespace Circle_Tracker
                     return JsonConvert.DeserializeObject<PpCalcResult>(json);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine($"[TosuClient] PP calculation request failed: {ex.Message}");
             }
 
             return null;

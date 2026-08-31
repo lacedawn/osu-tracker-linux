@@ -154,28 +154,33 @@
               <TextBlock Classes="field-label" Text="Spreadsheet ID" MinWidth="0" Margin="0,2,0,1"/>
               <TextBox x:Name="SpreadsheetIdTextBox"
                        Classes="input-field"
-                       TextChanged="SpreadsheetIdTextBox_TextChanged"/>
+                       TextChanged="SpreadsheetIdTextBox_TextChanged"
+                       ToolTip.Tip="The ID from your Google Sheets URL: docs.google.com/spreadsheets/d/{THIS_PART}/edit"/>
 
               <!-- Sheet Name -->
               <TextBlock Classes="field-label" Text="Sheet Name" MinWidth="0" Margin="0,4,0,1"/>
               <TextBox x:Name="SheetNameTextBox"
                        Classes="input-field"
-                       TextChanged="SheetNameTextBox_TextChanged"/>
+                       TextChanged="SheetNameTextBox_TextChanged"
+                       ToolTip.Tip="The name of the tab/sheet where play data will be written. Default: Raw Data"/>
 
               <!-- Connect button -->
               <Button x:Name="ConnectApiButton"
                       Classes="connect-btn"
                       Content="Connect Google Sheets API"
-                      Click="ConnectApiButton_Click"/>
+                      Click="ConnectApiButton_Click"
+                      ToolTip.Tip="Connect to Google Sheets API using the credentials.json file and the Spreadsheet ID above"/>
 
               <!-- Checkboxes -->
               <CheckBox x:Name="SoundEnabledCheckbox"
                         Content="Play sound when writing a new entry"
                         IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"
-                        Margin="0,4,0,0"/>
+                        Margin="0,4,0,0"
+                        ToolTip.Tip="Play a notification sound when a play is successfully logged to Google Sheets"/>
               <CheckBox x:Name="AltSepCheckBox"
                         Content="Toggle this to fix #ERROR! in Beatmap column"
-                        IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+                        IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"
+                        ToolTip.Tip="Use semicolons instead of commas in spreadsheet formulas. Enable this if the Beatmap column shows #ERROR!"/>
             </StackPanel>
           </Grid>
         </Border>
@@ -190,14 +195,16 @@
                 <TextBox x:Name="TosuHostTextBox"
                          Classes="input-field"
                          Text="127.0.0.1"
-                         TextChanged="TosuHostTextBox_TextChanged"/>
+                         TextChanged="TosuHostTextBox_TextChanged"
+                         ToolTip.Tip="Hostname or IP address where tosu is running. Default: 127.0.0.1"/>
               </StackPanel>
               <StackPanel Grid.Column="2">
                 <TextBlock Classes="field-label" Text="Port" FontSize="11" Margin="0,0,0,2"/>
                 <TextBox x:Name="TosuPortTextBox"
                          Classes="input-field"
                          Text="24050"
-                         TextChanged="TosuPortTextBox_TextChanged"/>
+                         TextChanged="TosuPortTextBox_TextChanged"
+                         ToolTip.Tip="Port number where tosu is listening. Default: 24050"/>
               </StackPanel>
             </Grid>
           </Grid>
@@ -270,7 +277,8 @@
         <CheckBox  x:Name="StartupCheckBox"
                    Grid.Column="1"
                    Content="Launch on Startup"
-                   IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+                   IsCheckedChanged="StartupCheckBox_IsCheckedChanged"
+                   ToolTip.Tip="Automatically launch Circle Tracker when you log in (creates a .desktop autostart entry)"/>
       </Grid>
     </Border>
   </Grid>

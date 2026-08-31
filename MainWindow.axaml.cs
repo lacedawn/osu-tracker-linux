@@ -40,8 +40,11 @@ namespace Circle_Tracker
                 AutostartHelper.CreateAutostart();
             }
 
-            try { Updater.CheckForUpdates(); }
-            catch { }
+            _ = Task.Run(async () =>
+            {
+                try { await Updater.CheckForUpdates(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[CircleTracker] Update check failed: {ex.Message}"); }
+            });
 
             _tosuClient = new TosuClient();
             _tracker = new Tracker(this, _tosuClient);

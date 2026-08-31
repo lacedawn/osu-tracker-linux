@@ -5,6 +5,7 @@ publish/
 .vs/
 .idea/
 
-credentials.json
 user_settings.txt
 errorlog.txt
+
+credentials.json

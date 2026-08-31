@@ -3,95 +3,20 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
-    public class Author
-    {
-        public string? login { get; set; }
-        public int id { get; set; }
-        public string? node_id { get; set; }
-        public string? avatar_url { get; set; }
-        public string? gravatar_id { get; set; }
-        public string? url { get; set; }
-        public string? html_url { get; set; }
-        public string? followers_url { get; set; }
-        public string? following_url { get; set; }
-        public string? gists_url { get; set; }
-        public string? starred_url { get; set; }
-        public string? subscriptions_url { get; set; }
-        public string? organizations_url { get; set; }
-        public string? repos_url { get; set; }
-        public string? events_url { get; set; }
-        public string? received_events_url { get; set; }
-        public string? type { get; set; }
-        public bool site_admin { get; set; }
-    }
-
-    public class Uploader
-    {
-        public string? login { get; set; }
-        public int id { get; set; }
-        public string? node_id { get; set; }
-        public string? avatar_url { get; set; }
-        public string? gravatar_id { get; set; }
-        public string? url { get; set; }
-        public string? html_url { get; set; }
-        public string? followers_url { get; set; }
-        public string? following_url { get; set; }
-        public string? gists_url { get; set; }
-        public string? starred_url { get; set; }
-        public string? subscriptions_url { get; set; }
-        public string? organizations_url { get; set; }
-        public string? repos_url { get; set; }
-        public string? events_url { get; set; }
-        public string? received_events_url { get; set; }
-        public string? type { get; set; }
-        public bool site_admin { get; set; }
-    }
-
-    public class Asset
-    {
-        public string? url { get; set; }
-        public int id { get; set; }
-        public string? node_id { get; set; }
-        public string? name { get; set; }
-        public object? label { get; set; }
-        public Uploader? uploader { get; set; }
-        public string? content_type { get; set; }
-        public string? state { get; set; }
-        public int size { get; set; }
-        public int download_count { get; set; }
-        public DateTime created_at { get; set; }
-        public DateTime updated_at { get; set; }
-        public string? browser_download_url { get; set; }
-    }
-
     public class Release
     {
-        public string? url { get; set; }
-        public string? assets_url { get; set; }
-        public string? upload_url { get; set; }
-        public string? html_url { get; set; }
-        public int id { get; set; }
-        public Author? author { get; set; }
-        public string? node_id { get; set; }
-        public string? tag_name { get; set; }
-        public string? target_commitish { get; set; }
-        public string? name { get; set; }
-        public bool draft { get; set; }
-        public bool prerelease { get; set; }
-        public DateTime created_at { get; set; }
-        public DateTime published_at { get; set; }
-        public List<Asset>? assets { get; set; }
-        public string? tarball_url { get; set; }
-        public string? zipball_url { get; set; }
-        public string? body { get; set; }
+        [JsonProperty("tag_name")] public string? TagName { get; set; }
+        [JsonProperty("html_url")] public string? HtmlUrl { get; set; }
+        [JsonProperty("body")] public string? Body { get; set; }
     }
 
     class Updater
     {
-        static readonly string CURRENT_RELEASE_TAG = "v16";
+        static readonly string CurrentReleaseTag = "v16";
         static readonly HttpClient client;
 
         static Updater()
@@ -102,7 +27,7 @@ namespace Circle_Tracker
             client.DefaultRequestHeaders.Add("User-Agent", "Circle-Tracker");
         }
 
-        public static async void CheckForUpdates()
+        public static async Task CheckForUpdates()
         {
             Release? latestRelease = null;
             try
@@ -117,18 +42,19 @@ namespace Circle_Tracker
             catch (Exception e)
             {
                 Console.Error.WriteLine(
-                    $"Update check failed. You have version {CURRENT_RELEASE_TAG}. " +
+                    $"Update check failed. You have version {CurrentReleaseTag}. " +
                     $"Check https://github.com/FunOrange/circle-tracker/releases/latest\n{e.Message}");
                 return;
             }
 
             if (latestRelease == null) return;
-            if (latestRelease.tag_name == CURRENT_RELEASE_TAG) return;
+            if (latestRelease.TagName == CurrentReleaseTag) return;
 
             Console.WriteLine(
-                $"Update available: {latestRelease.tag_name}\n" +
-                $"Release notes: {latestRelease.body}\n" +
-                $"Download: {latestRelease.html_url}");
+                $"Update available: {latestRelease.TagName}\n" +
+                $"Release notes: {latestRelease.Body}\n" +
+                $"Download: {latestRelease.HtmlUrl}");
         }
     }
 }
+
