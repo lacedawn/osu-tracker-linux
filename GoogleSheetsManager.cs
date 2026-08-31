@@ -302,62 +302,38 @@ namespace Circle_Tracker
             }
         }
 
-        private async Task AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
+        private string? GetSkipReason(PlayEntryData data, bool isReplay, int rawMods,
+            int currentGameMode, DateTime lastPostTime)
         {
-            Console.WriteLine($"[CircleTracker] Checking submission: Complete={data.Complete}, Hits={data.TotalBeatmapHits}, Replay={isReplay}, Mode={currentGameMode}, SheetsReady={SheetsApiReady}");
-
-            if (!SheetsApiReady)
-            {
-                Console.WriteLine("[CircleTracker] Skipped post: Sheets API not connected.");
-                return;
-            }
-            if (isReplay)
-            {
-                Console.WriteLine("[CircleTracker] Skipped post: Replay play detected.");
-                return;
-            }
-            if (currentGameMode != 0)
-            {
-                Console.WriteLine($"[CircleTracker] Skipped post: Game mode ({currentGameMode}) is not osu!standard.");
-                return;
-            }
+            if (!SheetsApiReady) return "Sheets API not connected";
+            if (isReplay) return "Replay detected";
+            if (currentGameMode != 0) return $"Non-standard game mode ({currentGameMode})";
             var mods = (OsuMods)rawMods;
             if (mods.HasFlag(OsuMods.Autoplay) || mods.HasFlag(OsuMods.Relax) || mods.HasFlag(OsuMods.Autopilot))
-            {
-                Console.WriteLine($"[CircleTracker] Skipped post: Disallowed mods active ({rawMods}).");
-                return;
-            }
-
-            var timeSinceLastPost = DateTime.Now.Subtract(lastPostTime);
-            if (timeSinceLastPost.TotalSeconds < RateLimitSeconds)
-            {
-                Console.WriteLine($"[CircleTracker] Skipped post: Rate limited (<3s since last post).");
-                return;
-            }
-            setLastPostTime(DateTime.Now);
-
+                return $"Disallowed mods ({rawMods})";
+            if ((DateTime.Now - lastPostTime).TotalSeconds < RateLimitSeconds)
+                return $"Rate limited (<{RateLimitSeconds}s since last post)";
             if (data.TotalBeatmapHits < MinHitsToSubmit)
-            {
-                Console.WriteLine($"[CircleTracker] Skipped post: Total hits ({data.TotalBeatmapHits}) is below 40.");
-                return;
-            }
+                return $"Hit count below minimum ({data.TotalBeatmapHits} < {MinHitsToSubmit})";
+            return null;
+        }
 
+        private List<object> BuildRowData(PlayEntryData data)
+        {
             decimal calculatedAccuracy =
-                100 * (300M * data.Play300c + 100M * data.Play100c + 50M * data.Play50c)
-                / (300M * (data.Play300c + data.Play100c + data.Play50c + data.PlayMissc));
-
+                (data.Play300c + data.Play100c + data.Play50c + data.PlayMissc) > 0
+                ? 100M * (300M * data.Play300c + 100M * data.Play100c + 50M * data.Play50c)
+                  / (300M * (data.Play300c + data.Play100c + data.Play50c + data.PlayMissc))
+                : 0M;
+            decimal accuracy = data.AccuracyReliable ? data.Accuracy : calculatedAccuracy;
             string dateTimeFormat = "yyyy'-'MM'-'dd h':'mm tt";
             string escapedName = (data.BeatmapString ?? "").Replace("\"", "\"\"");
-            string modsString = data.ModsString;
-            if (modsString != "") modsString = $" +{modsString}";
-
+            string modsLabel = data.ModsString.Length > 0 ? $" +{data.ModsString}" : "";
             string sep = _getFunctionSeparator();
-            var range = $"'{SheetName}'!A:X";
-            var valueRange = new ValueRange();
-            var writeData = new List<object>
+            return new List<object>
             {
                 DateTime.Now.ToString(dateTimeFormat, CultureInfo.InvariantCulture),
-                $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{data.BeatmapSetID}#osu/{data.BeatmapID}\"{sep} \"{escapedName + modsString}\")",
+                $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{data.BeatmapSetID}#osu/{data.BeatmapID}\"{sep} \"{escapedName + modsLabel}\")",
                 data.Hidden     ? "1" : "",
                 data.Hardrock   ? "1" : "",
                 data.Doubletime ? "1" : "",
@@ -369,7 +345,7 @@ namespace Circle_Tracker
                 data.BeatmapAr,
                 data.BeatmapOd,
                 data.TotalBeatmapHits,
-                data.AccuracyReliable ? data.Accuracy : calculatedAccuracy,
+                accuracy,
                 data.Play300c,
                 data.Play100c,
                 data.Play50c,
@@ -381,73 +357,83 @@ namespace Circle_Tracker
                 data.PlayCount,
                 data.PlayTimeSeconds
             };
-            valueRange.Values = new List<IList<object>> { writeData };
+        }
 
-            Console.WriteLine($"[CircleTracker] Sending append request to Google Sheets ({range})...");
+        private async Task<AppendValuesResponse> SubmitRowAsync(List<object> rowData, CancellationToken ct)
+        {
+            string range = $"'{SheetName}'!A:X";
+            var valueRange = new ValueRange { Values = new List<IList<object>> { rowData } };
             var appendRequest = _sheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-
-            AppendValuesResponse? appendResponse = null;
+            Console.WriteLine($"[CircleTracker] Appending row to Google Sheets ({range})...");
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
                 {
-                    appendResponse = await appendRequest.ExecuteAsync(ct);
-                    break;
+                    return await appendRequest.ExecuteAsync(ct);
                 }
-                catch (GoogleApiException ex) when (
-                    (int)ex.HttpStatusCode == 429 || (int)ex.HttpStatusCode == 503)
+                catch (GoogleApiException ex) when ((int)ex.HttpStatusCode is 429 or 503)
                 {
-                    Console.Error.WriteLine($"[CircleTracker] Transient error on attempt {i + 1}: {ex.HttpStatusCode}");
                     if (i == MaxSubmitAttempts - 1) throw;
-                    await Task.Delay(BaseRetryDelayMs * (1 << i), ct);
+                    int delayMs = BaseRetryDelayMs * (1 << i);
+                    Console.Error.WriteLine($"[CircleTracker] Transient error ({ex.HttpStatusCode}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs, ct);
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[CircleTracker] Submit attempt {i + 1} failed: {ex.Message}");
                     if (i == MaxSubmitAttempts - 1) throw;
+                    Console.Error.WriteLine($"[CircleTracker] Submit attempt {i + 1} failed: {ex.Message}");
                 }
             }
+            throw new InvalidOperationException("Unreachable");
+        }
 
-            Console.WriteLine($"[CircleTracker] Play successfully logged to Google Sheets!");
-
-            if (submitSoundEnabled)
+        private async Task ExpandSheetIfNeededAsync(AppendValuesResponse response, CancellationToken ct)
+        {
+            string updatedRange = response.Updates?.UpdatedRange ?? "";
+            int bangIndex = updatedRange.IndexOf('!');
+            if (bangIndex < 0) return;
+            string endCell = updatedRange.Substring(bangIndex + 1);
+            if (endCell.Contains(':'))
+                endCell = endCell.Substring(endCell.IndexOf(':') + 1);
+            string rowStr = new string(endCell.SkipWhile(char.IsLetter).ToArray());
+            if (!int.TryParse(rowStr, out int updatedRow)) return;
+            if (updatedRow > SheetRows)
             {
-                Console.WriteLine($"[CircleTracker] Playing submission sound ({soundFilePath})...");
-                SoundHelper.PlaySound(soundFilePath);
-            }
-
-            if (appendResponse != null)
-            {
-                int updatedRow = 0;
-                string updatedRange = appendResponse.Updates.UpdatedRange;
-                int bangIndex = updatedRange.IndexOf('!');
-                if (bangIndex >= 0)
+                var req = new Request
                 {
-                    string cellRange = updatedRange.Substring(bangIndex + 1);
-                    string endCell = cellRange.Contains(':')
-                        ? cellRange.Substring(cellRange.IndexOf(':') + 1)
-                        : cellRange;
-                    string rowStr = new string(endCell.SkipWhile(char.IsLetter).ToArray());
-                    if (int.TryParse(rowStr, out int row))
-                        updatedRow = row;
-                }
-
-                if (updatedRow > SheetRows)
-                {
-                    var req = new Request();
-                    req.AppendDimension = new AppendDimensionRequest
+                    AppendDimension = new AppendDimensionRequest
                     {
                         Dimension = "ROWS",
                         SheetId = _rawDataSheet!.Properties.SheetId,
                         Length = RowExpansionBatchSize
-                    };
-                    var b1 = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { req } };
-                    await _sheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId).ExecuteAsync(ct);
-                    await ResizeNamedRanges(_userSpreadsheet!, updatedRow + RowExpansionBatchSize, ct);
-                    SheetRows = updatedRow + RowExpansionBatchSize;
-                }
+                    }
+                };
+                var batch = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { req } };
+                await _sheetsService!.Spreadsheets.BatchUpdate(batch, SpreadsheetId).ExecuteAsync(ct);
+                await ResizeNamedRanges(_userSpreadsheet!, updatedRow + RowExpansionBatchSize, ct);
+                SheetRows = updatedRow + RowExpansionBatchSize;
+                Console.WriteLine($"[CircleTracker] Sheet expanded to {SheetRows} rows.");
             }
+        }
+
+        private async Task AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
+            DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath,
+            bool submitSoundEnabled, CancellationToken ct)
+        {
+            string? skipReason = GetSkipReason(data, isReplay, rawMods, currentGameMode, lastPostTime);
+            if (skipReason != null)
+            {
+                Console.WriteLine($"[CircleTracker] Skipped post: {skipReason}");
+                return;
+            }
+            setLastPostTime(DateTime.Now);
+            List<object> rowData = BuildRowData(data);
+            AppendValuesResponse response = await SubmitRowAsync(rowData, ct);
+            Console.WriteLine("[CircleTracker] Play successfully logged to Google Sheets!");
+            if (submitSoundEnabled)
+                SoundHelper.PlaySound(soundFilePath);
+            await ExpandSheetIfNeededAsync(response, ct);
         }
     }
 }
