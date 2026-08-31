@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -181,35 +182,48 @@ namespace Circle_Tracker
             {
                 try
                 {
+                    var panel = new StackPanel
+                    {
+                        Spacing = 16
+                    };
+
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa)),
+                        FontSize = 13
+                    });
+
+                    var okBtn = new Button
+                    {
+                        Content = "OK",
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Classes = { "primary-action" }
+                    };
+
+                    panel.Children.Add(okBtn);
+
+                    var border = new Border
+                    {
+                        Classes = { "hud-card" },
+                        Margin = new Thickness(12),
+                        Padding = new Thickness(16),
+                        Child = panel
+                    };
+
                     var dlg = new Window
                     {
                         Title = title,
-                        Width = 460,
-                        Height = 220,
+                        Width = 440,
+                        Height = 200,
+                        CanResize = false,
                         WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                        Content = new StackPanel
-                        {
-                            Margin = new Avalonia.Thickness(20),
-                            Spacing = 16,
-                            Children =
-                            {
-                                new TextBlock
-                                {
-                                    Text = message,
-                                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                                    Foreground = Brushes.White
-                                },
-                                new Button
-                                {
-                                    Content = "OK",
-                                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                                    Padding = new Avalonia.Thickness(20, 6)
-                                }
-                            }
-                        }
+                        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x12, 0x1d)),
+                        Content = border
                     };
-                    var btn = ((StackPanel)dlg.Content!).Children[1] as Button;
-                    if (btn != null) btn.Click += (_, _) => dlg.Close();
+
+                    okBtn.Click += (_, _) => dlg.Close();
 
                     if (this.IsLoaded && this.IsVisible)
                         await dlg.ShowDialog(this);
@@ -231,34 +245,64 @@ namespace Circle_Tracker
                 try
                 {
                     bool result = false;
-                    var panel = new StackPanel { Margin = new Avalonia.Thickness(20), Spacing = 16 };
+                    var panel = new StackPanel
+                    {
+                        Spacing = 16
+                    };
+
                     panel.Children.Add(new TextBlock
                     {
                         Text = message,
-                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                        Foreground = Brushes.White
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa)),
+                        FontSize = 13
                     });
+
                     var btnRow = new StackPanel
                     {
                         Orientation = Avalonia.Layout.Orientation.Horizontal,
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                         Spacing = 8
                     };
-                    var dlg = new Window
+
+                    var yesBtn = new Button
                     {
-                        Title = title,
-                        Width = 460,
-                        Height = 200,
-                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                        Content = panel
+                        Content = "Yes",
+                        Classes = { "primary-action" }
                     };
-                    var yesBtn = new Button { Content = "Yes", Padding = new Avalonia.Thickness(20, 6) };
-                    var noBtn = new Button { Content = "No", Padding = new Avalonia.Thickness(20, 6) };
-                    yesBtn.Click += (_, _) => { result = true; dlg.Close(); };
-                    noBtn.Click += (_, _) => { result = false; dlg.Close(); };
+
+                    var noBtn = new Button
+                    {
+                        Content = "No",
+                        Classes = { "secondary-flat" }
+                    };
+
                     btnRow.Children.Add(yesBtn);
                     btnRow.Children.Add(noBtn);
                     panel.Children.Add(btnRow);
+
+                    var border = new Border
+                    {
+                        Classes = { "hud-card" },
+                        Margin = new Thickness(12),
+                        Padding = new Thickness(16),
+                        Child = panel
+                    };
+
+                    Window dlg = null!;
+                    dlg = new Window
+                    {
+                        Title = title,
+                        Width = 440,
+                        Height = 200,
+                        CanResize = false,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x12, 0x1d)),
+                        Content = border
+                    };
+
+                    yesBtn.Click += (_, _) => { result = true; dlg.Close(); };
+                    noBtn.Click += (_, _) => { result = false; dlg.Close(); };
 
                     if (this.IsLoaded && this.IsVisible)
                         await dlg.ShowDialog(this);
@@ -348,6 +392,9 @@ namespace Circle_Tracker
             BeatmapArtistText.Text = !string.IsNullOrEmpty(s.BeatmapArtist) ? s.BeatmapArtist : "-";
             BeatmapVersionText.Text = !string.IsNullOrEmpty(s.BeatmapVersion) ? s.BeatmapVersion : "-";
             BeatmapStarsBadge.Text = $"★ {s.BeatmapStars:0.00}";
+
+            ToolTip.SetTip(BeatmapTitleText, BeatmapTitleText.Text);
+            ToolTip.SetTip(BeatmapArtistText, BeatmapArtistText.Text);
 
             LoadCoverImage(s.CoverUrl);
 

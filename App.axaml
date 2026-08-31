@@ -42,6 +42,9 @@
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12" />
         </Style>
+        <Style Selector="Border.hud-card:pointerover">
+            <Setter Property="BorderBrush" Value="#433868" />
+        </Style>
 
         <Style Selector="Border.status-pill">
             <Setter Property="Background" Value="#1d192b" />
