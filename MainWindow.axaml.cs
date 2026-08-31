@@ -30,9 +30,9 @@ namespace Circle_Tracker
 
         private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0xde, 0x80));
         private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xf8, 0x71, 0x71));
-        private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x38, 0xbd, 0xf8));
+        private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x7d, 0xd3, 0xfc));
         private static readonly IBrush OrangeBrush = new SolidColorBrush(Color.FromRgb(0xfb, 0x92, 0x3c));
-        private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x93, 0x8b, 0xa8));
+        private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x8f, 0x87, 0xa3));
 
         private static readonly HttpClient _imageHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
         private readonly ConcurrentDictionary<string, Bitmap> _coverCache = new();
@@ -135,9 +135,11 @@ namespace Circle_Tracker
         {
             Dispatcher.UIThread.Post(() =>
             {
-                CredentialsLabel.Text = found ? "Found" : "Missing";
-                CredentialsLabel.Classes.Remove(found ? "status-disconnected" : "status-connected");
-                CredentialsLabel.Classes.Add(found ? "status-connected" : "status-disconnected");
+                if (CredentialsLabel != null)
+                {
+                    CredentialsLabel.Text = found ? "Found" : "Missing";
+                    CredentialsLabel.Foreground = found ? GreenBrush : RedBrush;
+                }
             });
         }
 
@@ -145,10 +147,6 @@ namespace Circle_Tracker
         {
             Dispatcher.UIThread.Post(() =>
             {
-                StatusLabel.Text = val ? "Connected" : "Not connected";
-                StatusLabel.Classes.Remove(val ? "status-disconnected" : "status-connected");
-                StatusLabel.Classes.Add(val ? "status-connected" : "status-disconnected");
-
                 SheetsStatusDot.Fill = val ? GreenBrush : RedBrush;
                 SheetsStatusText.Text = val ? "Sheets: Connected" : "Sheets: Not connected";
             });
@@ -163,8 +161,12 @@ namespace Circle_Tracker
                 int idle = s.IdleSeconds;
                 float total = playing + idle;
                 float eff = total > 0 ? 100f * playing / total : 0f;
-                TimeLabelText.Text =
-                    $"Playing: {playing}  Idle: {idle}  Efficiency: {(int)eff}%";
+                int playingMin = playing / 60;
+                int idleMin = idle / 60;
+                if (SessionTimeText != null)
+                    SessionTimeText.Text = $"Playing: {playingMin}m  Idle: {idleMin}m ({(int)eff}%)";
+                if (TimeLabelText != null)
+                    TimeLabelText.Text = $"Playing: {playing}s  Idle: {idle}s  Efficiency: {(int)eff}%";
             });
         }
 
@@ -329,13 +331,6 @@ namespace Circle_Tracker
         private void UpdateControls()
         {
             var s = _tracker.GetSnapshot();
-            bool playing = s.IsPlaying && s.SheetsApiReady;
-            bool valsBad = s.BeatmapStars == 0
-                        && s.BeatmapAim == 0
-                        && s.BeatmapSpeed == 0
-                        && s.BeatmapCs == 0
-                        && s.BeatmapAr == 0
-                        && s.BeatmapOd == 0;
 
             TosuStatusDot.Fill = _tosuClient.IsConnected ? GreenBrush : RedBrush;
             TosuStatusText.Text = _tosuClient.IsConnected ? $"tosu: {s.DetectedClient}" : "tosu: Connecting...";
@@ -356,34 +351,30 @@ namespace Circle_Tracker
 
             LoadCoverImage(s.CoverUrl);
 
-            BeatmapInfoGrid.Background = playing
-                ? new SolidColorBrush(Color.FromRgb(0x1a, 0x3a, 0x1e))
-                : Brushes.Transparent;
+            StatCsText.Text = s.BeatmapCs.ToString("0.0");
+            StatArText.Text = s.BeatmapAr.ToString("0.0");
+            StatOdText.Text = s.BeatmapOd.ToString("0.0");
+            StatHpText.Text = s.BeatmapHp.ToString("0.0");
+            StatBpmText.Text = s.BeatmapBpm.ToString();
+            StatModsText.Text = !string.IsNullOrEmpty(s.ModsString) ? $"+{s.ModsString}" : "None";
 
-            HitsTextBox.Text = $"{s.TotalBeatmapHits} ({s.Play300c}, {s.Play100c}, {s.Play50c}, {s.PlayMissc})";
-            TimeTextBox.Text = s.Time.ToString();
-            StarsTextBox.Text = s.BeatmapStars.ToString("0.00");
-            AimTextBox.Text = s.BeatmapAim.ToString("0.00");
-            SpeedTextBox.Text = s.BeatmapSpeed.ToString("0.00");
-            ModsTextBox.Text = s.ModsString;
-            TextBoxCS.Text = s.BeatmapCs.ToString("0.0");
-            TextBoxAR.Text = s.BeatmapAr.ToString("0.0");
-            TextBoxOD.Text = s.BeatmapOd.ToString("0.0");
-            AccTextBox.Text = s.Accuracy.ToString("0.00") + "%";
-            BpmTextBox.Text = s.BeatmapBpm.ToString();
+            Hits300Text.Text = s.Play300c.ToString();
+            Hits100Text.Text = s.Play100c.ToString();
+            Hits50Text.Text = s.Play50c.ToString();
+            HitsMissText.Text = s.PlayMissc.ToString();
+            TotalObjectsText.Text = $"Total: {s.TotalBeatmapHits}";
 
-            SetReadonlyFieldBad(StarsTextBox, valsBad);
-            SetReadonlyFieldBad(AimTextBox, valsBad);
-            SetReadonlyFieldBad(SpeedTextBox, valsBad);
-            SetReadonlyFieldBad(TextBoxCS, valsBad);
-            SetReadonlyFieldBad(TextBoxAR, valsBad);
-            SetReadonlyFieldBad(TextBoxOD, valsBad);
-        }
+            AccuracyText.Text = $"{s.Accuracy:0.00}%";
+            PlayCountBadge.Text = $"Play #{s.PlayCount}";
 
-        private static void SetReadonlyFieldBad(TextBox tb, bool bad)
-        {
-            if (bad) tb.Classes.Add("bad-value");
-            else tb.Classes.Remove("bad-value");
+            int playing = s.PlayingSeconds;
+            int idle = s.IdleSeconds;
+            float total = playing + idle;
+            float eff = total > 0 ? 100f * playing / total : 0f;
+            int playingMin = playing / 60;
+            int idleMin = idle / 60;
+            SessionTimeText.Text = $"Playing: {playingMin}m  Idle: {idleMin}m ({(int)eff}%)";
+            TimeLabelText.Text = $"Playing: {playing}s  Idle: {idle}s  Efficiency: {(int)eff}%";
         }
 
         protected override void OnClosing(WindowClosingEventArgs e)
@@ -423,6 +414,12 @@ namespace Circle_Tracker
                 try { _tracker.InitGoogleAPI(); }
                 catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
             });
+        }
+
+        private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)
+        {
+            SettingsPanel.IsVisible = !SettingsPanel.IsVisible;
+            SettingsToggleButton.Content = SettingsPanel.IsVisible ? "▲ Hide Settings" : "⚙ Settings ▼";
         }
 
         private void StartupCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)

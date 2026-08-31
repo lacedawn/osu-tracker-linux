@@ -71,7 +71,8 @@ namespace Circle_Tracker
         bool SheetsApiReady,
         bool MemoryReadError,
         int PlayingSeconds,
-        int IdleSeconds
+        int IdleSeconds,
+        int PlayCount = 0
     )
     {
         public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";
@@ -348,7 +349,8 @@ namespace Circle_Tracker
                 SheetsApiReady: SheetsApiReady,
                 MemoryReadError: MemoryReadError,
                 PlayingSeconds: PlayingSeconds,
-                IdleSeconds: IdleSeconds
+                IdleSeconds: IdleSeconds,
+                PlayCount: _consecutivePlayCount
             );
         }
 

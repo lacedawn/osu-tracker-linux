@@ -3,115 +3,111 @@
              x:Class="Circle_Tracker.App"
              RequestedThemeVariant="Dark">
     <Application.Resources>
-        <Color x:Key="BackgroundDarkColor">#161320</Color>
-        <Color x:Key="CardBackgroundColor">#201a30</Color>
-        <Color x:Key="CardBorderColor">#332a4d</Color>
-        <Color x:Key="ChipBackgroundColor">#2b2244</Color>
-        <Color x:Key="AccentPinkColor">#ff5599</Color>
-        <Color x:Key="AccentPurpleColor">#9333ea</Color>
-        <Color x:Key="AccentCyanColor">#38bdf8</Color>
+        <Color x:Key="BackgroundDarkColor">#14121d</Color>
+        <Color x:Key="CardBackgroundColor">#1d192b</Color>
+        <Color x:Key="CardBorderColor">#2e2744</Color>
+        <Color x:Key="ChipBackgroundColor">#252038</Color>
+        <Color x:Key="AccentPinkColor">#e11d48</Color>
+        <Color x:Key="AccentPurpleColor">#a855f7</Color>
+        <Color x:Key="AccentCyanColor">#7dd3fc</Color>
         <Color x:Key="AccentGreenColor">#4ade80</Color>
         <Color x:Key="AccentOrangeColor">#fb923c</Color>
         <Color x:Key="AccentRedColor">#f87171</Color>
         <Color x:Key="AccentGoldColor">#facc15</Color>
-        <Color x:Key="TextPrimaryColor">#f1f0f7</Color>
-        <Color x:Key="TextMutedColor">#938ba8</Color>
+        <Color x:Key="TextPrimaryColor">#f5f4fa</Color>
+        <Color x:Key="TextMutedColor">#8f87a3</Color>
 
-        <SolidColorBrush x:Key="BackgroundDark" Color="#161320" />
-        <SolidColorBrush x:Key="CardBackground" Color="#201a30" />
-        <SolidColorBrush x:Key="CardBorder" Color="#332a4d" />
-        <SolidColorBrush x:Key="ChipBackground" Color="#2b2244" />
-        <SolidColorBrush x:Key="AccentPink" Color="#ff5599" />
-        <SolidColorBrush x:Key="AccentPurple" Color="#9333ea" />
-        <SolidColorBrush x:Key="AccentCyan" Color="#38bdf8" />
+        <SolidColorBrush x:Key="BackgroundDark" Color="#14121d" />
+        <SolidColorBrush x:Key="CardBackground" Color="#1d192b" />
+        <SolidColorBrush x:Key="CardBorder" Color="#2e2744" />
+        <SolidColorBrush x:Key="ChipBackground" Color="#252038" />
+        <SolidColorBrush x:Key="AccentPink" Color="#e11d48" />
+        <SolidColorBrush x:Key="AccentPurple" Color="#a855f7" />
+        <SolidColorBrush x:Key="AccentCyan" Color="#7dd3fc" />
         <SolidColorBrush x:Key="AccentGreen" Color="#4ade80" />
         <SolidColorBrush x:Key="AccentOrange" Color="#fb923c" />
         <SolidColorBrush x:Key="AccentRed" Color="#f87171" />
         <SolidColorBrush x:Key="AccentGold" Color="#facc15" />
-        <SolidColorBrush x:Key="TextPrimary" Color="#f1f0f7" />
-        <SolidColorBrush x:Key="TextMuted" Color="#938ba8" />
+        <SolidColorBrush x:Key="TextPrimary" Color="#f5f4fa" />
+        <SolidColorBrush x:Key="TextMuted" Color="#8f87a3" />
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
 
         <Style Selector="Border.hud-card">
-            <Setter Property="Background" Value="#201a30" />
-            <Setter Property="BorderBrush" Value="#332a4d" />
+            <Setter Property="Background" Value="#1d192b" />
+            <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="10" />
-        </Style>
-
-        <Style Selector="Border.stat-chip">
-            <Setter Property="Background" Value="#2b2244" />
-            <Setter Property="BorderBrush" Value="#3a3055" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Padding" Value="12" />
         </Style>
 
         <Style Selector="Border.status-pill">
-            <Setter Property="Background" Value="#201a30" />
-            <Setter Property="BorderBrush" Value="#332a4d" />
+            <Setter Property="Background" Value="#1d192b" />
+            <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="Padding" Value="8,4" />
         </Style>
 
-        <Style Selector="Button.primary-gradient">
-            <Setter Property="Background">
-                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                    <GradientStop Offset="0" Color="#ff5599" />
-                    <GradientStop Offset="1" Color="#9333ea" />
-                </LinearGradientBrush>
-            </Setter>
-            <Setter Property="Foreground" Value="White" />
+        <Style Selector="Button.primary-action">
+            <Setter Property="Background" Value="#e11d48" />
+            <Setter Property="Foreground" Value="#ffffff" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Padding" Value="16,8" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
         </Style>
-        <Style Selector="Button.primary-gradient:pointerover /template/ ContentPresenter">
-            <Setter Property="Background">
-                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                    <GradientStop Offset="0" Color="#ff66aa" />
-                    <GradientStop Offset="1" Color="#a855f7" />
-                </LinearGradientBrush>
-            </Setter>
-            <Setter Property="Foreground" Value="White" />
+        <Style Selector="Button.primary-action:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#f43f5e" />
+            <Setter Property="Foreground" Value="#ffffff" />
         </Style>
 
         <Style Selector="Button.secondary-flat">
-            <Setter Property="Background" Value="#2b2244" />
-            <Setter Property="Foreground" Value="#f1f0f7" />
+            <Setter Property="Background" Value="#252038" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="12,6" />
-            <Setter Property="BorderBrush" Value="#3a3055" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
         </Style>
         <Style Selector="Button.secondary-flat:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#3a3055" />
+            <Setter Property="Background" Value="#322b4a" />
             <Setter Property="Foreground" Value="#ffffff" />
         </Style>
 
+        <Style Selector="Button.ghost-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#8f87a3" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.ghost-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#252038" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
+        </Style>
+
         <Style Selector="TextBox.osu-input">
-            <Setter Property="Background" Value="#1a1528" />
-            <Setter Property="Foreground" Value="#f1f0f7" />
-            <Setter Property="BorderBrush" Value="#3a3055" />
+            <Setter Property="Background" Value="#171324" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
+            <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="5" />
-            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="TextBox.osu-input:focus /template/ Border#PART_BorderElement">
-            <Setter Property="BorderBrush" Value="#ff5599" />
-            <Setter Property="Background" Value="#1a1528" />
+            <Setter Property="BorderBrush" Value="#a855f7" />
+            <Setter Property="Background" Value="#171324" />
         </Style>
 
         <Style Selector="CheckBox.osu-check">
-            <Setter Property="Foreground" Value="#f1f0f7" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
             <Setter Property="FontSize" Value="12" />
         </Style>
     </Application.Styles>
