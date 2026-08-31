@@ -168,9 +168,7 @@ namespace Circle_Tracker
                 int playingMin = playing / 60;
                 int idleMin = idle / 60;
                 if (SessionTimeText != null)
-                    SessionTimeText.Text = $"Playing: {playingMin}m  Idle: {idleMin}m ({(int)eff}%)";
-                if (TimeLabelText != null)
-                    TimeLabelText.Text = $"Playing: {playing}s  Idle: {idle}s  Efficiency: {(int)eff}%";
+                    SessionTimeText.Text = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
             });
         }
 
@@ -444,8 +442,7 @@ namespace Circle_Tracker
             float eff = total > 0 ? 100f * playing / total : 0f;
             int playingMin = playing / 60;
             int idleMin = idle / 60;
-            SessionTimeText.Text = $"Playing: {playingMin}m  Idle: {idleMin}m ({(int)eff}%)";
-            TimeLabelText.Text = $"Playing: {playing}s  Idle: {idle}s  Efficiency: {(int)eff}%";
+            SessionTimeText.Text = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
         }
 
         protected override void OnClosing(WindowClosingEventArgs e)

@@ -3,182 +3,175 @@
         xmlns:local="using:Circle_Tracker"
         x:Class="Circle_Tracker.MainWindow"
         Title="Circle Tracker"
-        Width="640"
-        MinWidth="600"
-        Height="400"
-        MinHeight="380"
+        Width="600"
+        MinWidth="560"
+        Height="380"
+        MinHeight="360"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
         Background="#14121d">
 
   <Panel>
-    <local:TrianglesControl Velocity="6" TriangleCount="20" TriangleBrush="#12ffffff" IsHitTestVisible="False"/>
+    <local:TrianglesControl Velocity="6" TriangleCount="18" TriangleBrush="#0effffff" IsHitTestVisible="False"/>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="16">
-      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-        <Border Grid.Column="0" Classes="status-pill">
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Ellipse x:Name="TosuStatusDot" Width="8" Height="8" Fill="#f87171"/>
-            <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#f5f4fa" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
+
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Ellipse x:Name="TosuStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
           </StackPanel>
-        </Border>
 
-        <Border Grid.Column="1" Classes="status-pill" HorizontalAlignment="Center">
-          <TextBlock x:Name="GameStateBadge" Text="IDLE" Foreground="#8f87a3" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
-        </Border>
+          <TextBlock Grid.Column="1" x:Name="GameStateBadge" Text="IDLE" Foreground="#8f87a3" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-        <Border Grid.Column="2" Classes="status-pill">
-          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Ellipse x:Name="SheetsStatusDot" Width="8" Height="8" Fill="#f87171"/>
-            <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#f5f4fa" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Border>
-      </Grid>
-
-      <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,8" Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1">
-        <Grid>
-          <Image x:Name="CoverImage" Stretch="UniformToFill"/>
-          <local:TrianglesControl x:Name="BannerTriangles" Velocity="10" TriangleCount="14" TriangleBrush="#30ffffff" IsHitTestVisible="False"/>
-          <Border>
-            <Border.Background>
-              <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-                <GradientStop Offset="0.0" Color="#c014121d"/>
-                <GradientStop Offset="0.45" Color="#6014121d"/>
-                <GradientStop Offset="1.0" Color="#1014121d"/>
-              </LinearGradientBrush>
-            </Border.Background>
-          </Border>
-          <Grid ColumnDefinitions="*,Auto" Margin="14,10">
-            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
-              <TextBlock x:Name="BeatmapTitleText" Classes="banner-title" Text="No beatmap detected" TextTrimming="CharacterEllipsis"/>
-              <TextBlock x:Name="BeatmapArtistText" Classes="banner-artist" Text="-" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+          <Button Grid.Column="2" Classes="ghost-btn" Click="ConnectApiButton_Click" Padding="4,2" Cursor="Hand" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Ellipse x:Name="SheetsStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
+              <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="6">
-              <Border x:Name="BeatmapVersionBorder" CornerRadius="12" Background="#50000000" BorderBrush="#30ffffff" BorderThickness="1" Padding="10,4" HorizontalAlignment="Right">
-                <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" FontWeight="SemiBold" Foreground="#f5f4fa"/>
-              </Border>
-              <Border x:Name="BeatmapStarsBorder" CornerRadius="12" Background="#50000000" BorderBrush="#30facc15" BorderThickness="1" Padding="10,4" HorizontalAlignment="Right">
-                <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="13" FontWeight="Bold" Foreground="#facc15"/>
-              </Border>
-            </StackPanel>
-          </Grid>
+          </Button>
         </Grid>
-      </Border>
 
-      <Grid Grid.Row="2" ColumnDefinitions="*,*" Margin="0,0,0,8">
-        <Border Grid.Column="0" Classes="hud-card" Margin="0,0,4,0">
-          <StackPanel Spacing="6">
-            <TextBlock Classes="stat-label" Text="LIVE HITS"/>
-            <Grid ColumnDefinitions="*,*,*,*">
-              <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-                <TextBlock Classes="stat-label" Text="300" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="Hits300Text" Text="0" FontSize="18" FontWeight="Bold" Foreground="#7dd3fc" HorizontalAlignment="Center"/>
+        <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,14" Background="#221c34">
+          <Grid>
+            <Image x:Name="CoverImage" Stretch="UniformToFill"/>
+            <local:TrianglesControl x:Name="BannerTriangles" Velocity="8" TriangleCount="14" TriangleBrush="#25ffffff" IsHitTestVisible="False"/>
+            <Border>
+              <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                  <GradientStop Offset="0.0" Color="#9914121d"/>
+                  <GradientStop Offset="0.45" Color="#4014121d"/>
+                  <GradientStop Offset="1.0" Color="#0014121d"/>
+                </LinearGradientBrush>
+              </Border.Background>
+            </Border>
+            <Grid ColumnDefinitions="*,Auto" Margin="14,10">
+              <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+                <TextBlock x:Name="BeatmapTitleText" Classes="banner-title" Text="No beatmap detected" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="BeatmapArtistText" Classes="banner-artist" Text="-" Foreground="#f1f0f7" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
-              <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                <TextBlock Classes="stat-label" Text="100" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="Hits100Text" Text="0" FontSize="18" FontWeight="Bold" Foreground="#4ade80" HorizontalAlignment="Center"/>
-              </StackPanel>
-              <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                <TextBlock Classes="stat-label" Text="50" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="Hits50Text" Text="0" FontSize="18" FontWeight="Bold" Foreground="#fb923c" HorizontalAlignment="Center"/>
-              </StackPanel>
-              <StackPanel Grid.Column="3" HorizontalAlignment="Center">
-                <TextBlock Classes="stat-label" Text="MISS" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="HitsMissText" Text="0" FontSize="18" FontWeight="Bold" Foreground="#f87171" HorizontalAlignment="Center"/>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="6">
+                <Border x:Name="BeatmapVersionBorder" CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
+                  <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" FontWeight="Bold" Foreground="#f5f4fa"/>
+                </Border>
+                <Border x:Name="BeatmapStarsBorder" CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
+                  <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="13" FontWeight="Bold" Foreground="#facc15"/>
+                </Border>
               </StackPanel>
             </Grid>
-            <TextBlock x:Name="TotalObjectsText" Classes="stat-label" Text="Total: 0" HorizontalAlignment="Right"/>
-          </StackPanel>
+          </Grid>
         </Border>
 
-        <Border Grid.Column="1" Classes="hud-card" Margin="4,0,0,0">
-          <StackPanel Spacing="6">
-            <TextBlock Classes="stat-label" Text="ACCURACY &amp; SESSION"/>
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+          <Grid Grid.Column="0" ColumnDefinitions="*,*,*,*" Margin="4,0,24,0" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" HorizontalAlignment="Left">
+              <TextBlock Classes="stat-label" Text="CS"/>
+              <TextBlock x:Name="StatCsText" Classes="hero-stat-value" Text="0.0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Left">
+              <TextBlock Classes="stat-label" Text="AR"/>
+              <TextBlock x:Name="StatArText" Classes="hero-stat-value" Text="0.0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" HorizontalAlignment="Left">
+              <TextBlock Classes="stat-label" Text="OD"/>
+              <TextBlock x:Name="StatOdText" Classes="hero-stat-value" Text="0.0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3" HorizontalAlignment="Left">
+              <TextBlock Classes="stat-label" Text="HP"/>
+              <TextBlock x:Name="StatHpText" Classes="hero-stat-value" Text="0.0"/>
+            </StackPanel>
+          </Grid>
+
+          <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
             <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-              <TextBlock Grid.Column="0" x:Name="AccuracyText" Classes="hero-number" Text="100.00%" VerticalAlignment="Center"/>
-              <Border Grid.Column="1" Classes="status-pill" Background="#252038" VerticalAlignment="Center">
-                <TextBlock x:Name="PlayCountBadge" Text="Play #0" FontSize="11" FontWeight="SemiBold" Foreground="#facc15"/>
+              <TextBlock Grid.Column="0" x:Name="AccuracyText" Classes="hero-number" Text="100.00%" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              <Border Grid.Column="1" CornerRadius="8" Background="#88000000" Padding="8,3" VerticalAlignment="Center">
+                <TextBlock x:Name="PlayCountBadge" Text="Play #0" FontSize="11" FontWeight="Bold" Foreground="#facc15"/>
               </Border>
             </Grid>
-            <TextBlock x:Name="SessionTimeText" Classes="stat-label" Text="Playing: 0m  Idle: 0m (0%)"/>
+            <TextBlock x:Name="SessionTimeText" Classes="stat-label" Text="Play: 0m  •  Idle: 0m  •  Efficiency: 0%" HorizontalAlignment="Right"/>
           </StackPanel>
-        </Border>
-      </Grid>
+        </Grid>
 
-      <StackPanel Grid.Row="3" Spacing="8">
-        <Border Classes="hud-card">
-          <Grid ColumnDefinitions="*,*,*,*,*,2*">
-            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="CS" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatCsText" Classes="stat-value" Text="0.0" HorizontalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="AR" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatArText" Classes="stat-value" Text="0.0" HorizontalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="OD" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatOdText" Classes="stat-value" Text="0.0" HorizontalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="HP" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatHpText" Classes="stat-value" Text="0.0" HorizontalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="BPM" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatBpmText" Classes="stat-value" Text="0" HorizontalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="5" HorizontalAlignment="Center">
-              <TextBlock Classes="stat-label" Text="MODS" HorizontalAlignment="Center"/>
-              <TextBlock x:Name="StatModsText" Classes="stat-value" Text="None" HorizontalAlignment="Center"/>
-            </StackPanel>
-          </Grid>
-        </Border>
+        <Rectangle Grid.Row="3" Height="1" Fill="#28223a" Margin="0,4,0,10"/>
 
-        <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">
-          <TextBlock x:Name="SettingsToggleText" Text="► More!" Foreground="#8f87a3" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-        </Button>
-
-        <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False" Margin="0,8,0,0">
-          <Grid ColumnDefinitions="*,*" Margin="0,4">
-            <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,8,0">
-              <Grid ColumnDefinitions="*,*">
-                <TextBox Grid.Column="0" x:Name="SpreadsheetIdTextBox" Classes="osu-input" Watermark="Spreadsheet ID" TextChanged="SpreadsheetIdTextBox_TextChanged"
-                         ToolTip.Tip="The ID from your Google Sheets URL" Margin="0,0,4,0"/>
-                <TextBox Grid.Column="1" x:Name="SheetNameTextBox" Classes="osu-input" Watermark="Sheet Name" TextChanged="SheetNameTextBox_TextChanged"
-                         ToolTip.Tip="The sheet/tab name (default: Raw Data)" Margin="4,0,0,0"/>
-              </Grid>
-
-              <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="osu-action-pink" Content="Connect Sheets API" Click="ConnectApiButton_Click" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                  <TextBlock Classes="stat-label" Text="credentials.json:" VerticalAlignment="Center"/>
-                  <TextBlock x:Name="CredentialsLabel" Text="Missing" FontSize="11" FontWeight="SemiBold" Foreground="#f87171" VerticalAlignment="Center"/>
-                </StackPanel>
-              </Grid>
-
-              <StackPanel Spacing="4">
-                <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
-                <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <Grid ColumnDefinitions="*,*,*,*" Margin="4,0,24,0">
+              <StackPanel Grid.Column="0" HorizontalAlignment="Left">
+                <TextBlock Classes="stat-label" Text="300"/>
+                <TextBlock x:Name="Hits300Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#7dd3fc"/>
               </StackPanel>
+              <StackPanel Grid.Column="1" HorizontalAlignment="Left">
+                <TextBlock Classes="stat-label" Text="100"/>
+                <TextBlock x:Name="Hits100Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#4ade80"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" HorizontalAlignment="Left">
+                <TextBlock Classes="stat-label" Text="50"/>
+                <TextBlock x:Name="Hits50Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#fb923c"/>
+              </StackPanel>
+              <StackPanel Grid.Column="3" HorizontalAlignment="Left">
+                <TextBlock Classes="stat-label" Text="MISS"/>
+                <TextBlock x:Name="HitsMissText" Text="0" FontSize="16" FontWeight="Bold" Foreground="#f87171"/>
+              </StackPanel>
+            </Grid>
+            <TextBlock x:Name="TotalObjectsText" Classes="stat-label" Text="Total: 0" Margin="4,0,0,0"/>
+          </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <StackPanel HorizontalAlignment="Right">
+              <TextBlock Classes="stat-label" Text="BPM" HorizontalAlignment="Right"/>
+              <TextBlock x:Name="StatBpmText" FontSize="16" FontWeight="Bold" Foreground="#f5f4fa" Text="0" HorizontalAlignment="Right"/>
             </StackPanel>
-
-            <StackPanel Grid.Column="1" Spacing="8" Margin="8,0,0,0">
-              <Grid ColumnDefinitions="*,8,80">
-                <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="tosu Host" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
-                <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
-              </Grid>
-
-              <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+            <StackPanel HorizontalAlignment="Right">
+              <TextBlock Classes="stat-label" Text="MODS" HorizontalAlignment="Right"/>
+              <TextBlock x:Name="StatModsText" FontSize="16" FontWeight="Bold" Foreground="#f472b6" Text="None" HorizontalAlignment="Right"/>
             </StackPanel>
-          </Grid>
-        </Border>
-      </StackPanel>
+          </StackPanel>
+        </Grid>
 
-      <Border Grid.Row="4" Background="#cc100e17" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
-        <TextBlock x:Name="TimeLabelText" Classes="stat-label" VerticalAlignment="Center" Text="Playing: 0s  Idle: 0s  Efficiency: 0%"/>
-      </Border>
-    </Grid>
-  </ScrollViewer>
+        <StackPanel Grid.Row="5" Spacing="8">
+          <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">
+            <TextBlock x:Name="SettingsToggleText" Text="► More Settings" Foreground="#8f87a3" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          </Button>
+
+          <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False" Margin="0,4,0,0">
+            <Grid ColumnDefinitions="*,*" Margin="4">
+              <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,10,0">
+                <TextBlock Classes="stat-label" Text="GOOGLE SHEETS" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
+                <TextBox x:Name="SpreadsheetIdTextBox" Classes="osu-input" Watermark="Spreadsheet ID" TextChanged="SpreadsheetIdTextBox_TextChanged"
+                         ToolTip.Tip="The ID from your Google Sheets URL"/>
+                <TextBox x:Name="SheetNameTextBox" Classes="osu-input" Watermark="Sheet Name" TextChanged="SheetNameTextBox_TextChanged"
+                         ToolTip.Tip="The sheet/tab name (default: Raw Data)"/>
+
+                <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                  <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="osu-action-pink" Content="Connect Sheets API" Click="ConnectApiButton_Click" VerticalAlignment="Center"/>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Classes="stat-label" Text="credentials.json:" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CredentialsLabel" Text="Missing" FontSize="11" FontWeight="SemiBold" Foreground="#f87171" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Grid>
+
+                <StackPanel Spacing="4">
+                  <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
+                  <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Spacing="8" Margin="10,0,0,0">
+                <TextBlock Classes="stat-label" Text="TOSU CLIENT &amp; APP" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
+                <Grid ColumnDefinitions="*,8,80">
+                  <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
+                  <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port (24050)" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
+                </Grid>
+
+                <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </StackPanel>
+
+      </Grid>
+    </ScrollViewer>
   </Panel>
 </Window>
