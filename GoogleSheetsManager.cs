@@ -27,6 +27,12 @@ namespace Circle_Tracker
 
     public class GoogleSheetsManager
     {
+        private const int MinHitsToSubmit = 40;
+        private const int RateLimitSeconds = 3;
+        private const int MaxSubmitAttempts = 4;
+        private const int BaseRetryDelayMs = 500;
+        private const int RowExpansionBatchSize = 100;
+
         private static string FindFile(string relativePath)
         {
             string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
@@ -323,14 +329,14 @@ namespace Circle_Tracker
             }
 
             var timeSinceLastPost = DateTime.Now.Subtract(lastPostTime);
-            if (timeSinceLastPost.TotalSeconds < 3)
+            if (timeSinceLastPost.TotalSeconds < RateLimitSeconds)
             {
                 Console.WriteLine($"[CircleTracker] Skipped post: Rate limited (<3s since last post).");
                 return;
             }
             setLastPostTime(DateTime.Now);
 
-            if (data.TotalBeatmapHits < 40)
+            if (data.TotalBeatmapHits < MinHitsToSubmit)
             {
                 Console.WriteLine($"[CircleTracker] Skipped post: Total hits ({data.TotalBeatmapHits}) is below 40.");
                 return;
@@ -382,8 +388,6 @@ namespace Circle_Tracker
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
             AppendValuesResponse? appendResponse = null;
-            const int MaxSubmitAttempts = 4;
-            const int BaseRetryDelayMs = 500;
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
@@ -436,12 +440,12 @@ namespace Circle_Tracker
                     {
                         Dimension = "ROWS",
                         SheetId = _rawDataSheet!.Properties.SheetId,
-                        Length = 100
+                        Length = RowExpansionBatchSize
                     };
                     var b1 = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { req } };
                     await _sheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId).ExecuteAsync(ct);
-                    await ResizeNamedRanges(_userSpreadsheet!, updatedRow + 100, ct);
-                    SheetRows = updatedRow + 100;
+                    await ResizeNamedRanges(_userSpreadsheet!, updatedRow + RowExpansionBatchSize, ct);
+                    SheetRows = updatedRow + RowExpansionBatchSize;
                 }
             }
         }

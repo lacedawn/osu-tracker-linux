@@ -42,6 +42,9 @@ namespace Circle_Tracker
 
     class Tracker
     {
+        private const int MinHitsToSubmit = 40;
+        private const int MaxHitJumpPerTick = 50;
+
         private readonly IMainWindow _form;
         private readonly TosuClient _tosuClient;
         private readonly GoogleSheetsManager _sheetsManager;
@@ -487,7 +490,7 @@ namespace Circle_Tracker
                     if (newMissc > PlayMissc)
                         PlayMissc = newMissc;
 
-                    if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < 50)
+                    if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < MaxHitJumpPerTick)
                     {
                         Accuracy = newAcc;
                         Play300c = new300c;
@@ -498,7 +501,7 @@ namespace Circle_Tracker
 
                     if (newSongTime < Time && Time > 0)
                     {
-                        if (TotalBeatmapHits >= 40)
+                        if (TotalBeatmapHits >= MinHitsToSubmit)
                         {
                             Console.WriteLine($"[CircleTracker] Retry detected (Time rewound: {newSongTime} < {Time}). Hits={TotalBeatmapHits}");
                             TryPostBeatmapEntry(false);
@@ -547,7 +550,7 @@ namespace Circle_Tracker
 
         private void TryPostBeatmapEntry(bool complete)
         {
-            if (TotalBeatmapHits < 40 || IsReplay || _currentGameMode != 0)
+            if (TotalBeatmapHits < MinHitsToSubmit || IsReplay || _currentGameMode != 0)
                 return;
 
             bool isSameMap = (!string.IsNullOrEmpty(_currentBeatmapChecksum) && _currentBeatmapChecksum == _lastLoggedBeatmapChecksum)
