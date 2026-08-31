@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
@@ -13,7 +14,11 @@ namespace Circle_Tracker
                 Console.WriteLine($"[SoundHelper] Sound file not found: {path}");
                 return;
             }
+            _ = Task.Run(() => PlaySoundInternal(path));
+        }
 
+        private static void PlaySoundInternal(string path)
+        {
             if (OperatingSystem.IsLinux())
             {
                 string[] players = { "pw-play", "paplay", "aplay" };
@@ -26,7 +31,7 @@ namespace Circle_Tracker
                             CreateNoWindow = true,
                             UseShellExecute = false
                         };
-                        using var proc = Process.Start(psi);
+                        var proc = Process.Start(psi);
                         return;
                     }
                     catch { }
@@ -42,7 +47,7 @@ namespace Circle_Tracker
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
-                    using var proc = Process.Start(psi);
+                    var proc = Process.Start(psi);
                 }
                 catch (Exception ex)
                 {
@@ -55,12 +60,12 @@ namespace Circle_Tracker
                 {
                     var psi = new ProcessStartInfo(
                         "powershell",
-                        $"-c \"(New-Object Media.SoundPlayer '{path}').PlaySync()\"")
+                        $"-c \"(New-Object Media.SoundPlayer '{path}').Play()\"")
                     {
                         CreateNoWindow = true,
                         UseShellExecute = false
                     };
-                    using var proc = Process.Start(psi);
+                    var proc = Process.Start(psi);
                 }
                 catch (Exception ex)
                 {

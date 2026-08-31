@@ -319,20 +319,31 @@ namespace Circle_Tracker
 
         private void TosuHostTextBox_TextChanged(object? sender, TextChangedEventArgs e)
         {
-            string host = TosuHostTextBox.Text?.Trim() ?? "127.0.0.1";
-            if (!string.IsNullOrEmpty(host))
+            string host = TosuHostTextBox.Text?.Trim() ?? "";
+            if (!string.IsNullOrEmpty(host) && !host.Contains(' '))
             {
                 _tracker.TosuHost = host;
                 _tosuClient.Host = host;
+                TosuHostTextBox.Classes.Remove("bad-value");
+            }
+            else if (!string.IsNullOrEmpty(TosuHostTextBox.Text))
+            {
+                TosuHostTextBox.Classes.Add("bad-value");
             }
         }
 
         private void TosuPortTextBox_TextChanged(object? sender, TextChangedEventArgs e)
         {
-            if (int.TryParse(TosuPortTextBox.Text?.Trim(), out int port) && port > 0)
+            string text = TosuPortTextBox.Text?.Trim() ?? "";
+            if (int.TryParse(text, out int port) && port >= 1 && port <= 65535)
             {
                 _tracker.TosuPort = port;
                 _tosuClient.Port = port;
+                TosuPortTextBox.Classes.Remove("bad-value");
+            }
+            else if (!string.IsNullOrEmpty(text))
+            {
+                TosuPortTextBox.Classes.Add("bad-value");
             }
         }
     }

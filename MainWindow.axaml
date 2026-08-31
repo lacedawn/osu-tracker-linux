@@ -45,6 +45,9 @@
     <Style Selector="TextBox.readonly-field.bad-value">
       <Setter Property="Background" Value="#3d1a1a"/>
     </Style>
+    <Style Selector="TextBox.input-field.bad-value">
+      <Setter Property="BorderBrush" Value="#cc5555"/>
+    </Style>
     <Style Selector="TextBox.input-field">
       <Setter Property="Background" Value="#252535"/>
       <Setter Property="Foreground" Value="#ddddff"/>
