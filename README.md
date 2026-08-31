@@ -1,5 +1,7 @@
 # circle-tracker (lazer & linux port)
 
+note: vibe coded port
+
 A port of [FunOrange's circle-tracker](https://github.com/FunOrange/circle-tracker) that works on Linux and supports osu!lazer
 
 ![Circle Tracker Preview](assets/circletrackerlazer.png)
