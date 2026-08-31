@@ -400,7 +400,8 @@ namespace Circle_Tracker
             BeatmapStarsBadge.Text = $"★ {s.BeatmapStars:0.00}";
 
             ToolTip.SetTip(BeatmapTitleText, BeatmapTitleText.Text);
-            ToolTip.SetTip(BeatmapArtistText, BeatmapArtistText.Text);
+            bool hasBeatmap = !string.IsNullOrEmpty(s.BeatmapTitle) || !string.IsNullOrEmpty(s.BeatmapString);
+            BannerTriangles.IsVisible = !hasBeatmap;
 
             LoadCoverImage(s.CoverUrl);
 
