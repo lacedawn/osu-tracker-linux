@@ -469,14 +469,13 @@ namespace Circle_Tracker
             if (SettingsPanel.IsVisible)
             {
                 SettingsToggleText.Text = "▲ Hide Settings";
-                MinHeight = 540;
-                Height = 560;
+                if (Height < 560)
+                    Height = 560;
             }
             else
             {
                 SettingsToggleText.Text = "▼ Settings & Google Sheets";
-                MinHeight = 380;
-                Height = 390;
+                Height = 400;
             }
         }
 
