@@ -3,6 +3,8 @@
              x:Class="Circle_Tracker.App"
              RequestedThemeVariant="Dark">
     <Application.Resources>
+        <FontFamily x:Key="OsuFont">avares://circle-tracker/Assets/Fonts#Torus, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif</FontFamily>
+
         <Color x:Key="BackgroundDarkColor">#14121d</Color>
         <Color x:Key="CardBackgroundColor">#1d192b</Color>
         <Color x:Key="CardBorderColor">#2e2744</Color>
@@ -34,6 +36,48 @@
 
     <Application.Styles>
         <FluentTheme />
+
+        <Style Selector="Window">
+            <Setter Property="FontFamily" Value="{StaticResource OsuFont}" />
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource OsuFont}" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="FontFamily" Value="{StaticResource OsuFont}" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="FontFamily" Value="{StaticResource OsuFont}" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="FontFamily" Value="{StaticResource OsuFont}" />
+        </Style>
+
+        <Style Selector="TextBlock.hero-number">
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
+        </Style>
+        <Style Selector="TextBlock.stat-value">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#f5f4fa" />
+        </Style>
+        <Style Selector="TextBlock.stat-label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#8f87a3" />
+        </Style>
+        <Style Selector="TextBlock.banner-title">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="TextBlock.banner-artist">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#f1f0f7" />
+        </Style>
 
         <Style Selector="Border.hud-card">
             <Setter Property="Background" Value="#1d192b" />
