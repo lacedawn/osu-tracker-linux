@@ -2,6 +2,7 @@ using Google;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -61,7 +62,7 @@ namespace Circle_Tracker
             return p1;
         }
 
-        private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
+        private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.json");
         private static string CredentialsFilePath => FindFile("credentials.json");
         private static string SoundFilePath => FindFile(Path.Combine("assets", "sectionpass.wav"));
 
@@ -165,7 +166,7 @@ namespace Circle_Tracker
             GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
-            if (!File.Exists(SettingsFilePath))
+            if (!File.Exists(SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
             {
                 string welcomeMsg = "Welcome to circle tracker!\n\n" +
                     "This app connects to 'tosu' running alongside osu!.\n\n" +
@@ -178,18 +179,19 @@ namespace Circle_Tracker
         {
             try
             {
-                string[] lines =
+                var settings = new UserSettings
                 {
-                    SpreadsheetId,
-                    SheetName,
-                    SubmitSoundEnabled ? "1" : "0",
-                    SpreadsheetTimezoneVerified ? "1" : "0",
-                    UseAltFuncSeparator ? "1" : "0",
-                    Username,
-                    TosuHost,
-                    TosuPort.ToString()
+                    SpreadsheetId = SpreadsheetId,
+                    SheetName = SheetName,
+                    SubmitSoundEnabled = SubmitSoundEnabled,
+                    SpreadsheetTimezoneVerified = SpreadsheetTimezoneVerified,
+                    UseAltFuncSeparator = UseAltFuncSeparator,
+                    Username = Username,
+                    TosuHost = TosuHost,
+                    TosuPort = TosuPort
                 };
-                File.WriteAllLines(SettingsFilePath, lines, Encoding.UTF8);
+                string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+                File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
             }
             catch (Exception ex)
             {
@@ -207,30 +209,56 @@ namespace Circle_Tracker
             Username = "";
             TosuHost = "127.0.0.1";
             TosuPort = 24050;
-
-            if (!File.Exists(SettingsFilePath)) return;
-
+            if (!File.Exists(SettingsFilePath))
+            {
+                string oldPath = Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
+                if (File.Exists(oldPath))
+                {
+                    MigrateOldSettings(oldPath);
+                }
+                return;
+            }
             try
             {
-                var lines = File.ReadAllLines(SettingsFilePath);
-                for (int i = 0; i < lines.Length; i++)
+                string json = File.ReadAllText(SettingsFilePath);
+                var settings = JsonConvert.DeserializeObject<UserSettings>(json);
+                if (settings != null)
                 {
-                    switch (i)
-                    {
-                        case 0: SpreadsheetId = lines[0]; break;
-                        case 1: SheetName = lines[1]; break;
-                        case 2: SubmitSoundEnabled = lines[2] == "1"; break;
-                        case 3: SpreadsheetTimezoneVerified = lines[3] == "1"; break;
-                        case 4: UseAltFuncSeparator = lines[4] == "1"; break;
-                        case 5: Username = lines[5]; break;
-                        case 6: TosuHost = !string.IsNullOrWhiteSpace(lines[6]) ? lines[6] : "127.0.0.1"; break;
-                        case 7: if (int.TryParse(lines[7], out int port) && port > 0) TosuPort = port; break;
-                    }
+                    SpreadsheetId = settings.SpreadsheetId;
+                    SheetName = settings.SheetName;
+                    SubmitSoundEnabled = settings.SubmitSoundEnabled;
+                    SpreadsheetTimezoneVerified = settings.SpreadsheetTimezoneVerified;
+                    UseAltFuncSeparator = settings.UseAltFuncSeparator;
+                    Username = settings.Username;
+                    TosuHost = !string.IsNullOrWhiteSpace(settings.TosuHost) ? settings.TosuHost : "127.0.0.1";
+                    TosuPort = settings.TosuPort > 0 ? settings.TosuPort : 24050;
                 }
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load settings: {ex.Message}");
+            }
+        }
+
+        private void MigrateOldSettings(string oldPath)
+        {
+            try
+            {
+                var lines = File.ReadAllLines(oldPath);
+                if (lines.Length > 0) SpreadsheetId = lines[0];
+                if (lines.Length > 1) SheetName = lines[1];
+                if (lines.Length > 2) SubmitSoundEnabled = lines[2] == "1";
+                if (lines.Length > 3) SpreadsheetTimezoneVerified = lines[3] == "1";
+                if (lines.Length > 4) UseAltFuncSeparator = lines[4] == "1";
+                if (lines.Length > 5) Username = lines[5];
+                if (lines.Length > 6 && !string.IsNullOrWhiteSpace(lines[6])) TosuHost = lines[6];
+                if (lines.Length > 7 && int.TryParse(lines[7], out int port) && port > 0) TosuPort = port;
+                SaveSettings();
+                Console.WriteLine("[CircleTracker] Migrated settings from old text format to JSON.");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to migrate old settings: {ex.Message}");
             }
         }
 
@@ -641,7 +669,8 @@ namespace Circle_Tracker
 
         private void WriteHeaders()
         {
-            string range = $"'{SheetName}'!A1:X1";
+            char lastCol = (char)('A' + DataRanges.Count - 1);
+            string range = $"'{SheetName}'!A1:{lastCol}1";
             var valueRange = new ValueRange();
             var rawDataHeaders = DataRanges.Select(x => (object)x.Item1).ToList();
             valueRange.Values = new List<IList<object>> { rawDataHeaders };

@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -19,6 +20,7 @@ namespace Circle_Tracker
         private DispatcherTimer? _secondsTimer;
 
         private bool _suppressStartupCheckboxEvent = false;
+        private CancellationTokenSource? _reconnectDebounce;
 
         private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x55, 0xcc, 0x77));
         private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xcc, 0x55, 0x55));
@@ -317,6 +319,23 @@ namespace Circle_Tracker
                 AutostartHelper.DeleteAutostart();
         }
 
+        private void DebounceReconnect()
+        {
+            _reconnectDebounce?.Cancel();
+            _reconnectDebounce = new CancellationTokenSource();
+            var token = _reconnectDebounce.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1000, token);
+                    if (!token.IsCancellationRequested)
+                        await _tosuClient.ReconnectAsync();
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
+
         private void TosuHostTextBox_TextChanged(object? sender, TextChangedEventArgs e)
         {
             string host = TosuHostTextBox.Text?.Trim() ?? "";
@@ -325,6 +344,7 @@ namespace Circle_Tracker
                 _tracker.TosuHost = host;
                 _tosuClient.Host = host;
                 TosuHostTextBox.Classes.Remove("bad-value");
+                DebounceReconnect();
             }
             else if (!string.IsNullOrEmpty(TosuHostTextBox.Text))
             {
@@ -340,6 +360,7 @@ namespace Circle_Tracker
                 _tracker.TosuPort = port;
                 _tosuClient.Port = port;
                 TosuPortTextBox.Classes.Remove("bad-value");
+                DebounceReconnect();
             }
             else if (!string.IsNullOrEmpty(text))
             {

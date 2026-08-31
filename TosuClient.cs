@@ -124,6 +124,12 @@ namespace Circle_Tracker
             IsConnected = false;
         }
 
+        public async Task ReconnectAsync()
+        {
+            await DisconnectAsync();
+            await ConnectAsync();
+        }
+
         private async Task ConnectionLoopAsync(CancellationToken ct)
         {
             var buffer = new byte[BufferSize];
