@@ -2,6 +2,8 @@
 
 A port of [FunOrange's circle-tracker](https://github.com/FunOrange/circle-tracker) that works on Linux and supports osu!lazer
 
+![Circle Tracker Preview](assets/circletrackerlazer.png)
+
 ## what changed
 - rewritten with Avalonia UI on .NET 8 (tested on Arch Linux, untested on Windows/macOS)
 - uses [tosu](https://github.com/tosuapp/tosu) for memory reading instead of the old Windows-only memory reader
