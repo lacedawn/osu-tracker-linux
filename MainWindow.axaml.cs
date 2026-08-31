@@ -491,13 +491,13 @@ namespace Circle_Tracker
             SettingsPanel.IsVisible = !SettingsPanel.IsVisible;
             if (SettingsPanel.IsVisible)
             {
-                SettingsToggleText.Text = "▲ Hide Settings";
+                SettingsToggleText.Text = "▼ Less";
                 if (Height < 560)
                     Height = 560;
             }
             else
             {
-                SettingsToggleText.Text = "▼ Settings & Google Sheets";
+                SettingsToggleText.Text = "► More!";
                 Height = 400;
             }
         }
