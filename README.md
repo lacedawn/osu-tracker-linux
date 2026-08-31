@@ -34,4 +34,5 @@ dotnet publish -c Release -r linux-x64 --self-contained -p:PublishSingleFile=tru
 
 ## credits
 - [FunOrange](https://github.com/FunOrange) for the original circle-tracker
+- design inspired by [osu-trainer](https://github.com/FunOrange/osu-trainer)
 - [tosu](https://github.com/tosuapp/tosu) for the memory reader
