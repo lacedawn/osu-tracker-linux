@@ -108,6 +108,7 @@ namespace Circle_Tracker
 
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
+        private readonly SemaphoreSlim _sheetsLock = new SemaphoreSlim(1, 1);
         private string _lastLoggedBeatmapChecksum = "";
         private int _lastLoggedBeatmapId = 0;
         private string _lastLoggedBeatmapString = "";
@@ -600,16 +601,18 @@ namespace Circle_Tracker
                 PlayCount: _consecutivePlayCount
             );
 
-            _sheetsManager.TryAppendPlayEntry(
-                data,
-                isReplay: IsReplay,
-                rawMods: RawMods,
-                currentGameMode: _currentGameMode,
-                lastPostTime: LastPostTime,
-                setLastPostTime: t => LastPostTime = t,
-                soundFilePath: SoundFilePath,
-                submitSoundEnabled: SubmitSoundEnabled
-            );
+            _ = Task.Run(async () =>
+            {
+                await _sheetsLock.WaitAsync();
+                try
+                {
+                    await _sheetsManager.TryAppendPlayEntry(data, isReplay: IsReplay, rawMods: RawMods,
+                        currentGameMode: _currentGameMode, lastPostTime: LastPostTime,
+                        setLastPostTime: t => LastPostTime = t,
+                        soundFilePath: SoundFilePath, submitSoundEnabled: SubmitSoundEnabled);
+                }
+                finally { _sheetsLock.Release(); }
+            });
         }
     }
 }

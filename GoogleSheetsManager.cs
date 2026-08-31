@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -160,7 +161,7 @@ namespace Circle_Tracker
             }
             SheetRows = _rawDataSheet.Properties.GridProperties.RowCount ?? 1000;
 
-            try { WriteHeaders(); }
+            try { WriteHeaders().GetAwaiter().GetResult(); }
             catch (GoogleApiException e)
             {
                 if (!silent)
@@ -175,7 +176,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            try { AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet); }
+            try { AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet).GetAwaiter().GetResult(); }
             catch (GoogleApiException e)
             {
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
@@ -183,13 +184,13 @@ namespace Circle_Tracker
                 return;
             }
 
-            ResizeNamedRanges(_userSpreadsheet, SheetRows);
+            ResizeNamedRanges(_userSpreadsheet, SheetRows).GetAwaiter().GetResult();
             PromptTimezone(_userSpreadsheet);
             SetSheetsApiReady(true);
             Console.WriteLine("[CircleTracker] Google Sheets API successfully initialized and connected.");
         }
 
-        private void WriteHeaders()
+        private async Task WriteHeaders(CancellationToken ct = default)
         {
             char lastCol = (char)('A' + DataRanges.Count - 1);
             string range = $"'{SheetName}'!A1:{lastCol}1";
@@ -198,7 +199,7 @@ namespace Circle_Tracker
             valueRange.Values = new List<IList<object>> { rawDataHeaders };
             var writeRequest = _sheetsService!.Spreadsheets.Values.Update(valueRange, SpreadsheetId, range);
             writeRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            writeRequest.Execute();
+            await writeRequest.ExecuteAsync(ct);
         }
 
         private void PromptTimezone(Spreadsheet spreadsheet)
@@ -219,7 +220,7 @@ namespace Circle_Tracker
             }
         }
 
-        private void AddMissingNamedRanges(Spreadsheet spreadsheet, Sheet rawDataSheet)
+        private async Task AddMissingNamedRanges(Spreadsheet spreadsheet, Sheet rawDataSheet, CancellationToken ct = default)
         {
             var namedRanges = DataRanges.Select(x => x.Item2).ToList();
             var existingRanges = spreadsheet.NamedRanges != null
@@ -250,11 +251,11 @@ namespace Circle_Tracker
             if (addRequests.Count > 0)
             {
                 var reqs = new BatchUpdateSpreadsheetRequest { Requests = addRequests };
-                _sheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).Execute();
+                await _sheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).ExecuteAsync(ct);
             }
         }
 
-        private void ResizeNamedRanges(Spreadsheet spreadsheet, int rows)
+        private async Task ResizeNamedRanges(Spreadsheet spreadsheet, int rows, CancellationToken ct = default)
         {
             var definedNames = DataRanges.Select(x => x.Item2).ToList();
             var rangesToUpdate = spreadsheet.NamedRanges != null
@@ -278,15 +279,15 @@ namespace Circle_Tracker
             if (rangeUpdateRequests.Count > 0)
             {
                 var reqs = new BatchUpdateSpreadsheetRequest { Requests = rangeUpdateRequests };
-                _sheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).Execute();
+                await _sheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).ExecuteAsync(ct);
             }
         }
 
-        public void TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled)
+        public async Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
         {
             try
             {
-                AppendPlayEntry(data, isReplay, rawMods, currentGameMode, lastPostTime, setLastPostTime, soundFilePath, submitSoundEnabled);
+                await AppendPlayEntry(data, isReplay, rawMods, currentGameMode, lastPostTime, setLastPostTime, soundFilePath, submitSoundEnabled, ct);
             }
             catch (Exception ex)
             {
@@ -294,7 +295,7 @@ namespace Circle_Tracker
             }
         }
 
-        private void AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled)
+        private async Task AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
         {
             Console.WriteLine($"[CircleTracker] Checking submission: Complete={data.Complete}, Hits={data.TotalBeatmapHits}, Replay={isReplay}, Mode={currentGameMode}, SheetsReady={SheetsApiReady}");
 
@@ -380,18 +381,26 @@ namespace Circle_Tracker
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
             AppendValuesResponse? appendResponse = null;
-            const int MAX_SUBMIT_ATTEMPTS = 4;
-            for (int i = 0; i < MAX_SUBMIT_ATTEMPTS; i++)
+            const int MaxSubmitAttempts = 4;
+            const int BaseRetryDelayMs = 500;
+            for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
                 {
-                    appendResponse = appendRequest.Execute();
+                    appendResponse = await appendRequest.ExecuteAsync(ct);
                     break;
+                }
+                catch (GoogleApiException ex) when (
+                    (int)ex.HttpStatusCode == 429 || (int)ex.HttpStatusCode == 503)
+                {
+                    Console.Error.WriteLine($"[CircleTracker] Transient error on attempt {i + 1}: {ex.HttpStatusCode}");
+                    if (i == MaxSubmitAttempts - 1) throw;
+                    await Task.Delay(BaseRetryDelayMs * (1 << i), ct);
                 }
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[CircleTracker] Submit attempt {i + 1} failed: {ex.Message}");
-                    if (i == MAX_SUBMIT_ATTEMPTS - 1) throw;
+                    if (i == MaxSubmitAttempts - 1) throw;
                 }
             }
 
@@ -422,8 +431,8 @@ namespace Circle_Tracker
                         Length = 100
                     };
                     var b1 = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { req } };
-                    _sheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId).Execute();
-                    ResizeNamedRanges(_userSpreadsheet!, updatedRow + 100);
+                    await _sheetsService.Spreadsheets.BatchUpdate(b1, SpreadsheetId).ExecuteAsync(ct);
+                    await ResizeNamedRanges(_userSpreadsheet!, updatedRow + 100, ct);
                     SheetRows = updatedRow + 100;
                 }
             }
