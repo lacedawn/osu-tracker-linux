@@ -177,5 +177,85 @@ namespace CircleTracker.Tests
                 It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
             ), Times.Never);
         }
+
+        [Fact]
+        public void GetSnapshot_WhenPlaying_ReturnsCorrectMetadataAndGameStateLabel()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(
+                title: "CANDYYYLAND feat. LIZ",
+                artist: "tofubeats",
+                version: "Pa's Lam System Remix",
+                beatmapId: 12345,
+                beatmapSetId: 67890,
+                hp: 5.5m));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+
+            snapshot.BeatmapTitle.Should().Be("CANDYYYLAND feat. LIZ");
+            snapshot.BeatmapArtist.Should().Be("tofubeats");
+            snapshot.BeatmapVersion.Should().Be("Pa's Lam System Remix");
+            snapshot.BeatmapId.Should().Be(12345);
+            snapshot.BeatmapSetId.Should().Be(67890);
+            snapshot.BeatmapHp.Should().Be(5.5m);
+            snapshot.GameStateLabel.Should().Be("PLAYING");
+            snapshot.CoverUrl.Should().Be("https://assets.ppy.sh/beatmaps/67890/covers/cover.jpg");
+        }
+
+        [Fact]
+        public void GetSnapshot_WhenResultsScreen_ReturnsResultsLabel()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results());
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+
+            snapshot.GameStateLabel.Should().Be("RESULTS");
+        }
+
+        [Fact]
+        public void GetSnapshot_WhenReplay_ReturnsReplayLabel()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(
+                playerName: "OtherPlayer",
+                profileName: "testplayer"));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+
+            snapshot.GameStateLabel.Should().Be("REPLAY");
+        }
+
+        [Fact]
+        public void GetSnapshot_WhenMenuState_ReturnsIdleLabel()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Build(gameStateNumber: 0));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+
+            snapshot.GameStateLabel.Should().Be("IDLE");
+        }
+
+        [Fact]
+        public void GetSnapshot_WhenBeatmapSetIdZero_ReturnsEmptyCoverUrl()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(beatmapSetId: 0));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+
+            snapshot.CoverUrl.Should().BeEmpty();
+        }
     }
 }

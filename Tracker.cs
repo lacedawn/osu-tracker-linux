@@ -46,6 +46,12 @@ namespace Circle_Tracker
         bool IsReplay,
         string DetectedClient,
         string BeatmapString,
+        string BeatmapTitle,
+        string BeatmapArtist,
+        string BeatmapVersion,
+        int BeatmapId,
+        int BeatmapSetId,
+        decimal BeatmapHp,
         decimal BeatmapStars,
         decimal BeatmapAim,
         decimal BeatmapSpeed,
@@ -61,11 +67,15 @@ namespace Circle_Tracker
         decimal Accuracy,
         int Time,
         string ModsString,
+        string GameStateLabel,
         bool SheetsApiReady,
         bool MemoryReadError,
         int PlayingSeconds,
         int IdleSeconds
-    );
+    )
+    {
+        public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";
+    }
 
     class Tracker
     {
@@ -101,6 +111,10 @@ namespace Circle_Tracker
         private int BeatmapID { get; set; }
         private int BeatmapSetID { get; set; }
         private string BeatmapString { get; set; } = "";
+        private string _beatmapTitle = "";
+        private string _beatmapArtist = "";
+        private string _beatmapVersion = "";
+        private decimal _beatmapHp;
         private int BeatmapBpm { get; set; }
 
         public bool SubmitSoundEnabled { get; set; }
@@ -296,11 +310,25 @@ namespace Circle_Tracker
 
         public TrackerSnapshot GetSnapshot()
         {
+            string gameStateLabel = IsReplay
+                ? "REPLAY"
+                : GameState == GameStatus.Playing
+                    ? "PLAYING"
+                    : GameState == GameStatus.ResultsScreen
+                        ? "RESULTS"
+                        : "IDLE";
+
             return new TrackerSnapshot(
                 IsPlaying: IsPlaying,
                 IsReplay: IsReplay,
                 DetectedClient: DetectedClient,
                 BeatmapString: BeatmapString ?? "",
+                BeatmapTitle: _beatmapTitle,
+                BeatmapArtist: _beatmapArtist,
+                BeatmapVersion: _beatmapVersion,
+                BeatmapId: BeatmapID,
+                BeatmapSetId: BeatmapSetID,
+                BeatmapHp: _beatmapHp,
                 BeatmapStars: BeatmapStars,
                 BeatmapAim: BeatmapAim,
                 BeatmapSpeed: BeatmapSpeed,
@@ -316,6 +344,7 @@ namespace Circle_Tracker
                 Accuracy: Accuracy,
                 Time: Time,
                 ModsString: GetModsString(),
+                GameStateLabel: gameStateLabel,
                 SheetsApiReady: SheetsApiReady,
                 MemoryReadError: MemoryReadError,
                 PlayingSeconds: PlayingSeconds,
@@ -416,6 +445,10 @@ namespace Circle_Tracker
 
             BeatmapID = bm.Id;
             BeatmapSetID = bm.Set;
+            _beatmapTitle = bm.Title ?? "";
+            _beatmapArtist = bm.Artist ?? "";
+            _beatmapVersion = bm.Version ?? "";
+            _beatmapHp = bm.Stats?.Hp?.Converted ?? bm.Stats?.Hp?.Original ?? 0;
             BeatmapString = $"{bm.Artist} - {bm.Title} [{bm.Version}]";
             BeatmapBpm = (int)Math.Round((double)(bm.Stats?.Bpm?.Common ?? 0));
 
@@ -446,6 +479,7 @@ namespace Circle_Tracker
                     if (BeatmapAr == 0 && diff.Ar > 0) BeatmapAr = diff.Ar;
                     if (BeatmapOd == 0 && diff.Od > 0) BeatmapOd = diff.Od;
                     if (BeatmapCs == 0 && diff.Cs > 0) BeatmapCs = diff.Cs;
+                    if (_beatmapHp == 0 && diff.Hp > 0) _beatmapHp = diff.Hp;
                     if (BeatmapBpm == 0 && diff.Bpm > 0) BeatmapBpm = (int)Math.Round((double)diff.Bpm);
                     if (diff.ClockRate > 0)
                         _lastClockRate = (float)diff.ClockRate;
@@ -456,6 +490,7 @@ namespace Circle_Tracker
                     if (BeatmapAr == 0 && attr.Ar > 0) BeatmapAr = attr.Ar;
                     if (BeatmapOd == 0 && attr.Od > 0) BeatmapOd = attr.Od;
                     if (BeatmapCs == 0 && attr.Cs > 0) BeatmapCs = attr.Cs;
+                    if (_beatmapHp == 0 && attr.Hp > 0) _beatmapHp = attr.Hp;
                     if (BeatmapBpm == 0 && attr.Bpm > 0) BeatmapBpm = (int)Math.Round((double)attr.Bpm);
                     if (attr.ClockRate > 0)
                         _lastClockRate = (float)attr.ClockRate;

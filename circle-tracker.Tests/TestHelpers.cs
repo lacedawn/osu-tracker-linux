@@ -12,19 +12,27 @@ namespace CircleTracker.Tests
             int h300 = 0, int h100 = 0, int h50 = 0, int misses = 0,
             int songTimeMs = 30000, decimal accuracy = 0,
             string playerName = "testplayer", string profileName = "testplayer",
-            string checksum = "abc123", int mods = 0)
-            => Build(2, h300, h100, h50, misses, songTimeMs, accuracy, playerName, profileName, checksum, mods);
+            string checksum = "abc123", int mods = 0,
+            string title = "Title", string artist = "Artist", string version = "Hard",
+            int beatmapId = 1, int beatmapSetId = 1, decimal hp = 6m)
+            => Build(2, h300, h100, h50, misses, songTimeMs, accuracy, playerName, profileName, checksum, mods,
+                     title, artist, version, beatmapId, beatmapSetId, hp);
 
         internal static TosuState Results(
-            int h300 = 45, string checksum = "abc123")
-            => Build(7, h300, 0, 0, 0, 30000, 100m, "testplayer", "testplayer", checksum, 0);
+            int h300 = 45, string checksum = "abc123",
+            string title = "Title", string artist = "Artist", string version = "Hard",
+            int beatmapId = 1, int beatmapSetId = 1, decimal hp = 6m)
+            => Build(7, h300, 0, 0, 0, 30000, 100m, "testplayer", "testplayer", checksum, 0,
+                     title, artist, version, beatmapId, beatmapSetId, hp);
 
         internal static TosuState Build(
             int gameStateNumber,
             int h300 = 0, int h100 = 0, int h50 = 0, int misses = 0,
             int songTimeMs = 30000, decimal accuracy = 0,
             string playerName = "testplayer", string profileName = "testplayer",
-            string checksum = "abc123", int mods = 0)
+            string checksum = "abc123", int mods = 0,
+            string title = "Title", string artist = "Artist", string version = "Hard",
+            int beatmapId = 1, int beatmapSetId = 1, decimal hp = 6m)
         {
             return new TosuState
             {
@@ -33,15 +41,16 @@ namespace CircleTracker.Tests
                 Beatmap = new TosuBeatmap
                 {
                     Checksum = checksum,
-                    Id = 1,
-                    Set = 1,
-                    Artist = "Artist",
-                    Title = "Title",
-                    Version = "Hard",
+                    Id = beatmapId,
+                    Set = beatmapSetId,
+                    Artist = artist,
+                    Title = title,
+                    Version = version,
                     Time = new TosuBeatmapTime { Live = songTimeMs, FirstObject = 0 },
                     Stats = new TosuBeatmapStats
                     {
-                        Stars = new TosuStars { Total = 5 }
+                        Stars = new TosuStars { Total = 5 },
+                        Hp = new TosuStatValue { Original = hp, Converted = hp }
                     }
                 },
                 Play = new TosuPlay
