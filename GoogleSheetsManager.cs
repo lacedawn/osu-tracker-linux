@@ -416,10 +416,17 @@ namespace Circle_Tracker
             if (appendResponse != null)
             {
                 int updatedRow = 0;
-                foreach (Match m in new Regex(@"\d+").Matches(appendResponse.Updates.UpdatedRange))
+                string updatedRange = appendResponse.Updates.UpdatedRange;
+                int bangIndex = updatedRange.IndexOf('!');
+                if (bangIndex >= 0)
                 {
-                    int parsed = int.Parse(m.Value);
-                    if (parsed > updatedRow) updatedRow = parsed;
+                    string cellRange = updatedRange.Substring(bangIndex + 1);
+                    string endCell = cellRange.Contains(':')
+                        ? cellRange.Substring(cellRange.IndexOf(':') + 1)
+                        : cellRange;
+                    string rowStr = new string(endCell.SkipWhile(char.IsLetter).ToArray());
+                    if (int.TryParse(rowStr, out int row))
+                        updatedRow = row;
                 }
 
                 if (updatedRow > SheetRows)
