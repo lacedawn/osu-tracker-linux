@@ -108,6 +108,12 @@ namespace Circle_Tracker
 
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
+        private string _lastLoggedBeatmapChecksum = "";
+        private int _lastLoggedBeatmapId = 0;
+        private string _lastLoggedBeatmapString = "";
+        private int _lastLoggedMods = -1;
+        private int _consecutivePlayCount = 0;
+        private bool _lastLoggedComplete = false;
 
         public bool SheetsApiReady => _sheetsManager.SheetsApiReady;
         public bool SpreadsheetTimezoneVerified
@@ -276,13 +282,18 @@ namespace Circle_Tracker
             return "osu!lazer";
         }
 
-        private static bool DetectReplay(TosuState state)
+        private bool DetectReplay(TosuState state)
         {
             string? playName = state.Play?.PlayerName;
-            string? profileName = state.Profile?.Name;
+            string? profileName = !string.IsNullOrWhiteSpace(state.Profile?.Name) ? state.Profile.Name : Username;
             if (!string.IsNullOrWhiteSpace(playName) &&
                 !string.IsNullOrWhiteSpace(profileName) &&
                 !string.Equals(playName.Trim(), profileName.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (DetectedClient == "osu!lazer" && (state.Settings?.ReplayUIVisible ?? false))
             {
                 return true;
             }
@@ -486,14 +497,18 @@ namespace Circle_Tracker
 
                     if (newSongTime < Time && Time > 0)
                     {
-                        Console.WriteLine($"[CircleTracker] Retry detected (Time rewound: {newSongTime} < {Time}). Hits={TotalBeatmapHits}");
-                        TryPostBeatmapEntry(false);
+                        if (TotalBeatmapHits >= 40)
+                        {
+                            Console.WriteLine($"[CircleTracker] Retry detected (Time rewound: {newSongTime} < {Time}). Hits={TotalBeatmapHits}");
+                            TryPostBeatmapEntry(false);
+                        }
                         Play300c = 0;
                         Play100c = 0;
                         Play50c = 0;
                         PlayMissc = 0;
+                        Accuracy = 0;
                         TotalBeatmapHits = 0;
-                        Time = 0;
+                        Time = newSongTime;
                     }
                     else
                     {
@@ -531,6 +546,28 @@ namespace Circle_Tracker
 
         private void TryPostBeatmapEntry(bool complete)
         {
+            if (TotalBeatmapHits < 40 || IsReplay || _currentGameMode != 0)
+                return;
+
+            bool isSameMap = (!string.IsNullOrEmpty(_currentBeatmapChecksum) && _currentBeatmapChecksum == _lastLoggedBeatmapChecksum)
+                || (BeatmapID > 0 && BeatmapID == _lastLoggedBeatmapId)
+                || (!string.IsNullOrEmpty(BeatmapString) && BeatmapString == _lastLoggedBeatmapString);
+
+            if (isSameMap && RawMods == _lastLoggedMods && !_lastLoggedComplete)
+            {
+                _consecutivePlayCount++;
+            }
+            else
+            {
+                _consecutivePlayCount = 1;
+                _lastLoggedBeatmapChecksum = _currentBeatmapChecksum;
+                _lastLoggedBeatmapId = BeatmapID;
+                _lastLoggedBeatmapString = BeatmapString;
+                _lastLoggedMods = RawMods;
+            }
+
+            _lastLoggedComplete = complete;
+
             float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
             int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
 
@@ -559,7 +596,8 @@ namespace Circle_Tracker
                 PlayMissc: PlayMissc,
                 Complete: complete,
                 PlayTimeSeconds: playTime,
-                ModsString: GetModsString()
+                ModsString: GetModsString(),
+                PlayCount: _consecutivePlayCount
             );
 
             _sheetsManager.TryAppendPlayEntry(

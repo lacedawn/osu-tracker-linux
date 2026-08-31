@@ -19,7 +19,8 @@ namespace Circle_Tracker
         decimal BeatmapCs, decimal BeatmapAr, decimal BeatmapOd,
         int TotalBeatmapHits, decimal Accuracy,
         int Play300c, int Play100c, int Play50c, int PlayMissc,
-        bool Complete, int PlayTimeSeconds, string ModsString
+        bool Complete, int PlayTimeSeconds, string ModsString,
+        int PlayCount
     );
 
     public class GoogleSheetsManager
@@ -170,25 +171,6 @@ namespace Circle_Tracker
                     if (e.Message.Contains("Requested entity was not found"))
                         _form.ShowMessage("Check that the Spreadsheet ID is correct.");
                 }
-                SetSheetsApiReady(false);
-                return;
-            }
-
-            string range = $"'{SheetName}'!W2";
-            var valueRange = new ValueRange();
-            valueRange.Values = new List<IList<object>>
-            {
-                new List<object>
-                {
-                    $"=ARRAYFORMULA(IF(ISBLANK(hits) = false{_getFunctionSeparator()} hits^0{_getFunctionSeparator()}))"
-                }
-            };
-            var writeRequest = _sheetsService.Spreadsheets.Values.Update(valueRange, SpreadsheetId, range);
-            writeRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            try { writeRequest.Execute(); }
-            catch (GoogleApiException e)
-            {
-                if (!silent) _form.ShowMessage(e.Message, $"Google Sheets API Error: Unable to Write Playcount to {range}");
                 SetSheetsApiReady(false);
                 return;
             }
@@ -388,7 +370,7 @@ namespace Circle_Tracker
                 data.Halftime   ? "1" : "",
                 data.Flashlight ? "1" : "",
                 data.Complete ? "1" : "0",
-                "",
+                data.PlayCount,
                 data.PlayTimeSeconds
             };
             valueRange.Values = new List<IList<object>> { writeData };
