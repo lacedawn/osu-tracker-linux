@@ -419,7 +419,18 @@ namespace Circle_Tracker
         private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)
         {
             SettingsPanel.IsVisible = !SettingsPanel.IsVisible;
-            SettingsToggleButton.Content = SettingsPanel.IsVisible ? "▲ Hide Settings" : "⚙ Settings ▼";
+            if (SettingsPanel.IsVisible)
+            {
+                SettingsToggleText.Text = "▲ Hide Settings";
+                MinHeight = 540;
+                Height = 560;
+            }
+            else
+            {
+                SettingsToggleText.Text = "▼ Settings & Google Sheets";
+                MinHeight = 380;
+                Height = 390;
+            }
         }
 
         private void StartupCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)

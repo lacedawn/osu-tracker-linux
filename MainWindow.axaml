@@ -4,8 +4,8 @@
         Title="Circle Tracker"
         Width="640"
         MinWidth="600"
-        Height="540"
-        MinHeight="480"
+        Height="390"
+        MinHeight="380"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
         Background="#14121d">
@@ -129,56 +129,47 @@
         </Grid>
       </Border>
 
-      <Button x:Name="SettingsToggleButton" Classes="ghost-btn" Content="⚙ Settings ▼" Click="SettingsToggleButton_Click" HorizontalAlignment="Center"/>
+      <Button x:Name="SettingsToggleButton" Classes="secondary-flat" HorizontalAlignment="Stretch" Click="SettingsToggleButton_Click" Padding="10,6">
+        <TextBlock x:Name="SettingsToggleText" Text="▼ Settings &amp; Google Sheets" HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="#8f87a3"/>
+      </Button>
 
-      <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False">
+      <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False" Margin="0,8,0,0">
         <Grid ColumnDefinitions="*,*" Margin="0,4">
-          <StackPanel Grid.Column="0" Spacing="6" Margin="0,0,8,0">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0" Text="Google Sheets" FontSize="12" FontWeight="SemiBold" Foreground="#8f87a3" VerticalAlignment="Center"/>
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                <TextBlock Text="credentials.json:" FontSize="10" Foreground="#8f87a3" VerticalAlignment="Center"/>
-                <TextBlock x:Name="CredentialsLabel" Text="Found" FontSize="10" FontWeight="SemiBold" Foreground="#4ade80" VerticalAlignment="Center"/>
-              </StackPanel>
+          <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,8,0">
+            <Grid ColumnDefinitions="*,*">
+              <TextBox Grid.Column="0" x:Name="SpreadsheetIdTextBox" Classes="osu-input" Watermark="Spreadsheet ID" TextChanged="SpreadsheetIdTextBox_TextChanged"
+                       ToolTip.Tip="The ID from your Google Sheets URL" Margin="0,0,4,0"/>
+              <TextBox Grid.Column="1" x:Name="SheetNameTextBox" Classes="osu-input" Watermark="Sheet Name" TextChanged="SheetNameTextBox_TextChanged"
+                       ToolTip.Tip="The sheet/tab name (default: Raw Data)" Margin="4,0,0,0"/>
             </Grid>
 
-            <TextBlock Text="Spreadsheet ID" FontSize="11" Foreground="#8f87a3"/>
-            <TextBox x:Name="SpreadsheetIdTextBox" Classes="osu-input" TextChanged="SpreadsheetIdTextBox_TextChanged"
-                     ToolTip.Tip="The ID from your Google Sheets URL"/>
+            <Grid ColumnDefinitions="*,Auto">
+              <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="primary-action" Content="Connect Sheets API" Click="ConnectApiButton_Click" HorizontalAlignment="Stretch" Margin="0,0,8,0"/>
+              <Border Grid.Column="1" Classes="status-pill" Background="#252038" VerticalAlignment="Center">
+                <TextBlock x:Name="CredentialsLabel" Text="Missing" FontSize="11" FontWeight="SemiBold" Foreground="#f87171"/>
+              </Border>
+            </Grid>
 
-            <TextBlock Text="Sheet Name" FontSize="11" Foreground="#8f87a3"/>
-            <TextBox x:Name="SheetNameTextBox" Classes="osu-input" TextChanged="SheetNameTextBox_TextChanged"
-                     ToolTip.Tip="The tab name (default: Raw Data)"/>
-
-            <Button x:Name="ConnectApiButton" Classes="primary-action" Content="Connect Google Sheets" Click="ConnectApiButton_Click" HorizontalAlignment="Stretch" Margin="0,4,0,0"/>
-
-            <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on logging entry" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
-            <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator (fix #ERROR!)" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+            <StackPanel Spacing="4">
+              <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
+              <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+            </StackPanel>
           </StackPanel>
 
-          <StackPanel Grid.Column="1" Spacing="6" Margin="8,0,0,0">
-            <TextBlock Text="tosu Settings" FontSize="12" FontWeight="SemiBold" Foreground="#8f87a3"/>
-
+          <StackPanel Grid.Column="1" Spacing="8" Margin="8,0,0,0">
             <Grid ColumnDefinitions="*,8,80">
-              <StackPanel Grid.Column="0">
-                <TextBlock Text="tosu Host" FontSize="11" Foreground="#8f87a3"/>
-                <TextBox x:Name="TosuHostTextBox" Classes="osu-input" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
-              </StackPanel>
-              <StackPanel Grid.Column="2">
-                <TextBlock Text="Port" FontSize="11" Foreground="#8f87a3"/>
-                <TextBox x:Name="TosuPortTextBox" Classes="osu-input" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
-              </StackPanel>
+              <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="tosu Host" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
+              <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
             </Grid>
+
+            <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
           </StackPanel>
         </Grid>
       </Border>
     </StackPanel>
 
     <Border Grid.Row="4" Background="#100e17" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock x:Name="TimeLabelText" Grid.Column="0" Foreground="#8f87a3" FontSize="11" VerticalAlignment="Center" Text="Playing: 0s  Idle: 0s  Efficiency: 0%"/>
-        <CheckBox x:Name="StartupCheckBox" Grid.Column="1" Classes="osu-check" Content="Launch on Startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
-      </Grid>
+      <TextBlock x:Name="TimeLabelText" Foreground="#8f87a3" FontSize="11" VerticalAlignment="Center" Text="Playing: 0s  Idle: 0s  Efficiency: 0%"/>
     </Border>
   </Grid>
 </Window>
