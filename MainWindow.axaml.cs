@@ -1,10 +1,13 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,8 +28,16 @@ namespace Circle_Tracker
         private bool _suppressStartupCheckboxEvent = false;
         private CancellationTokenSource? _reconnectDebounce;
 
-        private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x55, 0xcc, 0x77));
-        private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xcc, 0x55, 0x55));
+        private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0xde, 0x80));
+        private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xf8, 0x71, 0x71));
+        private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x38, 0xbd, 0xf8));
+        private static readonly IBrush OrangeBrush = new SolidColorBrush(Color.FromRgb(0xfb, 0x92, 0x3c));
+        private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x93, 0x8b, 0xa8));
+
+        private static readonly HttpClient _imageHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
+        private readonly ConcurrentDictionary<string, Bitmap> _coverCache = new();
+        private string _currentCoverUrl = "";
+        private CancellationTokenSource? _coverLoadCts;
 
         public MainWindow()
         {
@@ -118,10 +129,6 @@ namespace Circle_Tracker
         {
             TosuStatusDot.Fill = connected ? GreenBrush : RedBrush;
             TosuStatusText.Text = connected ? "tosu: Connected" : "tosu: Connecting...";
-            if (!connected)
-            {
-                ClientDetectedText.Text = "-";
-            }
         }
 
         public void SetCredentialsFound(bool found)
@@ -267,6 +274,58 @@ namespace Circle_Tracker
             return await tcs.Task;
         }
 
+        private void LoadCoverImage(string coverUrl)
+        {
+            if (_currentCoverUrl == coverUrl)
+                return;
+
+            _currentCoverUrl = coverUrl;
+            _coverLoadCts?.Cancel();
+
+            if (string.IsNullOrEmpty(coverUrl))
+            {
+                CoverImage.Source = null;
+                return;
+            }
+
+            if (_coverCache.TryGetValue(coverUrl, out var cached))
+            {
+                CoverImage.Source = cached;
+                return;
+            }
+
+            _coverLoadCts = new CancellationTokenSource();
+            var token = _coverLoadCts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    byte[] data = await _imageHttpClient.GetByteArrayAsync(coverUrl, token);
+                    if (token.IsCancellationRequested) return;
+
+                    using var ms = new MemoryStream(data);
+                    var bitmap = new Bitmap(ms);
+                    _coverCache[coverUrl] = bitmap;
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_currentCoverUrl == coverUrl)
+                            CoverImage.Source = bitmap;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _log.LogDebug("Failed to load cover image: {Error}", ex.Message);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_currentCoverUrl == coverUrl)
+                            CoverImage.Source = null;
+                    });
+                }
+            }, token);
+        }
+
         private void UpdateControls()
         {
             var s = _tracker.GetSnapshot();
@@ -278,7 +337,24 @@ namespace Circle_Tracker
                         && s.BeatmapAr == 0
                         && s.BeatmapOd == 0;
 
-            ClientDetectedText.Text = _tosuClient.IsConnected ? s.DetectedClient : "-";
+            TosuStatusDot.Fill = _tosuClient.IsConnected ? GreenBrush : RedBrush;
+            TosuStatusText.Text = _tosuClient.IsConnected ? $"tosu: {s.DetectedClient}" : "tosu: Connecting...";
+
+            GameStateBadge.Text = s.GameStateLabel;
+            GameStateBadge.Foreground = s.GameStateLabel switch
+            {
+                "PLAYING" => GreenBrush,
+                "RESULTS" => CyanBrush,
+                "REPLAY" => OrangeBrush,
+                _ => MutedBrush
+            };
+
+            BeatmapTitleText.Text = !string.IsNullOrEmpty(s.BeatmapTitle) ? s.BeatmapTitle : (!string.IsNullOrEmpty(s.BeatmapString) ? s.BeatmapString : "No beatmap detected");
+            BeatmapArtistText.Text = !string.IsNullOrEmpty(s.BeatmapArtist) ? s.BeatmapArtist : "-";
+            BeatmapVersionText.Text = !string.IsNullOrEmpty(s.BeatmapVersion) ? s.BeatmapVersion : "-";
+            BeatmapStarsBadge.Text = $"★ {s.BeatmapStars:0.00}";
+
+            LoadCoverImage(s.CoverUrl);
 
             BeatmapInfoGrid.Background = playing
                 ? new SolidColorBrush(Color.FromRgb(0x1a, 0x3a, 0x1e))
@@ -286,7 +362,6 @@ namespace Circle_Tracker
 
             HitsTextBox.Text = $"{s.TotalBeatmapHits} ({s.Play300c}, {s.Play100c}, {s.Play50c}, {s.PlayMissc})";
             TimeTextBox.Text = s.Time.ToString();
-            BeatmapTextBox.Text = s.BeatmapString;
             StarsTextBox.Text = s.BeatmapStars.ToString("0.00");
             AimTextBox.Text = s.BeatmapAim.ToString("0.00");
             SpeedTextBox.Text = s.BeatmapSpeed.ToString("0.00");
@@ -297,7 +372,6 @@ namespace Circle_Tracker
             AccTextBox.Text = s.Accuracy.ToString("0.00") + "%";
             BpmTextBox.Text = s.BeatmapBpm.ToString();
 
-            SetReadonlyFieldBad(BeatmapTextBox, string.IsNullOrEmpty(s.BeatmapString));
             SetReadonlyFieldBad(StarsTextBox, valsBad);
             SetReadonlyFieldBad(AimTextBox, valsBad);
             SetReadonlyFieldBad(SpeedTextBox, valsBad);

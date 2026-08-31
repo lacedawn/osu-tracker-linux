@@ -85,45 +85,55 @@
   </Window.Styles>
 
   <Grid RowDefinitions="Auto,*,Auto">
-    <!-- ROW 0: Top strip (tosu/Sheets status + Client + current beatmap) -->
-    <Border Grid.Row="0"
-            Background="#181826"
-            Padding="8,6">
-      <Grid RowDefinitions="Auto,Auto">
-        <!-- Status Row -->
-        <Border Grid.Row="0"
-                Background="#141420"
-                Padding="8,4"
-                CornerRadius="4"
-                Margin="0,0,0,6">
-          <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,0">
-              <Ellipse x:Name="TosuStatusDot" Width="10" Height="10" Fill="#cc5555"/>
-              <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#ddddff" FontSize="12" VerticalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,16,0">
-              <TextBlock Text="Client:" Foreground="#8888aa" FontSize="12" VerticalAlignment="Center"/>
-              <TextBlock x:Name="ClientDetectedText" Text="-" Foreground="#88ccff" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Ellipse x:Name="SheetsStatusDot" Width="10" Height="10" Fill="#cc5555"/>
-              <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#ddddff" FontSize="12" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Grid>
+    <StackPanel Grid.Row="0" Margin="8,8,8,4">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Grid.Column="0" Classes="status-pill">
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Ellipse x:Name="TosuStatusDot" Width="8" Height="8" Fill="#f87171"/>
+            <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#f1f0f7" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
         </Border>
 
-        <!-- Current Beatmap -->
-        <Grid Grid.Row="1" ColumnDefinitions="70,*">
-          <TextBlock Grid.Column="0"
-                     Classes="field-label"
-                     Text="beatmap"/>
-          <TextBox   Grid.Column="1"
-                     x:Name="BeatmapTextBox"
-                     Classes="readonly-field"
-                     IsReadOnly="True"/>
-        </Grid>
+        <Border Grid.Column="1" Classes="status-pill" HorizontalAlignment="Center">
+          <TextBlock x:Name="GameStateBadge" Text="IDLE" Foreground="#938ba8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+        </Border>
+
+        <Border Grid.Column="2" Classes="status-pill">
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Ellipse x:Name="SheetsStatusDot" Width="8" Height="8" Fill="#f87171"/>
+            <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#f1f0f7" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Border>
       </Grid>
-    </Border>
+
+      <Border Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,8,0,0" Background="#201a30" BorderBrush="#332a4d" BorderThickness="1">
+        <Grid>
+          <Image x:Name="CoverImage" Stretch="UniformToFill" Opacity="0.85"/>
+          <Border>
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                <GradientStop Offset="0" Color="#e0161320"/>
+                <GradientStop Offset="1" Color="#70161320"/>
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+          <Grid ColumnDefinitions="*,Auto" Margin="14,10">
+            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+              <TextBlock x:Name="BeatmapTitleText" Text="No beatmap detected" FontSize="18" FontWeight="Bold" Foreground="White" TextTrimming="CharacterEllipsis"/>
+              <TextBlock x:Name="BeatmapArtistText" Text="-" FontSize="13" FontWeight="Medium" Foreground="#c4b5fd" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="6">
+              <Border Background="#aa201a30" CornerRadius="4" Padding="8,3" HorizontalAlignment="Right">
+                <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" Foreground="#f1f0f7"/>
+              </Border>
+              <Border Background="#cc161320" CornerRadius="4" Padding="8,4" HorizontalAlignment="Right">
+                <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="14" FontWeight="Bold" Foreground="#facc15"/>
+              </Border>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+    </StackPanel>
 
     <!-- ROW 1: Main body (Left & Right panes) -->
     <Grid Grid.Row="1" ColumnDefinitions="*,200" Margin="4,2">
