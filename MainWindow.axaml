@@ -37,13 +37,14 @@
 
       <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,8" Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1">
         <Grid>
-          <Image x:Name="CoverImage" Stretch="UniformToFill" Opacity="0.85"/>
+          <Image x:Name="CoverImage" Stretch="UniformToFill"/>
           <local:TrianglesControl x:Name="BannerTriangles" Velocity="10" TriangleCount="14" TriangleBrush="#30ffffff" IsHitTestVisible="False"/>
           <Border>
             <Border.Background>
               <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-                <GradientStop Offset="0" Color="#e014121d"/>
-                <GradientStop Offset="1" Color="#6014121d"/>
+                <GradientStop Offset="0.0" Color="#c014121d"/>
+                <GradientStop Offset="0.45" Color="#6014121d"/>
+                <GradientStop Offset="1.0" Color="#1014121d"/>
               </LinearGradientBrush>
             </Border.Background>
           </Border>
