@@ -202,7 +202,8 @@ namespace Circle_Tracker
                     {
                         Content = "OK",
                         HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        Classes = { "primary-action" }
+                        Classes = { "osu-action-pink" },
+                        MinWidth = 80
                     };
 
                     panel.Children.Add(okBtn);
@@ -271,13 +272,15 @@ namespace Circle_Tracker
                     var yesBtn = new Button
                     {
                         Content = "Yes",
-                        Classes = { "primary-action" }
+                        Classes = { "osu-action-pink" },
+                        MinWidth = 80
                     };
 
                     var noBtn = new Button
                     {
                         Content = "No",
-                        Classes = { "secondary-flat" }
+                        Classes = { "secondary-flat" },
+                        MinWidth = 80
                     };
 
                     btnRow.Children.Add(yesBtn);

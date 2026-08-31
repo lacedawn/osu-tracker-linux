@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Circle_Tracker"
         x:Class="Circle_Tracker.MainWindow"
         Title="Circle Tracker"
         Width="640"
@@ -35,6 +36,7 @@
       <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,8" Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1">
         <Grid>
           <Image x:Name="CoverImage" Stretch="UniformToFill" Opacity="0.85"/>
+          <local:TrianglesControl Velocity="8" TriangleCount="12" TriangleBrush="#15ffffff" IsHitTestVisible="False"/>
           <Border>
             <Border.Background>
               <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
