@@ -140,8 +140,9 @@ namespace Circle_Tracker
         {
             Dispatcher.UIThread.Post(() =>
             {
-                int playing = _tracker.PlayingSeconds;
-                int idle = _tracker.IdleSeconds;
+                var s = _tracker.GetSnapshot();
+                int playing = s.PlayingSeconds;
+                int idle = s.IdleSeconds;
                 float total = playing + idle;
                 float eff = total > 0 ? 100f * playing / total : 0f;
                 TimeLabelText.Text =
@@ -233,34 +234,35 @@ namespace Circle_Tracker
 
         private void UpdateControls()
         {
-            bool playing = _tracker.IsPlaying && _tracker.SheetsApiReady;
-            bool valsBad = _tracker.BeatmapStars == 0
-                        && _tracker.BeatmapAim == 0
-                        && _tracker.BeatmapSpeed == 0
-                        && _tracker.BeatmapCs == 0
-                        && _tracker.BeatmapAr == 0
-                        && _tracker.BeatmapOd == 0;
+            var s = _tracker.GetSnapshot();
+            bool playing = s.IsPlaying && s.SheetsApiReady;
+            bool valsBad = s.BeatmapStars == 0
+                        && s.BeatmapAim == 0
+                        && s.BeatmapSpeed == 0
+                        && s.BeatmapCs == 0
+                        && s.BeatmapAr == 0
+                        && s.BeatmapOd == 0;
 
-            ClientDetectedText.Text = _tosuClient.IsConnected ? _tracker.DetectedClient : "-";
+            ClientDetectedText.Text = _tosuClient.IsConnected ? s.DetectedClient : "-";
 
             BeatmapInfoGrid.Background = playing
                 ? new SolidColorBrush(Color.FromRgb(0x1a, 0x3a, 0x1e))
                 : Brushes.Transparent;
 
-            HitsTextBox.Text = $"{_tracker.TotalBeatmapHits} ({_tracker.Play300c}, {_tracker.Play100c}, {_tracker.Play50c}, {_tracker.PlayMissc})";
-            TimeTextBox.Text = _tracker.Time.ToString();
-            BeatmapTextBox.Text = _tracker.BeatmapString ?? "";
-            StarsTextBox.Text = _tracker.BeatmapStars.ToString("0.00");
-            AimTextBox.Text = _tracker.BeatmapAim.ToString("0.00");
-            SpeedTextBox.Text = _tracker.BeatmapSpeed.ToString("0.00");
-            ModsTextBox.Text = _tracker.GetModsString();
-            TextBoxCS.Text = _tracker.BeatmapCs.ToString("0.0");
-            TextBoxAR.Text = _tracker.BeatmapAr.ToString("0.0");
-            TextBoxOD.Text = _tracker.BeatmapOd.ToString("0.0");
-            AccTextBox.Text = _tracker.Accuracy.ToString("0.00") + "%";
-            BpmTextBox.Text = _tracker.BeatmapBpm.ToString();
+            HitsTextBox.Text = $"{s.TotalBeatmapHits} ({s.Play300c}, {s.Play100c}, {s.Play50c}, {s.PlayMissc})";
+            TimeTextBox.Text = s.Time.ToString();
+            BeatmapTextBox.Text = s.BeatmapString;
+            StarsTextBox.Text = s.BeatmapStars.ToString("0.00");
+            AimTextBox.Text = s.BeatmapAim.ToString("0.00");
+            SpeedTextBox.Text = s.BeatmapSpeed.ToString("0.00");
+            ModsTextBox.Text = s.ModsString;
+            TextBoxCS.Text = s.BeatmapCs.ToString("0.0");
+            TextBoxAR.Text = s.BeatmapAr.ToString("0.0");
+            TextBoxOD.Text = s.BeatmapOd.ToString("0.0");
+            AccTextBox.Text = s.Accuracy.ToString("0.00") + "%";
+            BpmTextBox.Text = s.BeatmapBpm.ToString();
 
-            SetReadonlyFieldBad(BeatmapTextBox, string.IsNullOrEmpty(_tracker.BeatmapString));
+            SetReadonlyFieldBad(BeatmapTextBox, string.IsNullOrEmpty(s.BeatmapString));
             SetReadonlyFieldBad(StarsTextBox, valsBad);
             SetReadonlyFieldBad(AimTextBox, valsBad);
             SetReadonlyFieldBad(SpeedTextBox, valsBad);

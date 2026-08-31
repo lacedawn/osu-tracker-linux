@@ -40,6 +40,32 @@ namespace Circle_Tracker
         Perfect = 1 << 14,
     }
 
+    public record TrackerSnapshot(
+        bool IsPlaying,
+        bool IsReplay,
+        string DetectedClient,
+        string BeatmapString,
+        decimal BeatmapStars,
+        decimal BeatmapAim,
+        decimal BeatmapSpeed,
+        decimal BeatmapCs,
+        decimal BeatmapAr,
+        decimal BeatmapOd,
+        int BeatmapBpm,
+        int TotalBeatmapHits,
+        int Play300c,
+        int Play100c,
+        int Play50c,
+        int PlayMissc,
+        decimal Accuracy,
+        int Time,
+        string ModsString,
+        bool SheetsApiReady,
+        bool MemoryReadError,
+        int PlayingSeconds,
+        int IdleSeconds
+    );
+
     class Tracker
     {
         private const int MinHitsToSubmit = 40;
@@ -61,49 +87,49 @@ namespace Circle_Tracker
         private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.json");
         private static string SoundFilePath => FindFile(Path.Combine("assets", "sectionpass.wav"));
 
-        public int IdleSeconds = 0;
-        public int PlayingSeconds = 0;
+        public int IdleSeconds { get; private set; } = 0;
+        public int PlayingSeconds { get; private set; } = 0;
 
         public string TosuHost { get; set; } = "127.0.0.1";
         public int TosuPort { get; set; } = 24050;
         public string DetectedClient { get; private set; } = "Unknown";
 
         private string _currentBeatmapChecksum = "";
-        public int BeatmapID { get; set; }
-        public int BeatmapSetID { get; set; }
-        public string BeatmapString { get; set; } = "";
-        public int BeatmapBpm { get; set; }
+        private int BeatmapID { get; set; }
+        private int BeatmapSetID { get; set; }
+        private string BeatmapString { get; set; } = "";
+        private int BeatmapBpm { get; set; }
 
         public bool SubmitSoundEnabled { get; set; }
 
-        public GameStatus GameState { get; private set; } = GameStatus.Menu;
-        public bool IsPlaying => GameState == GameStatus.Playing;
-        public bool IsReplay { get; private set; } = false;
-        public bool MemoryReadError { get; set; } = false;
+        private GameStatus GameState { get; set; } = GameStatus.Menu;
+        private bool IsPlaying => GameState == GameStatus.Playing;
+        private bool IsReplay { get; set; } = false;
+        private bool MemoryReadError { get; set; } = false;
 
         public string Username { get; set; } = "";
-        public int RawMods { get; set; } = 0;
-        public bool Hidden { get; set; } = false;
-        public bool Hardrock { get; set; } = false;
-        public bool Doubletime { get; set; } = false;
-        public bool EZ { get; set; } = false;
-        public bool Halftime { get; set; } = false;
-        public bool Flashlight { get; set; } = false;
-        public bool Auto { get; set; } = false;
+        private int RawMods { get; set; } = 0;
+        private bool Hidden { get; set; } = false;
+        private bool Hardrock { get; set; } = false;
+        private bool Doubletime { get; set; } = false;
+        private bool EZ { get; set; } = false;
+        private bool Halftime { get; set; } = false;
+        private bool Flashlight { get; set; } = false;
+        private bool Auto { get; set; } = false;
 
-        public decimal BeatmapStars { get; private set; }
-        public decimal BeatmapAim { get; private set; }
-        public decimal BeatmapSpeed { get; private set; }
-        public decimal BeatmapCs { get; private set; }
-        public decimal BeatmapAr { get; private set; }
-        public decimal BeatmapOd { get; private set; }
-        public int Play300c { get; set; } = 0;
-        public int Play100c { get; set; } = 0;
-        public int Play50c { get; set; } = 0;
-        public int PlayMissc { get; set; } = 0;
-        public int TotalBeatmapHits { get; set; } = 0;
-        public decimal Accuracy { get; set; } = 0;
-        public int Time { get; set; } = 0;
+        private decimal BeatmapStars { get; set; }
+        private decimal BeatmapAim { get; set; }
+        private decimal BeatmapSpeed { get; set; }
+        private decimal BeatmapCs { get; set; }
+        private decimal BeatmapAr { get; set; }
+        private decimal BeatmapOd { get; set; }
+        private int Play300c { get; set; } = 0;
+        private int Play100c { get; set; } = 0;
+        private int Play50c { get; set; } = 0;
+        private int PlayMissc { get; set; } = 0;
+        private int TotalBeatmapHits { get; set; } = 0;
+        private decimal Accuracy { get; set; } = 0;
+        private int Time { get; set; } = 0;
 
         private int _firstHitObjectTime = 0;
         private float _lastClockRate = 1f;
@@ -254,7 +280,36 @@ namespace Circle_Tracker
             }
         }
 
-        public string GetModsString()
+        public TrackerSnapshot GetSnapshot()
+        {
+            return new TrackerSnapshot(
+                IsPlaying: IsPlaying,
+                IsReplay: IsReplay,
+                DetectedClient: DetectedClient,
+                BeatmapString: BeatmapString ?? "",
+                BeatmapStars: BeatmapStars,
+                BeatmapAim: BeatmapAim,
+                BeatmapSpeed: BeatmapSpeed,
+                BeatmapCs: BeatmapCs,
+                BeatmapAr: BeatmapAr,
+                BeatmapOd: BeatmapOd,
+                BeatmapBpm: BeatmapBpm,
+                TotalBeatmapHits: TotalBeatmapHits,
+                Play300c: Play300c,
+                Play100c: Play100c,
+                Play50c: Play50c,
+                PlayMissc: PlayMissc,
+                Accuracy: Accuracy,
+                Time: Time,
+                ModsString: GetModsString(),
+                SheetsApiReady: SheetsApiReady,
+                MemoryReadError: MemoryReadError,
+                PlayingSeconds: PlayingSeconds,
+                IdleSeconds: IdleSeconds
+            );
+        }
+
+        private string GetModsString()
         {
             string mods = "";
             if (Auto) mods += "AT";
