@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
-    public class TosuClient : IDisposable
+    public class TosuClient : ITosuClient, IDisposable
     {
         private static readonly ILogger<TosuClient> _log = AppLogger.For<TosuClient>();
 

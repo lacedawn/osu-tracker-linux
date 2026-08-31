@@ -1,0 +1,90 @@
+using Circle_Tracker;
+using Moq;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace CircleTracker.Tests
+{
+    internal static class StateBuilder
+    {
+        internal static TosuState Playing(
+            int h300 = 0, int h100 = 0, int h50 = 0, int misses = 0,
+            int songTimeMs = 30000, decimal accuracy = 0,
+            string playerName = "testplayer", string profileName = "testplayer",
+            string checksum = "abc123", int mods = 0)
+            => Build(2, h300, h100, h50, misses, songTimeMs, accuracy, playerName, profileName, checksum, mods);
+
+        internal static TosuState Results(
+            int h300 = 45, string checksum = "abc123")
+            => Build(7, h300, 0, 0, 0, 30000, 100m, "testplayer", "testplayer", checksum, 0);
+
+        internal static TosuState Build(
+            int gameStateNumber,
+            int h300 = 0, int h100 = 0, int h50 = 0, int misses = 0,
+            int songTimeMs = 30000, decimal accuracy = 0,
+            string playerName = "testplayer", string profileName = "testplayer",
+            string checksum = "abc123", int mods = 0)
+        {
+            return new TosuState
+            {
+                State = new TosuGameState { Number = gameStateNumber },
+                Profile = new TosuProfile { Name = profileName },
+                Beatmap = new TosuBeatmap
+                {
+                    Checksum = checksum,
+                    Id = 1,
+                    Set = 1,
+                    Artist = "Artist",
+                    Title = "Title",
+                    Version = "Hard",
+                    Time = new TosuBeatmapTime { Live = songTimeMs, FirstObject = 0 },
+                    Stats = new TosuBeatmapStats
+                    {
+                        Stars = new TosuStars { Total = 5 }
+                    }
+                },
+                Play = new TosuPlay
+                {
+                    PlayerName = playerName,
+                    Accuracy = accuracy,
+                    Mods = new TosuPlayMods { Number = mods },
+                    Hits = new TosuHits { H300 = h300, H100 = h100, H50 = h50, Misses = misses },
+                    Mode = new TosuNumberName { Number = 0 }
+                },
+                Settings = new TosuSettings
+                {
+                    Client = new TosuClientInfo { Version = "b20240101" },
+                    Mode = new TosuNumberName { Number = 0 }
+                }
+            };
+        }
+    }
+
+    internal static class TrackerFactory
+    {
+        internal static (Tracker tracker, Mock<ITosuClient> client, Mock<ISheetsSink> sink)
+            Create(bool connected = true)
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            mockWindow.Setup(w => w.ShowYesNoDialog(It.IsAny<string>(), It.IsAny<string>()))
+                      .ReturnsAsync(true);
+
+            var mockClient = new Mock<ITosuClient>();
+            mockClient.Setup(c => c.IsConnected).Returns(connected);
+            mockClient.Setup(c => c.CalculatePpAsync(It.IsAny<int>()))
+                      .ReturnsAsync((PpCalcResult?)null);
+
+            var mockSink = new Mock<ISheetsSink>();
+            mockSink.Setup(s => s.SheetsApiReady).Returns(true);
+            mockSink.Setup(s => s.TryAppendPlayEntry(
+                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object);
+            return (tracker, mockClient, mockSink);
+        }
+    }
+}

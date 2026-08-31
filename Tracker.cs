@@ -75,8 +75,8 @@ namespace Circle_Tracker
         private const int MaxHitJumpPerTick = 50;
 
         private readonly IMainWindow _form;
-        private readonly TosuClient _tosuClient;
-        private readonly GoogleSheetsManager _sheetsManager;
+        private readonly ITosuClient _tosuClient;
+        private readonly ISheetsSink _sheetsManager;
 
         private static string FindFile(string relativePath)
         {
@@ -171,7 +171,7 @@ namespace Circle_Tracker
         }
         public int SheetRows => _sheetsManager.SheetRows;
 
-        public Tracker(IMainWindow form, TosuClient tosuClient)
+        public Tracker(IMainWindow form, ITosuClient tosuClient)
         {
             _form = form;
             _tosuClient = tosuClient;
@@ -192,6 +192,17 @@ namespace Circle_Tracker
                     "Works with both osu!stable (Wine) and osu!lazer.";
                 _form.ShowMessage(welcomeMsg, "Welcome to Circle Tracker!");
             }
+        }
+
+        public Tracker(IMainWindow form, ITosuClient tosuClient, ISheetsSink sheetsSink)
+        {
+            _form = form;
+            _tosuClient = tosuClient;
+            _sheetsManager = sheetsSink;
+            _sheetsManager.OnSettingsChanged = SaveSettings;
+
+            GameState = GameStatus.Menu;
+            LastPostTime = DateTime.Now;
         }
 
         public void InitGoogleAPI(bool silent = false) => _sheetsManager.InitGoogleAPI(silent);

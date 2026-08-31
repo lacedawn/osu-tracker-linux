@@ -26,7 +26,7 @@ namespace Circle_Tracker
         bool AccuracyReliable
     );
 
-    public class GoogleSheetsManager
+    public class GoogleSheetsManager : ISheetsSink
     {
         private static readonly ILogger<GoogleSheetsManager> _log = AppLogger.For<GoogleSheetsManager>();
 
@@ -82,7 +82,7 @@ namespace Circle_Tracker
         private Spreadsheet? _userSpreadsheet;
         private Sheet? _rawDataSheet;
 
-        public bool SheetsApiReady { get; private set; } = false;
+        public bool SheetsApiReady { get; internal set; } = false;
         public bool SpreadsheetTimezoneVerified { get; set; } = false;
         public string SpreadsheetId { get; set; } = "";
         public string SheetName { get; set; } = "";
@@ -305,7 +305,7 @@ namespace Circle_Tracker
             }
         }
 
-        private string? GetSkipReason(PlayEntryData data, bool isReplay, int rawMods,
+        internal string? GetSkipReason(PlayEntryData data, bool isReplay, int rawMods,
             int currentGameMode, DateTime lastPostTime)
         {
             if (!SheetsApiReady) return "Sheets API not connected";
@@ -321,7 +321,7 @@ namespace Circle_Tracker
             return null;
         }
 
-        private List<object> BuildRowData(PlayEntryData data)
+        internal List<object> BuildRowData(PlayEntryData data)
         {
             decimal calculatedAccuracy =
                 (data.Play300c + data.Play100c + data.Play50c + data.PlayMissc) > 0

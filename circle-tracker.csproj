@@ -12,6 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="circle-tracker.Tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Avalonia UI -->
     <PackageReference Include="Avalonia" Version="11.2.3" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
