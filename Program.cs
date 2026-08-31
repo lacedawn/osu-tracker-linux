@@ -1,22 +1,63 @@
 using Avalonia;
 using System;
-using System.Diagnostics;
-using System.Linq;
+using System.IO;
+using System.Threading;
 
 namespace Circle_Tracker
 {
     class Program
     {
+        private static Mutex? _singleInstanceMutex;
+        private static FileStream? _lockFile;
+
         [STAThread]
         public static void Main(string[] args)
         {
-            if (!EnsureSingleInstance())
+            try
             {
-                Console.Error.WriteLine("Another instance of circle tracker is already running.");
-                return;
+                _singleInstanceMutex = new Mutex(
+                    initiallyOwned: true,
+                    name: "Global\\circle-tracker-singleton",
+                    out bool createdNew);
+                if (!createdNew)
+                {
+                    Console.Error.WriteLine("[CircleTracker] Another instance is already running.");
+                    _singleInstanceMutex.Dispose();
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is NotSupportedException || ex is PlatformNotSupportedException)
+            {
+                string lockPath = Path.Combine(
+                    Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") ?? "/tmp",
+                    "circle-tracker.lock");
+                try
+                {
+                    _lockFile = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                catch (IOException)
+                {
+                    Console.Error.WriteLine("[CircleTracker] Another instance is already running (lock file).");
+                    return;
+                }
             }
 
-            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            try
+            {
+                BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            }
+            finally
+            {
+                if (_singleInstanceMutex != null)
+                {
+                    try { _singleInstanceMutex.ReleaseMutex(); } catch { }
+                    _singleInstanceMutex.Dispose();
+                }
+                if (_lockFile != null)
+                {
+                    _lockFile.Dispose();
+                }
+            }
         }
 
         public static AppBuilder BuildAvaloniaApp()
@@ -24,15 +65,5 @@ namespace Circle_Tracker
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace();
-
-        private static bool EnsureSingleInstance()
-        {
-            Process currentProcess = Process.GetCurrentProcess();
-            Process? runningProcess = Process.GetProcesses()
-                .FirstOrDefault(p =>
-                    p.Id != currentProcess.Id &&
-                    p.ProcessName.Equals(currentProcess.ProcessName, StringComparison.Ordinal));
-            return runningProcess == null;
-        }
     }
 }
