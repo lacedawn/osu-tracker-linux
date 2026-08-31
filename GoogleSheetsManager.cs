@@ -2,6 +2,7 @@ using Google;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -27,6 +28,8 @@ namespace Circle_Tracker
 
     public class GoogleSheetsManager
     {
+        private static readonly ILogger<GoogleSheetsManager> _log = AppLogger.For<GoogleSheetsManager>();
+
         private const int MinHitsToSubmit = 40;
         private const int RateLimitSeconds = 3;
         private const int MaxSubmitAttempts = 4;
@@ -143,14 +146,14 @@ namespace Circle_Tracker
             }
             catch (GoogleApiException e)
             {
-                Console.Error.WriteLine($"[CircleTracker] Google API Exception in InitGoogleAPI: {e.Message}");
+                _log.LogError(e, "Google API Exception in InitGoogleAPI");
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error");
                 SetSheetsApiReady(false);
                 return;
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine($"[CircleTracker] Exception in InitGoogleAPI: {e.Message}");
+                _log.LogError(e, "Exception in InitGoogleAPI");
                 if (!silent) _form.ShowMessage(e.Message, "Error");
                 SetSheetsApiReady(false);
                 return;
@@ -194,7 +197,7 @@ namespace Circle_Tracker
             ResizeNamedRanges(_userSpreadsheet, SheetRows).GetAwaiter().GetResult();
             PromptTimezone(_userSpreadsheet);
             SetSheetsApiReady(true);
-            Console.WriteLine("[CircleTracker] Google Sheets API successfully initialized and connected.");
+            _log.LogInformation("Google Sheets API successfully initialized and connected");
         }
 
         private async Task WriteHeaders(CancellationToken ct = default)
@@ -298,7 +301,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[CircleTracker] Exception in AppendPlayEntry: {ex}");
+                _log.LogError(ex, "Exception in AppendPlayEntry");
             }
         }
 
@@ -365,7 +368,7 @@ namespace Circle_Tracker
             var valueRange = new ValueRange { Values = new List<IList<object>> { rowData } };
             var appendRequest = _sheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-            Console.WriteLine($"[CircleTracker] Appending row to Google Sheets ({range})...");
+            _log.LogInformation("Appending row to Google Sheets ({Range})...", range);
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
@@ -376,13 +379,13 @@ namespace Circle_Tracker
                 {
                     if (i == MaxSubmitAttempts - 1) throw;
                     int delayMs = BaseRetryDelayMs * (1 << i);
-                    Console.Error.WriteLine($"[CircleTracker] Transient error ({ex.HttpStatusCode}), retrying in {delayMs}ms...");
+                    _log.LogWarning("Transient error ({StatusCode}), retrying in {DelayMs}ms...", ex.HttpStatusCode, delayMs);
                     await Task.Delay(delayMs, ct);
                 }
                 catch (Exception ex)
                 {
                     if (i == MaxSubmitAttempts - 1) throw;
-                    Console.Error.WriteLine($"[CircleTracker] Submit attempt {i + 1} failed: {ex.Message}");
+                    _log.LogError(ex, "Submit attempt {Attempt} failed", i + 1);
                 }
             }
             throw new InvalidOperationException("Unreachable");
@@ -413,7 +416,7 @@ namespace Circle_Tracker
                 await _sheetsService!.Spreadsheets.BatchUpdate(batch, SpreadsheetId).ExecuteAsync(ct);
                 await ResizeNamedRanges(_userSpreadsheet!, updatedRow + RowExpansionBatchSize, ct);
                 SheetRows = updatedRow + RowExpansionBatchSize;
-                Console.WriteLine($"[CircleTracker] Sheet expanded to {SheetRows} rows.");
+                _log.LogInformation("Sheet expanded to {SheetRows} rows", SheetRows);
             }
         }
 
@@ -424,13 +427,13 @@ namespace Circle_Tracker
             string? skipReason = GetSkipReason(data, isReplay, rawMods, currentGameMode, lastPostTime);
             if (skipReason != null)
             {
-                Console.WriteLine($"[CircleTracker] Skipped post: {skipReason}");
+                _log.LogInformation("Skipped post: {SkipReason}", skipReason);
                 return;
             }
             setLastPostTime(DateTime.Now);
             List<object> rowData = BuildRowData(data);
             AppendValuesResponse response = await SubmitRowAsync(rowData, ct);
-            Console.WriteLine("[CircleTracker] Play successfully logged to Google Sheets!");
+            _log.LogInformation("Play successfully logged to Google Sheets!");
             if (submitSoundEnabled)
                 SoundHelper.PlaySound(soundFilePath);
             await ExpandSheetIfNeededAsync(response, ct);

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.IO;
@@ -11,6 +12,8 @@ namespace Circle_Tracker
 {
     public class TosuClient : IDisposable
     {
+        private static readonly ILogger<TosuClient> _log = AppLogger.For<TosuClient>();
+
         private const int BufferSize = 65536;
         private const int HttpPollIntervalMs = 500;
         private const int WsRetryIntervalMs = 5000;
@@ -180,7 +183,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TosuClient] WebSocket connect failed: {ex.GetType().Name}");
+                _log.LogWarning("WebSocket connect failed: {ErrorType}", ex.GetType().Name);
                 return false;
             }
 
@@ -227,7 +230,7 @@ namespace Circle_Tracker
                         }
                         catch (Exception ex)
                         {
-                            Console.Error.WriteLine($"[TosuClient] Failed to deserialize WebSocket message: {ex.Message}");
+                            _log.LogError(ex, "Failed to deserialize WebSocket message");
                         }
                     }
                 }
@@ -237,7 +240,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[TosuClient] WebSocket session error: {ex.Message}");
+                _log.LogError(ex, "WebSocket session error");
             }
             finally
             {
@@ -267,7 +270,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TosuClient] HTTP poll failed: {ex.GetType().Name}");
+                _log.LogDebug("HTTP poll failed: {ErrorType}", ex.GetType().Name);
             }
 
             IsConnected = false;
@@ -290,7 +293,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[TosuClient] PP calculation request failed: {ex.Message}");
+                _log.LogError(ex, "PP calculation request failed");
             }
 
             return null;

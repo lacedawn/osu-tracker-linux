@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -16,6 +17,8 @@ namespace Circle_Tracker
 
     class Updater
     {
+        private static readonly ILogger<Updater> _log = AppLogger.For<Updater>();
+
         static readonly string CurrentReleaseTag = "v16";
         static readonly HttpClient client;
 
@@ -41,19 +44,15 @@ namespace Circle_Tracker
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine(
-                    $"Update check failed. You have version {CurrentReleaseTag}. " +
-                    $"Check https://github.com/FunOrange/circle-tracker/releases/latest\n{e.Message}");
+                _log.LogError(e, "Update check failed. You have version {CurrentReleaseTag}", CurrentReleaseTag);
                 return;
             }
 
             if (latestRelease == null) return;
             if (latestRelease.TagName == CurrentReleaseTag) return;
 
-            Console.WriteLine(
-                $"Update available: {latestRelease.TagName}\n" +
-                $"Release notes: {latestRelease.Body}\n" +
-                $"Download: {latestRelease.HtmlUrl}");
+            _log.LogInformation("Update available: {TagName}\nRelease notes: {Body}\nDownload: {HtmlUrl}",
+                latestRelease.TagName, latestRelease.Body, latestRelease.HtmlUrl);
         }
     }
 }

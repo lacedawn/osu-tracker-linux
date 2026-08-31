@@ -1,4 +1,5 @@
 using Avalonia;
+using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using System.Threading;
@@ -7,6 +8,8 @@ namespace Circle_Tracker
 {
     class Program
     {
+        private static readonly ILogger<Program> _log = AppLogger.For<Program>();
+
         private static Mutex? _singleInstanceMutex;
         private static FileStream? _lockFile;
 
@@ -21,7 +24,7 @@ namespace Circle_Tracker
                     out bool createdNew);
                 if (!createdNew)
                 {
-                    Console.Error.WriteLine("[CircleTracker] Another instance is already running.");
+                    _log.LogError("Another instance is already running");
                     _singleInstanceMutex.Dispose();
                     return;
                 }
@@ -37,7 +40,7 @@ namespace Circle_Tracker
                 }
                 catch (IOException)
                 {
-                    Console.Error.WriteLine("[CircleTracker] Another instance is already running (lock file).");
+                    _log.LogError("Another instance is already running (lock file)");
                     return;
                 }
             }

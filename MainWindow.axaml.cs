@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using System.Reflection;
@@ -12,6 +13,8 @@ namespace Circle_Tracker
 {
     public partial class MainWindow : Window, IMainWindow
     {
+        private static readonly ILogger<MainWindow> _log = AppLogger.For<MainWindow>();
+
         private readonly TosuClient _tosuClient;
         private readonly Tracker _tracker;
 
@@ -45,7 +48,7 @@ namespace Circle_Tracker
             _ = Task.Run(async () =>
             {
                 try { await Updater.CheckForUpdates(); }
-                catch (Exception ex) { Console.Error.WriteLine($"[CircleTracker] Update check failed: {ex.Message}"); }
+                catch (Exception ex) { _log.LogError(ex, "Update check failed"); }
             });
 
             _tosuClient = new TosuClient();

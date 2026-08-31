@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.IO;
@@ -68,6 +69,8 @@ namespace Circle_Tracker
 
     class Tracker
     {
+        private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
+
         private const int MinHitsToSubmit = 40;
         private const int MaxHitJumpPerTick = 50;
 
@@ -213,7 +216,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to save settings: {ex.Message}");
+                _log.LogError(ex, "Failed to save settings");
             }
         }
 
@@ -254,7 +257,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to load settings: {ex.Message}");
+                _log.LogError(ex, "Failed to load settings");
             }
         }
 
@@ -272,11 +275,11 @@ namespace Circle_Tracker
                 if (lines.Length > 6 && !string.IsNullOrWhiteSpace(lines[6])) TosuHost = lines[6];
                 if (lines.Length > 7 && int.TryParse(lines[7], out int port) && port > 0) TosuPort = port;
                 SaveSettings();
-                Console.WriteLine("[CircleTracker] Migrated settings from old text format to JSON.");
+                _log.LogInformation("Migrated settings from old text format to JSON");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to migrate old settings: {ex.Message}");
+                _log.LogError(ex, "Failed to migrate old settings");
             }
         }
 
@@ -449,7 +452,7 @@ namespace Circle_Tracker
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[CircleTracker] Failed to update difficulty from PP API: {ex.Message}");
+                _log.LogWarning(ex, "Failed to update difficulty from PP API");
             }
         }
 
@@ -504,7 +507,8 @@ namespace Circle_Tracker
                 if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
                 {
                     bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
-                    Console.WriteLine($"[CircleTracker] Transitioned from Playing to {newGameState}. Completed={beatmapCompleted}. Hits={TotalBeatmapHits}");
+                    _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
+                        newGameState, beatmapCompleted, TotalBeatmapHits);
                     TryPostBeatmapEntry(beatmapCompleted);
 
                     Play300c = 0;
@@ -558,7 +562,8 @@ namespace Circle_Tracker
                     {
                         if (TotalBeatmapHits >= MinHitsToSubmit)
                         {
-                            Console.WriteLine($"[CircleTracker] Retry detected (Time rewound: {newSongTime} < {Time}). Hits={TotalBeatmapHits}");
+                            _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
+                                newSongTime, Time, TotalBeatmapHits);
                             TryPostBeatmapEntry(false);
                         }
                         Play300c = 0;

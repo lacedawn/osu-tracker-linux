@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -8,11 +9,13 @@ namespace Circle_Tracker
 {
     public static class SoundHelper
     {
+        private static readonly ILogger _log = AppLogger.Factory.CreateLogger(nameof(SoundHelper));
+
         public static void PlaySound(string path)
         {
             if (!File.Exists(path))
             {
-                Console.WriteLine($"[SoundHelper] Sound file not found: {path}");
+                _log.LogWarning("Sound file not found: {Path}", path);
                 return;
             }
             _ = Task.Run(() => PlaySoundInternalAsync(path));
@@ -38,14 +41,14 @@ namespace Circle_Tracker
                         try { await proc.WaitForExitAsync(cts.Token); }
                         catch (OperationCanceledException)
                         {
-                            Console.WriteLine($"[SoundHelper] Audio player '{player}' timed out; killing.");
+                            _log.LogWarning("Audio player '{Player}' timed out; killing", player);
                             proc.Kill(entireProcessTree: true);
                         }
                         return;
                     }
                     catch { }
                 }
-                Console.WriteLine("[SoundHelper] No supported audio player found (pw-play, paplay, aplay).");
+                _log.LogWarning("No supported audio player found (pw-play, paplay, aplay)");
             }
             else if (OperatingSystem.IsMacOS())
             {
@@ -64,7 +67,7 @@ namespace Circle_Tracker
                         catch (OperationCanceledException) { proc.Kill(entireProcessTree: true); }
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"[SoundHelper] macOS audio error: {ex.Message}"); }
+                catch (Exception ex) { _log.LogError(ex, "macOS audio error"); }
             }
             else if (OperatingSystem.IsWindows())
             {
@@ -85,7 +88,7 @@ namespace Circle_Tracker
                         catch (OperationCanceledException) { proc.Kill(entireProcessTree: true); }
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"[SoundHelper] Windows audio error: {ex.Message}"); }
+                catch (Exception ex) { _log.LogError(ex, "Windows audio error"); }
             }
         }
     }
