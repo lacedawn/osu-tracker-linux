@@ -69,8 +69,13 @@ namespace Circle_Tracker
                 Dispatcher.UIThread.Post(() => UpdateTosuStatus(connected));
             };
 
-            _tracker.InitGoogleAPI(silent: true);
             SetCredentialsFound(File.Exists(Path.Combine(AppContext.BaseDirectory, "credentials.json")));
+
+            _ = Task.Run(() =>
+            {
+                try { _tracker.InitGoogleAPI(silent: true); }
+                catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
+            });
 
             SetupTimers();
         }
@@ -162,36 +167,47 @@ namespace Circle_Tracker
         {
             Dispatcher.UIThread.Post(async () =>
             {
-                var dlg = new Window
+                try
                 {
-                    Title = title,
-                    Width = 460,
-                    Height = 220,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    Content = new StackPanel
+                    var dlg = new Window
                     {
-                        Margin = new Avalonia.Thickness(20),
-                        Spacing = 16,
-                        Children =
+                        Title = title,
+                        Width = 460,
+                        Height = 220,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        Content = new StackPanel
                         {
-                            new TextBlock
+                            Margin = new Avalonia.Thickness(20),
+                            Spacing = 16,
+                            Children =
                             {
-                                Text = message,
-                                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                                Foreground = Brushes.White
-                            },
-                            new Button
-                            {
-                                Content = "OK",
-                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                                Padding = new Avalonia.Thickness(20, 6)
+                                new TextBlock
+                                {
+                                    Text = message,
+                                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                                    Foreground = Brushes.White
+                                },
+                                new Button
+                                {
+                                    Content = "OK",
+                                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                                    Padding = new Avalonia.Thickness(20, 6)
+                                }
                             }
                         }
-                    }
-                };
-                var btn = ((StackPanel)dlg.Content!).Children[1] as Button;
-                if (btn != null) btn.Click += (_, _) => dlg.Close();
-                await dlg.ShowDialog(this);
+                    };
+                    var btn = ((StackPanel)dlg.Content!).Children[1] as Button;
+                    if (btn != null) btn.Click += (_, _) => dlg.Close();
+
+                    if (this.IsLoaded && this.IsVisible)
+                        await dlg.ShowDialog(this);
+                    else
+                        dlg.Show();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Failed to display message: {Message}", message);
+                }
             });
         }
 
@@ -200,37 +216,50 @@ namespace Circle_Tracker
             var tcs = new TaskCompletionSource<bool>();
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                bool result = false;
-                var panel = new StackPanel { Margin = new Avalonia.Thickness(20), Spacing = 16 };
-                panel.Children.Add(new TextBlock
+                try
                 {
-                    Text = message,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                    Foreground = Brushes.White
-                });
-                var btnRow = new StackPanel
+                    bool result = false;
+                    var panel = new StackPanel { Margin = new Avalonia.Thickness(20), Spacing = 16 };
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Foreground = Brushes.White
+                    });
+                    var btnRow = new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8
+                    };
+                    var dlg = new Window
+                    {
+                        Title = title,
+                        Width = 460,
+                        Height = 200,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        Content = panel
+                    };
+                    var yesBtn = new Button { Content = "Yes", Padding = new Avalonia.Thickness(20, 6) };
+                    var noBtn = new Button { Content = "No", Padding = new Avalonia.Thickness(20, 6) };
+                    yesBtn.Click += (_, _) => { result = true; dlg.Close(); };
+                    noBtn.Click += (_, _) => { result = false; dlg.Close(); };
+                    btnRow.Children.Add(yesBtn);
+                    btnRow.Children.Add(noBtn);
+                    panel.Children.Add(btnRow);
+
+                    if (this.IsLoaded && this.IsVisible)
+                        await dlg.ShowDialog(this);
+                    else
+                        dlg.Show();
+
+                    tcs.SetResult(result);
+                }
+                catch (Exception ex)
                 {
-                    Orientation = Avalonia.Layout.Orientation.Horizontal,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                    Spacing = 8
-                };
-                var dlg = new Window
-                {
-                    Title = title,
-                    Width = 460,
-                    Height = 200,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    Content = panel
-                };
-                var yesBtn = new Button { Content = "Yes", Padding = new Avalonia.Thickness(20, 6) };
-                var noBtn = new Button { Content = "No", Padding = new Avalonia.Thickness(20, 6) };
-                yesBtn.Click += (_, _) => { result = true; dlg.Close(); };
-                noBtn.Click += (_, _) => { result = false; dlg.Close(); };
-                btnRow.Children.Add(yesBtn);
-                btnRow.Children.Add(noBtn);
-                panel.Children.Add(btnRow);
-                await dlg.ShowDialog(this);
-                tcs.SetResult(result);
+                    _log.LogError(ex, "Failed to display confirm dialog: {Message}", message);
+                    tcs.SetResult(false);
+                }
             });
             return await tcs.Task;
         }
