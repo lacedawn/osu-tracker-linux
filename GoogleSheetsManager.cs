@@ -21,7 +21,8 @@ namespace Circle_Tracker
         int TotalBeatmapHits, decimal Accuracy,
         int Play300c, int Play100c, int Play50c, int PlayMissc,
         bool Complete, int PlayTimeSeconds, string ModsString,
-        int PlayCount
+        int PlayCount,
+        bool AccuracyReliable
     );
 
     public class GoogleSheetsManager
@@ -362,7 +363,7 @@ namespace Circle_Tracker
                 data.BeatmapAr,
                 data.BeatmapOd,
                 data.TotalBeatmapHits,
-                (data.Accuracy == 0 || data.Accuracy == 100) ? calculatedAccuracy : data.Accuracy,
+                data.AccuracyReliable ? data.Accuracy : calculatedAccuracy,
                 data.Play300c,
                 data.Play100c,
                 data.Play50c,

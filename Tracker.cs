@@ -571,6 +571,7 @@ namespace Circle_Tracker
 
             float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
             int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
+            bool accuracyReliable = Accuracy > 0 && TotalBeatmapHits > 0;
 
             var data = new PlayEntryData(
                 BeatmapString: BeatmapString,
@@ -598,7 +599,8 @@ namespace Circle_Tracker
                 Complete: complete,
                 PlayTimeSeconds: playTime,
                 ModsString: GetModsString(),
-                PlayCount: _consecutivePlayCount
+                PlayCount: _consecutivePlayCount,
+                AccuracyReliable: accuracyReliable
             );
 
             _ = Task.Run(async () =>
