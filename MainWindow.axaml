@@ -11,8 +11,10 @@
         WindowStartupLocation="CenterScreen"
         Background="#14121d">
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="16">
+  <Panel>
+    <local:TrianglesControl Velocity="6" TriangleCount="20" TriangleBrush="#12ffffff" IsHitTestVisible="False"/>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="16">
       <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
         <Border Grid.Column="0" Classes="status-pill">
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -172,9 +174,10 @@
         </Border>
       </StackPanel>
 
-      <Border Grid.Row="4" Background="#100e17" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
+      <Border Grid.Row="4" Background="#cc100e17" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
         <TextBlock x:Name="TimeLabelText" Classes="stat-label" VerticalAlignment="Center" Text="Playing: 0s  Idle: 0s  Efficiency: 0%"/>
       </Border>
     </Grid>
   </ScrollViewer>
+  </Panel>
 </Window>

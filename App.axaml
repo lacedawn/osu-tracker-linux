@@ -7,7 +7,7 @@
         <FontFamily x:Key="OsuFont">avares://circle-tracker/Assets/Fonts#Torus, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif</FontFamily>
 
         <Color x:Key="BackgroundDarkColor">#14121d</Color>
-        <Color x:Key="CardBackgroundColor">#1d192b</Color>
+        <Color x:Key="CardBackgroundColor">#cc1d192b</Color>
         <Color x:Key="CardBorderColor">#2e2744</Color>
         <Color x:Key="ChipBackgroundColor">#252038</Color>
         <Color x:Key="AccentPinkColor">#e11d48</Color>
@@ -21,7 +21,7 @@
         <Color x:Key="TextMutedColor">#8f87a3</Color>
 
         <SolidColorBrush x:Key="BackgroundDark" Color="#14121d" />
-        <SolidColorBrush x:Key="CardBackground" Color="#1d192b" />
+        <SolidColorBrush x:Key="CardBackground" Color="#cc1d192b" />
         <SolidColorBrush x:Key="CardBorder" Color="#2e2744" />
         <SolidColorBrush x:Key="ChipBackground" Color="#252038" />
         <SolidColorBrush x:Key="AccentPink" Color="#e11d48" />
@@ -81,7 +81,7 @@
         </Style>
 
         <Style Selector="Border.hud-card">
-            <Setter Property="Background" Value="#1d192b" />
+            <Setter Property="Background" Value="#cc1d192b" />
             <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
@@ -92,7 +92,7 @@
         </Style>
 
         <Style Selector="Border.status-pill">
-            <Setter Property="Background" Value="#1d192b" />
+            <Setter Property="Background" Value="#cc1d192b" />
             <Setter Property="BorderBrush" Value="#2e2744" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="12" />
