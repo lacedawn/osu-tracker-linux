@@ -34,6 +34,9 @@ namespace Circle_Tracker
         private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x7d, 0xd3, 0xfc));
         private static readonly IBrush OrangeBrush = new SolidColorBrush(Color.FromRgb(0xfb, 0x92, 0x3c));
         private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x8f, 0x87, 0xa3));
+        private static readonly IBrush WhiteBrush = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa));
+        private static readonly IBrush GoldBrush = new SolidColorBrush(Color.FromRgb(0xfa, 0xcc, 0x15));
+        private static readonly IBrush PinkBrush = new SolidColorBrush(Color.FromRgb(0xf4, 0x72, 0xb6));
 
         private static readonly HttpClient _imageHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
         private readonly ConcurrentDictionary<string, Bitmap> _coverCache = new();
@@ -399,11 +402,22 @@ namespace Circle_Tracker
             LoadCoverImage(s.CoverUrl);
 
             StatCsText.Text = s.BeatmapCs.ToString("0.0");
+            StatCsText.Foreground = WhiteBrush;
+
             StatArText.Text = s.BeatmapAr.ToString("0.0");
+            StatArText.Foreground = s.BeatmapAr >= 10.0m ? GreenBrush : WhiteBrush;
+
             StatOdText.Text = s.BeatmapOd.ToString("0.0");
+            StatOdText.Foreground = s.BeatmapOd >= 10.0m ? GreenBrush : WhiteBrush;
+
             StatHpText.Text = s.BeatmapHp.ToString("0.0");
+            StatHpText.Foreground = WhiteBrush;
+
             StatBpmText.Text = s.BeatmapBpm.ToString();
+            StatBpmText.Foreground = s.BeatmapBpm >= 200 ? OrangeBrush : WhiteBrush;
+
             StatModsText.Text = !string.IsNullOrEmpty(s.ModsString) ? $"+{s.ModsString}" : "None";
+            StatModsText.Foreground = !string.IsNullOrEmpty(s.ModsString) ? PinkBrush : MutedBrush;
 
             Hits300Text.Text = s.Play300c.ToString();
             Hits100Text.Text = s.Play100c.ToString();
@@ -412,6 +426,12 @@ namespace Circle_Tracker
             TotalObjectsText.Text = $"Total: {s.TotalBeatmapHits}";
 
             AccuracyText.Text = $"{s.Accuracy:0.00}%";
+            if (s.Accuracy >= 100.0m)
+                AccuracyText.Foreground = GoldBrush;
+            else if (s.Accuracy > 95.0m)
+                AccuracyText.Foreground = GreenBrush;
+            else
+                AccuracyText.Foreground = WhiteBrush;
             PlayCountBadge.Text = $"Play #{s.PlayCount}";
 
             int playing = s.PlayingSeconds;

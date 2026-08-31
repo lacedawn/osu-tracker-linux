@@ -12,17 +12,17 @@ namespace Circle_Tracker
         public static readonly StyledProperty<IBrush> TriangleBrushProperty =
             AvaloniaProperty.Register<TrianglesControl, IBrush>(
                 nameof(TriangleBrush),
-                new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)));
+                new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)));
 
         public static readonly StyledProperty<int> TriangleCountProperty =
             AvaloniaProperty.Register<TrianglesControl, int>(
                 nameof(TriangleCount),
-                24);
+                16);
 
         public static readonly StyledProperty<double> VelocityProperty =
             AvaloniaProperty.Register<TrianglesControl, double>(
                 nameof(Velocity),
-                35.0);
+                16.0);
 
         public static readonly StyledProperty<bool> IsAnimatedProperty =
             AvaloniaProperty.Register<TrianglesControl, bool>(
@@ -164,11 +164,11 @@ namespace Circle_Tracker
 
         private Particle CreateParticle(float width, float height, bool randomY)
         {
-            float size = (float)(_random.NextDouble() * 30 + 15);
+            float size = (float)(_random.NextDouble() * 16 + 12);
             float x = (float)(_random.NextDouble() * (width + size * 2) - size);
             float y = randomY ? (float)(_random.NextDouble() * (height + size)) : height + size;
-            float speed = (float)(_random.NextDouble() * 0.6 + 0.7);
-            float alpha = (float)(_random.NextDouble() * 0.5 + 0.2);
+            float speed = (float)(_random.NextDouble() * 0.4 + 0.7);
+            float alpha = (float)(_random.NextDouble() * 0.35 + 0.55);
 
             return new Particle
             {

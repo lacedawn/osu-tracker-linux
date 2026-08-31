@@ -32,28 +32,28 @@
         </Border>
       </Grid>
 
-      <Border Grid.Row="1" Height="105" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,8" Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1">
+      <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,8" Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1">
         <Grid>
           <Image x:Name="CoverImage" Stretch="UniformToFill" Opacity="0.85"/>
           <Border>
             <Border.Background>
               <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-                <GradientStop Offset="0" Color="#f014121d"/>
-                <GradientStop Offset="1" Color="#8014121d"/>
+                <GradientStop Offset="0" Color="#e014121d"/>
+                <GradientStop Offset="1" Color="#6014121d"/>
               </LinearGradientBrush>
             </Border.Background>
           </Border>
           <Grid ColumnDefinitions="*,Auto" Margin="14,10">
             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
               <TextBlock x:Name="BeatmapTitleText" Classes="banner-title" Text="No beatmap detected" TextTrimming="CharacterEllipsis"/>
-              <TextBlock x:Name="BeatmapArtistText" Classes="banner-artist" Text="-" TextTrimming="CharacterEllipsis"/>
+              <TextBlock x:Name="BeatmapArtistText" Classes="banner-artist" Text="-" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="6">
-              <Border Background="#252038" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="4" Padding="8,3" HorizontalAlignment="Right">
-                <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" Foreground="#f5f4fa"/>
+              <Border x:Name="BeatmapVersionBorder" CornerRadius="12" Background="#50000000" BorderBrush="#30ffffff" BorderThickness="1" Padding="10,4" HorizontalAlignment="Right">
+                <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" FontWeight="SemiBold" Foreground="#f5f4fa"/>
               </Border>
-              <Border Background="#1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="4" Padding="8,4" HorizontalAlignment="Right">
-                <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="14" FontWeight="Bold" Foreground="#facc15"/>
+              <Border x:Name="BeatmapStarsBorder" CornerRadius="12" Background="#50000000" BorderBrush="#30facc15" BorderThickness="1" Padding="10,4" HorizontalAlignment="Right">
+                <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="13" FontWeight="Bold" Foreground="#facc15"/>
               </Border>
             </StackPanel>
           </Grid>

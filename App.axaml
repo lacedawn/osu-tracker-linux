@@ -77,7 +77,7 @@
         <Style Selector="TextBlock.banner-artist">
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="#f1f0f7" />
+            <Setter Property="Foreground" Value="White" />
         </Style>
 
         <Style Selector="Border.hud-card">
@@ -123,7 +123,7 @@
                 <ControlTemplate>
                     <Border Name="RootBorder" CornerRadius="8" ClipToBounds="True" Background="#e11d48">
                         <Grid ClipToBounds="True">
-                            <local:TrianglesControl Velocity="35" TriangleBrush="#18ffffff" IsHitTestVisible="False" />
+                            <local:TrianglesControl Velocity="16" TriangleCount="16" TriangleBrush="#38ffffff" IsHitTestVisible="False" />
                             <ContentPresenter Name="PART_ContentPresenter"
                                               Content="{TemplateBinding Content}"
                                               ContentTemplate="{TemplateBinding ContentTemplate}"
@@ -151,7 +151,7 @@
                 <ControlTemplate>
                     <Border Name="RootBorder" CornerRadius="8" ClipToBounds="True" Background="#0284c7">
                         <Grid ClipToBounds="True">
-                            <local:TrianglesControl Velocity="30" TriangleBrush="#18ffffff" IsHitTestVisible="False" />
+                            <local:TrianglesControl Velocity="14" TriangleCount="16" TriangleBrush="#38ffffff" IsHitTestVisible="False" />
                             <ContentPresenter Name="PART_ContentPresenter"
                                               Content="{TemplateBinding Content}"
                                               ContentTemplate="{TemplateBinding ContentTemplate}"
