@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Circle_Tracker"
              x:Class="Circle_Tracker.App"
              RequestedThemeVariant="Dark">
     <Application.Resources>
@@ -110,6 +111,62 @@
         <Style Selector="Button.primary-action:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#f43f5e" />
             <Setter Property="Foreground" Value="#ffffff" />
+        </Style>
+
+        <Style Selector="Button.osu-action-pink">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#ffffff" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="RootBorder" CornerRadius="8" ClipToBounds="True" Background="#e11d48">
+                        <Grid ClipToBounds="True">
+                            <local:TrianglesControl Velocity="35" TriangleBrush="#18ffffff" IsHitTestVisible="False" />
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Padding="16,10"
+                                              HorizontalContentAlignment="Center"
+                                              VerticalContentAlignment="Center"
+                                              Foreground="White"
+                                              FontWeight="Bold" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.osu-action-pink:pointerover /template/ Border#RootBorder">
+            <Setter Property="Background" Value="#f43f5e" />
+        </Style>
+
+        <Style Selector="Button.osu-action-blue">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#ffffff" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="RootBorder" CornerRadius="8" ClipToBounds="True" Background="#0284c7">
+                        <Grid ClipToBounds="True">
+                            <local:TrianglesControl Velocity="30" TriangleBrush="#18ffffff" IsHitTestVisible="False" />
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Padding="16,10"
+                                              HorizontalContentAlignment="Center"
+                                              VerticalContentAlignment="Center"
+                                              Foreground="White"
+                                              FontWeight="Bold" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.osu-action-blue:pointerover /template/ Border#RootBorder">
+            <Setter Property="Background" Value="#38bdf8" />
         </Style>
 
         <Style Selector="Button.secondary-flat">

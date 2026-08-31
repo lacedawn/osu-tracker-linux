@@ -145,7 +145,7 @@
               </Grid>
 
               <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="primary-action" Content="Connect Sheets API" Click="ConnectApiButton_Click" Padding="14,6" VerticalAlignment="Center"/>
+                <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="osu-action-pink" Content="Connect Sheets API" Click="ConnectApiButton_Click" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                   <TextBlock Classes="stat-label" Text="credentials.json:" VerticalAlignment="Center"/>
                   <TextBlock x:Name="CredentialsLabel" Text="Missing" FontSize="11" FontWeight="SemiBold" Foreground="#f87171" VerticalAlignment="Center"/>
