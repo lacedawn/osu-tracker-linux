@@ -21,10 +21,12 @@ namespace Circle_Tracker.Storage
         public string SinkName => "Local SQLite";
         public bool IsReady => _dbManager.IsHealthy;
         public int TotalPlaysRecorded => _totalPlaysRecorded;
+        public Action? OnPlayCommitted { get; set; }
 
-        public LocalSqlitePlaySink(IDatabaseManager dbManager)
+        public LocalSqlitePlaySink(IDatabaseManager dbManager, Action? onPlayCommitted = null)
         {
             _dbManager = dbManager;
+            OnPlayCommitted = onPlayCommitted;
             _channel = Channel.CreateUnbounded<(PlayEntryData, PlayContext, TaskCompletionSource<bool>?)>(
                 new UnboundedChannelOptions { SingleReader = true });
             _workerTask = Task.Run(ProcessQueueAsync);
@@ -78,6 +80,7 @@ namespace Circle_Tracker.Storage
                     {
                         await InsertPlayAsync(item.Data, item.Context, _cts.Token).ConfigureAwait(false);
                         Interlocked.Increment(ref _totalPlaysRecorded);
+                        OnPlayCommitted?.Invoke();
                         if (item.Context.SubmitSoundEnabled && !string.IsNullOrEmpty(item.Context.SoundFilePath))
                         {
                             SoundHelper.PlaySound(item.Context.SoundFilePath);
