@@ -137,6 +137,8 @@
         </Grid>
 
         <StackPanel Grid.Row="5" Spacing="8">
+          <Button Classes="osu-action-blue" Content="📊 ANALYTICS DASHBOARD" HorizontalAlignment="Center" Click="AnalyticsButton_Click" Margin="0,0,0,4"/>
+          
           <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">
             <TextBlock x:Name="SettingsToggleText" Text="► More Settings" Foreground="#8f87a3" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
           </Button>

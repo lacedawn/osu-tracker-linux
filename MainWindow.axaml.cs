@@ -512,6 +512,19 @@ namespace Circle_Tracker
             });
         }
 
+        private void AnalyticsButton_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ShowMessage("Analytics dashboard coming soon! The infrastructure is ready but needs to be wired up to the Tracker class.", "Analytics");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to open analytics window");
+                ShowMessage($"Failed to open analytics: {ex.Message}", "Error");
+            }
+        }
+
         private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)
         {
             SettingsPanel.IsVisible = !SettingsPanel.IsVisible;

@@ -1,0 +1,391 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Circle_Tracker.ViewModels"
+        xmlns:local="using:Circle_Tracker"
+        x:Class="Circle_Tracker.Views.AnalyticsWindow"
+        x:DataType="vm:AnalyticsViewModel"
+        Title="Circle Tracker — Analytics Dashboard"
+        Width="1280"
+        Height="800"
+        MinWidth="1024"
+        MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BackgroundDark}">
+
+  <Panel>
+    <local:TrianglesControl Velocity="4" TriangleCount="24" TriangleBrush="#0effffff" IsHitTestVisible="False"/>
+    
+    <Grid RowDefinitions="Auto,*">
+      <Border Grid.Row="0" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="0,0,0,1" Padding="20,16">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+            <RadioButton GroupName="Tabs" IsChecked="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}" Classes="tab-pill">
+              <TextBlock Text="SKILL &amp; MECHANICS" FontWeight="Bold" FontSize="12"/>
+            </RadioButton>
+            <RadioButton GroupName="Tabs" IsChecked="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}" Classes="tab-pill">
+              <TextBlock Text="SESSION DYNAMICS" FontWeight="Bold" FontSize="12"/>
+            </RadioButton>
+            <RadioButton GroupName="Tabs" IsChecked="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}" Classes="tab-pill">
+              <TextBlock Text="TRENDS" FontWeight="Bold" FontSize="12"/>
+            </RadioButton>
+            <RadioButton GroupName="Tabs" IsChecked="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=3}" Classes="tab-pill">
+              <TextBlock Text="CHOKES" FontWeight="Bold" FontSize="12"/>
+            </RadioButton>
+            <RadioButton GroupName="Tabs" IsChecked="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=4}" Classes="tab-pill">
+              <TextBlock Text="EXPLORER" FontWeight="Bold" FontSize="12"/>
+            </RadioButton>
+          </StackPanel>
+          
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+            <Button Classes="secondary-flat" Content="EXPORT" Command="{Binding ExportCsvCommand}" Padding="12,6"/>
+            <Button Classes="ghost-btn" Content="✕" Click="CloseButton_Click" FontSize="16" Padding="10,4"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="1" IsVisible="{Binding IsLoading}" Background="#80000000" ZIndex="100">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+          <ProgressBar IsIndeterminate="True" Width="200" Height="4" Foreground="{StaticResource AccentPurple}"/>
+          <TextBlock Text="Loading analytics..." Foreground="{StaticResource TextMuted}" FontSize="13" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ContentControl Content="{Binding}">
+          <ContentControl.ContentTemplate>
+            <DataTemplate>
+              <Panel>
+                <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate>
+                      <Grid Margin="20" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
+                        <Border Grid.Row="0" Grid.Column="0" Margin="0,0,8,8" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="STAR RATING MASTERY" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="13"/>
+                            <ItemsControl ItemsSource="{Binding StarMasteryBrackets}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <StackPanel Spacing="4" Margin="0,0,0,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                      <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
+                                        <Run Text="{Binding P90Accuracy, StringFormat={}{0:F1}%}"/>
+                                        <Run Text=" (" Foreground="{StaticResource TextMuted}"/>
+                                        <Run Text="{Binding ZoneLabel}"/>
+                                        <Run Text=")" Foreground="{StaticResource TextMuted}"/>
+                                      </TextBlock>
+                                    </Grid>
+                                    <Border Height="8" CornerRadius="4" Background="#252038">
+                                      <Border Width="{Binding ProgressPercent, Converter={StaticResource PercentToWidthConverter}}" HorizontalAlignment="Left" CornerRadius="4" Background="{Binding ZoneColor}"/>
+                                    </Border>
+                                  </StackPanel>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="0" Grid.Column="1" Margin="8,0,0,8" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="AIM vs SPEED SKILL BIAS" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
+                            <Grid ColumnDefinitions="*,Auto,*">
+                              <StackPanel Grid.Column="0" Margin="0,0,4,0">
+                                <TextBlock Text="{Binding AimSpeedBias.AimPercentage, StringFormat={}{0:F0}% Aim}" Foreground="{StaticResource AccentPink}" FontWeight="Bold" FontSize="16"/>
+                                <TextBlock Text="{Binding AimSpeedBias.AimAvgAccuracy, StringFormat={}Avg: {0:F1}%}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+                              </StackPanel>
+                              <TextBlock Grid.Column="1" Margin="4,0" Text="•" Foreground="{StaticResource TextMuted}" FontSize="20" VerticalAlignment="Center"/>
+                              <StackPanel Grid.Column="2" Margin="4,0,0,0">
+                                <TextBlock Text="{Binding AimSpeedBias.SpeedPercentage, StringFormat={}{0:F0}% Speed}" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="16"/>
+                                <TextBlock Text="{Binding AimSpeedBias.SpeedAvgAccuracy, StringFormat={}Avg: {0:F1}%}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+                              </StackPanel>
+                            </Grid>
+                            <Border Height="12" CornerRadius="6" ClipToBounds="True" Background="#252038">
+                              <Grid>
+                                <Border Width="{Binding AimSpeedBias.AimPercentage, Converter={StaticResource PercentToWidthConverter}}" HorizontalAlignment="Left" Background="{StaticResource AccentPink}"/>
+                              </Grid>
+                            </Border>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Grid.Column="0" Margin="0,8,8,0" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="OD vs ACCURACY TIMING PRECISION" Foreground="{StaticResource AccentOrange}" FontWeight="Bold" FontSize="13"/>
+                            <ItemsControl ItemsSource="{Binding OdPrecisionTiers}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                                    <TextBlock Grid.Column="0" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold">
+                                      <Run Text="{Binding Label}"/>
+                                      <Run Text=":"/>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
+                                      <Run Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}"/>
+                                      <Run Text=" (±" Foreground="{StaticResource TextMuted}"/>
+                                      <Run Text="{Binding HitWindow300Ms, StringFormat={}{0:F0}ms}" Foreground="{StaticResource TextMuted}"/>
+                                      <Run Text=")" Foreground="{StaticResource TextMuted}"/>
+                                    </TextBlock>
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="BPM SPEED CEILING" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
+                            <ItemsControl ItemsSource="{Binding BpmSpeedBrackets}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                                    <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
+                                      <Run Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}"/>
+                                      <Run Text=" (" Foreground="{StaticResource TextMuted}"/>
+                                      <Run Text="{Binding MissDensityPer100, StringFormat={}{0:F1}}"/>
+                                      <Run Text=" misses/100)" Foreground="{StaticResource TextMuted}"/>
+                                    </TextBlock>
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate>
+                      <Grid Margin="20">
+                        <Border Classes="hud-card" MaxWidth="900">
+                          <StackPanel Spacing="16">
+                            <TextBlock Text="15-MINUTE FATIGUE CURVE" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="13"/>
+                            <TextBlock Text="{Binding OptimalWindowText}" Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                            <ItemsControl ItemsSource="{Binding FatigueCurve}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <Grid ColumnDefinitions="120,*,Auto" Margin="0,0,0,8">
+                                    <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                    <Border Grid.Column="2" CornerRadius="4" Padding="6,2" Background="{Binding AccuracyDelta, Converter={StaticResource DeltaToColorConverter}}">
+                                      <TextBlock Text="{Binding AccuracyDelta, StringFormat={}{0:+0.0;-0.0}%}" Foreground="White" FontSize="11" FontWeight="Bold"/>
+                                    </Border>
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate>
+                      <Grid Margin="20" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*,*">
+                        <Border Grid.Row="0" Grid.Column="0" Margin="0,0,8,8" Classes="hud-card">
+                          <StackPanel Spacing="8">
+                            <TextBlock Text="7-DAY ROLLING" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="12"/>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="0" Grid.Column="1" Margin="8,0,8,8" Classes="hud-card">
+                          <StackPanel Spacing="8">
+                            <TextBlock Text="30-DAY ROLLING" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="0" Grid.Column="2" Margin="8,0,0,8" Classes="hud-card">
+                          <StackPanel Spacing="8">
+                            <TextBlock Text="90-DAY ROLLING" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                          </StackPanel>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=3}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate>
+                      <Grid Margin="20" ColumnDefinitions="*,*">
+                        <Border Grid.Column="0" Margin="0,0,8,0" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="TOP CHOKES (1-2 MISSES, ≥95% ACC)" Foreground="{StaticResource AccentRed}" FontWeight="Bold" FontSize="13"/>
+                            <ScrollViewer MaxHeight="600">
+                              <ItemsControl ItemsSource="{Binding TopChokes}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Border Background="#252038" CornerRadius="6" Padding="12" Margin="0,0,0,8">
+                                      <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                          <TextBlock Grid.Column="0" Foreground="{StaticResource AccentRed}" FontSize="11" FontWeight="Bold">
+                                            <Run Text="{Binding MinMisses}"/>
+                                            <Run Text="x Miss"/>
+                                          </TextBlock>
+                                          <TextBlock Grid.Column="2" Text="{Binding BestAccuracy, StringFormat={}{0:F2}%}" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold"/>
+                                        </Grid>
+                                      </StackPanel>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </ScrollViewer>
+                          </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Margin="8,0,0,0" Classes="hud-card">
+                          <StackPanel Spacing="12">
+                            <TextBlock Text="MOST GRINDED MAPS" Foreground="{StaticResource AccentOrange}" FontWeight="Bold" FontSize="13"/>
+                            <ScrollViewer MaxHeight="600">
+                              <ItemsControl ItemsSource="{Binding MostGrinded}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Border Background="#252038" CornerRadius="6" Padding="12" Margin="0,0,0,8">
+                                      <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                          <TextBlock Grid.Column="0" Foreground="{StaticResource AccentOrange}" FontSize="11" FontWeight="Bold">
+                                            <Run Text="{Binding TotalAttempts}"/>
+                                            <Run Text=" attempts"/>
+                                          </TextBlock>
+                                          <TextBlock Grid.Column="2" Text="{Binding CumulativeHours, StringFormat={}{0:F1}h}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="Bold"/>
+                                        </Grid>
+                                      </StackPanel>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </ScrollViewer>
+                          </StackPanel>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=4}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate>
+                      <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+                        <Border Grid.Row="0" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding SearchText}" Watermark="Search beatmaps..." Background="#252038" Foreground="{StaticResource TextPrimary}" BorderBrush="#2e2744" Padding="10,6" CornerRadius="6"/>
+                            <Button Grid.Column="1" Classes="osu-action-pink" Content="SEARCH" Margin="10,0,0,0" Padding="20,6"/>
+                          </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1" Classes="hud-card">
+                          <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding PlayHistory}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <Border Background="#252038" CornerRadius="6" Padding="12" Margin="0,0,0,6">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                      <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock Text="{Binding BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                          <TextBlock Text="{Binding ModsString}" Foreground="{StaticResource AccentPink}" FontSize="10" FontWeight="Bold"/>
+                                          <TextBlock Text="{Binding Stars, StringFormat={}★ {0:F2}}" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="Bold"/>
+                                        </StackPanel>
+                                      </StackPanel>
+                                      <TextBlock Grid.Column="2" Text="{Binding Accuracy, StringFormat={}{0:F2}%}" Foreground="{StaticResource AccentCyan}" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0"/>
+                                      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Hit300}" Foreground="{StaticResource AccentCyan}" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="/" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                                        <TextBlock Text="{Binding Hit100}" Foreground="{StaticResource AccentGreen}" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="/" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                                        <TextBlock Text="{Binding Hit50}" Foreground="{StaticResource AccentOrange}" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="/" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                                        <TextBlock Text="{Binding HitMiss}" Foreground="{StaticResource AccentRed}" FontSize="10" FontWeight="SemiBold"/>
+                                      </StackPanel>
+                                      <TextBlock Grid.Column="4" Text="{Binding TimestampUtc, StringFormat={}{0:g}}" Foreground="{StaticResource TextMuted}" FontSize="10" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </Grid>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Row="2" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11">
+                                <Run Text="Total:"/>
+                                <Run Text="{Binding TotalMatches}" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+                              </TextBlock>
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11">
+                                <Run Text="Avg Acc:"/>
+                                <Run Text="{Binding SubsetAvgAccuracy, StringFormat={}{0:F1}%}" FontWeight="Bold" Foreground="{StaticResource AccentCyan}"/>
+                              </TextBlock>
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11">
+                                <Run Text="Avg Stars:"/>
+                                <Run Text="{Binding SubsetAvgStars, StringFormat={}{0:F2}★}" FontWeight="Bold" Foreground="{StaticResource AccentGold}"/>
+                              </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                              <Button Classes="secondary-flat" Content="◀ Prev" Command="{Binding PreviousPageCommand}" Padding="10,4"/>
+                              <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="11">
+                                <Run Text="Page"/>
+                                <Run Text="{Binding CurrentPage}" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+                                <Run Text="of"/>
+                                <Run Text="{Binding TotalPages}" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
+                              </TextBlock>
+                              <Button Classes="secondary-flat" Content="Next ▶" Command="{Binding NextPageCommand}" Padding="10,4"/>
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+              </Panel>
+            </DataTemplate>
+          </ContentControl.ContentTemplate>
+        </ContentControl>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
+</Window>
