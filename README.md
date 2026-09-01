@@ -1,16 +1,15 @@
 # circle-tracker (lazer & linux port)
 
-note: vibe coded port
+this is practically the only part written by a human
 
-A port of [FunOrange's circle-tracker](https://github.com/FunOrange/circle-tracker) that works on Linux and supports osu!lazer
+A port of [FunOrange's circle-tracker](https://github.com/FunOrange/circle-tracker) that works on linux and lazer
 
 ![Circle Tracker Preview](assets/circletrackerlazer.png)
 
 ## what changed
 - rewritten with Avalonia UI on .NET 8 (tested on Arch Linux, untested on Windows/macOS)
-- uses [tosu](https://github.com/tosuapp/tosu) for memory reading instead of the old Windows-only memory reader
+- uses [tosu](https://github.com/tosuapp/tosu) for memory reading
 - works with osu!lazer
-- removed oppai.exe, winforms, and Windows-specific dependencies
 
 ## setup
 
@@ -23,18 +22,9 @@ sudo setcap cap_sys_ptrace=eip /opt/tosu/tosu
 
 ### 2. run
 ```bash
-# make sure tosu and osu! are running, then:
 dotnet run
 ```
 Paste your spreadsheet ID into the app, click connect, and that's it ! 
-
-## build
-```bash
-dotnet build
-
-# or standalone linux binary:
-dotnet publish -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o publish/
-```
 
 ## credits
 - [FunOrange](https://github.com/FunOrange) for the original circle-tracker
