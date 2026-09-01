@@ -25,6 +25,8 @@ namespace Circle_Tracker.Storage
             : 0.0;
         public string ClientVersion { get; set; } = "Unknown";
 
+        public IDatabaseManager GetDatabaseManager() => _dbManager;
+
         public SessionManager(IDatabaseManager dbManager, string? sessionId = null)
         {
             _dbManager = dbManager;

@@ -14,7 +14,7 @@
   <Panel>
     <local:TrianglesControl Velocity="6" TriangleCount="18" TriangleBrush="#0effffff" IsHitTestVisible="False"/>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
 
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -136,7 +136,58 @@
           </StackPanel>
         </Grid>
 
-        <StackPanel Grid.Row="5" Spacing="8">
+        <Border Grid.Row="5" x:Name="LiveSessionCard" Classes="hud-card" Margin="0,0,0,10" IsVisible="False">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="LIVE SESSION INSIGHTS" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="11"/>
+              <TextBlock Grid.Column="1" x:Name="SessionElapsedText" Text="0m elapsed" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*,*">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock Text="Accuracy Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+                <Border x:Name="DeltaAccuracyBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGreen}">
+                  <TextBlock x:Name="DeltaAccuracyText" Text="+0.00%" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                </Border>
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="Stars Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+                <Border x:Name="DeltaStarsBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGold}">
+                  <TextBlock x:Name="DeltaStarsText" Text="+0.00★" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                </Border>
+              </StackPanel>
+
+              <StackPanel Grid.Column="2" Spacing="2">
+                <TextBlock Text="BPM Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+                <Border x:Name="DeltaBpmBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentOrange}">
+                  <TextBlock x:Name="DeltaBpmText" Text="+0 BPM" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                </Border>
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Spacing="4">
+              <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Grid.Column="0" Text="Stamina:" Foreground="{StaticResource TextMuted}" FontSize="9" Margin="0,0,6,0"/>
+                <Border Grid.Column="1" x:Name="StaminaPhaseBorder" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Background="{StaticResource AccentCyan}">
+                  <TextBlock x:Name="StaminaPhaseText" Text="Warmup" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                </Border>
+              </Grid>
+              <TextBlock x:Name="FatigueWarningText" Text="⚠ Performance fatigue detected" Foreground="{StaticResource AccentRed}" FontSize="9" FontWeight="Bold" IsVisible="False"/>
+            </StackPanel>
+
+            <TextBlock x:Name="SessionStatsText" Text="0 plays • 0 passes • 0.0 min active" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="AchievementBanner" Classes="hud-card" Margin="0,0,0,10" IsVisible="False" Background="#cc1d192b" BorderBrush="#facc15" BorderThickness="2">
+          <StackPanel Spacing="6">
+            <TextBlock x:Name="AchievementTitleText" Text="Achievement Unlocked!" FontWeight="Bold" FontSize="12"/>
+            <TextBlock x:Name="AchievementDescText" Text="" FontSize="10" Foreground="{StaticResource TextMuted}"/>
+          </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="6" Spacing="8">
           <Button Classes="osu-action-blue" Content="📊 ANALYTICS DASHBOARD" HorizontalAlignment="Center" Click="AnalyticsButton_Click" Margin="0,0,0,4"/>
           
           <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">

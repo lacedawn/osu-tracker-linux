@@ -4,6 +4,8 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Circle_Tracker.Services;
+using Circle_Tracker.Views;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
@@ -21,10 +23,12 @@ namespace Circle_Tracker
 
         private readonly TosuClient _tosuClient;
         private readonly Tracker _tracker;
+        private LiveSessionTracker? _liveSessionTracker;
 
         private DispatcherTimer? _gameTickTimer;
         private DispatcherTimer? _uiUpdateTimer;
         private DispatcherTimer? _secondsTimer;
+        private DispatcherTimer? _achievementBannerTimer;
 
         private bool _suppressStartupCheckboxEvent = false;
         private CancellationTokenSource? _reconnectDebounce;
@@ -97,6 +101,8 @@ namespace Circle_Tracker
             });
 
             SetupTimers();
+            
+            Closing += OnWindowClosing;
         }
 
         private void SetupTimers()
@@ -131,6 +137,169 @@ namespace Circle_Tracker
             _gameTickTimer.Start();
             _uiUpdateTimer.Start();
             _secondsTimer.Start();
+            
+            SetupLiveSessionTracking();
+        }
+
+        private void SetupLiveSessionTracking()
+        {
+            try
+            {
+                var sessionService = _tracker.GetSessionAnalyticsService();
+                if (sessionService != null)
+                {
+                    _liveSessionTracker = new LiveSessionTracker(sessionService);
+                    
+                    _liveSessionTracker.MetricsUpdated += OnLiveSessionMetricsUpdated;
+                    _liveSessionTracker.AchievementUnlocked += OnAchievementUnlocked;
+                    
+                    _tracker.PlayLogged += async (sender, args) =>
+                    {
+                        if (_liveSessionTracker != null)
+                        {
+                            await _liveSessionTracker.OnPlayLoggedAsync(args.Data, args.Context);
+                        }
+                    };
+                    
+                    LiveSessionCard.IsVisible = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to initialize live session tracker");
+            }
+        }
+
+        private void OnLiveSessionMetricsUpdated(object? sender, LiveSessionMetrics metrics)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    UpdateLiveSessionCard(metrics);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Failed to update live session card");
+                }
+            });
+        }
+
+        private void UpdateLiveSessionCard(LiveSessionMetrics metrics)
+        {
+            if (metrics.SessionPlayCount == 0)
+            {
+                LiveSessionCard.IsVisible = false;
+                return;
+            }
+
+            LiveSessionCard.IsVisible = true;
+
+            DeltaAccuracyText.Text = metrics.BaselineDeltaAccuracy >= 0 
+                ? $"+{metrics.BaselineDeltaAccuracy:F2}%" 
+                : $"{metrics.BaselineDeltaAccuracy:F2}%";
+            DeltaAccuracyBorder.Background = metrics.BaselineDeltaAccuracy >= 0 ? GreenBrush : RedBrush;
+
+            DeltaStarsText.Text = metrics.BaselineDeltaStars >= 0 
+                ? $"+{metrics.BaselineDeltaStars:F2}★" 
+                : $"{metrics.BaselineDeltaStars:F2}★";
+            DeltaStarsBorder.Background = metrics.BaselineDeltaStars >= 0 ? GoldBrush : new SolidColorBrush(Color.FromRgb(0xa8, 0x55, 0xf7));
+
+            DeltaBpmText.Text = metrics.BaselineDeltaBpm >= 0 
+                ? $"+{metrics.BaselineDeltaBpm:F0} BPM" 
+                : $"{metrics.BaselineDeltaBpm:F0} BPM";
+            DeltaBpmBorder.Background = OrangeBrush;
+
+            StaminaPhaseText.Text = metrics.StaminaPhaseLabel;
+            StaminaPhaseBorder.Background = new SolidColorBrush(Color.Parse(metrics.StaminaPhaseColorHex));
+
+            FatigueWarningText.IsVisible = metrics.FatigueWarningActive;
+
+            SessionStatsText.Text = $"{metrics.SessionPlayCount} plays • {metrics.SessionPassCount} passes • {metrics.ActivePlayMinutes:F1} min active";
+            
+            var elapsed = (DateTime.UtcNow - DateTime.UtcNow.AddMinutes(-metrics.ActivePlayMinutes)).TotalMinutes;
+            SessionElapsedText.Text = $"{elapsed:F0}m elapsed";
+        }
+
+        private void OnAchievementUnlocked(object? sender, PostPlayAchievement achievement)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                ShowAchievementBanner(achievement);
+            });
+        }
+
+        private void ShowAchievementBanner(PostPlayAchievement achievement)
+        {
+            AchievementTitleText.Text = achievement.Title;
+            AchievementDescText.Text = achievement.Description;
+            AchievementTitleText.Foreground = new SolidColorBrush(Color.Parse(achievement.AccentColorHex));
+            AchievementBanner.BorderBrush = new SolidColorBrush(Color.Parse(achievement.AccentColorHex));
+            AchievementBanner.IsVisible = true;
+
+            _achievementBannerTimer?.Stop();
+            _achievementBannerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            _achievementBannerTimer.Tick += (s, e) =>
+            {
+                AchievementBanner.IsVisible = false;
+                _achievementBannerTimer?.Stop();
+            };
+            _achievementBannerTimer.Start();
+        }
+
+        private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+        {
+            if (_liveSessionTracker == null)
+                return;
+
+            var metrics = _liveSessionTracker.GetCurrentMetrics();
+            if (metrics.SessionPlayCount == 0)
+                return;
+
+            e.Cancel = true;
+
+            try
+            {
+                var summary = await _liveSessionTracker.GenerateSessionSummaryAsync();
+                var dialog = new SessionSummaryDialog(summary);
+
+                await dialog.ShowDialog(this);
+
+                if (dialog.ShouldOpenAnalytics)
+                {
+                    OpenAnalyticsWindow();
+                }
+
+                Closing -= OnWindowClosing;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to show session summary");
+                Closing -= OnWindowClosing;
+                Close();
+            }
+        }
+
+        private void OpenAnalyticsWindow()
+        {
+            try
+            {
+                var dbManager = _tracker.SessionManager.GetDatabaseManager();
+                var skillService = new Circle_Tracker.Analytics.SkillAnalyticsService(dbManager);
+                var sessionService = new Circle_Tracker.Analytics.SessionAnalyticsService(dbManager);
+                var queryEngine = new Circle_Tracker.Storage.Querying.SqlitePlayQueryEngine(dbManager);
+
+                var viewModel = new Circle_Tracker.ViewModels.AnalyticsViewModel(skillService, sessionService, queryEngine);
+                var analyticsWindow = new Circle_Tracker.Views.AnalyticsWindow(viewModel);
+
+                analyticsWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to open analytics window");
+                ShowMessage($"Failed to open analytics: {ex.Message}", "Error");
+            }
         }
 
         private void UpdateTosuStatus(bool connected)
@@ -514,15 +683,7 @@ namespace Circle_Tracker
 
         private void AnalyticsButton_Click(object? sender, RoutedEventArgs e)
         {
-            try
-            {
-                ShowMessage("Analytics dashboard coming soon! The infrastructure is ready but needs to be wired up to the Tracker class.", "Analytics");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to open analytics window");
-                ShowMessage($"Failed to open analytics: {ex.Message}", "Error");
-            }
+            OpenAnalyticsWindow();
         }
 
         private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)

@@ -1,0 +1,187 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Circle_Tracker"
+        xmlns:converters="using:Circle_Tracker.Converters"
+        xmlns:services="using:Circle_Tracker.Services"
+        x:Class="Circle_Tracker.Views.SessionSummaryDialog"
+        x:DataType="services:SessionSummaryReport"
+        Title="Session Summary Report"
+        Width="900"
+        Height="650"
+        MinWidth="800"
+        MinHeight="550"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundDark}"
+        CanResize="False">
+
+  <Panel>
+    <local:TrianglesControl Velocity="3" TriangleCount="18" TriangleBrush="#0effffff" IsHitTestVisible="False"/>
+    
+    <Grid RowDefinitions="Auto,*,Auto" Margin="24">
+      <Border Grid.Row="0" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="20,16" Margin="0,0,0,16">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="🏁" FontSize="24" VerticalAlignment="Center"/>
+            <TextBlock Text="SESSION SUMMARY REPORT" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="18" VerticalAlignment="Center"/>
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost-btn" Content="✕ Close App" Click="CloseApp_Click" FontSize="13" Padding="12,6"/>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="16">
+          <Grid ColumnDefinitions="*,*,*">
+            <Border Grid.Column="0" Classes="hud-card" Margin="0,0,8,0">
+              <StackPanel Spacing="8">
+                <TextBlock Text="TOTAL PLAYS" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding TotalPlays}" Classes="hero-number" FontSize="36"/>
+                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">
+                  <Run Text="{Binding TotalPasses}"/>
+                  <Run Text=" Passes"/>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Classes="hud-card" Margin="8,0">
+              <StackPanel Spacing="8">
+                <TextBlock Text="ACTIVE PLAYTIME" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Classes="hero-number" FontSize="36">
+                  <Run Text="{Binding ActivePlayMinutes, StringFormat={}{0:F0}}"/>
+                  <Run Text="m" FontSize="24" Foreground="{StaticResource TextMuted}"/>
+                </TextBlock>
+                <TextBlock Text="{Binding ActivePlayMinutes, StringFormat={}{0:F1} minutes}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+              </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Classes="hud-card" Margin="8,0,0,0">
+              <StackPanel Spacing="8">
+                <TextBlock Text="SESSION ACCURACY" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding SessionAccuracy, StringFormat={}{0:F2}%}" Classes="hero-number" FontSize="36"/>
+                <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
+                  <Border.Background>
+                    <SolidColorBrush Color="{Binding BaselineDeltaAccuracy, Converter={StaticResource DeltaToColorConverter}}"/>
+                  </Border.Background>
+                  <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
+                    <Run Text="{Binding BaselineDeltaAccuracy, StringFormat={}{0:+0.00;-0.00}%}"/>
+                    <Run Text=" vs 30D"/>
+                  </TextBlock>
+                </Border>
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <Border Classes="hud-card" IsVisible="{Binding BestPlay, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="12">
+              <TextBlock Text="HIGHLIGHT OF THE SESSION" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
+              <Grid ColumnDefinitions="Auto,*">
+                <Border Grid.Column="0" Width="120" Height="90" CornerRadius="6" ClipToBounds="True" Background="#252038" Margin="0,0,16,0">
+                  <Image Stretch="UniformToFill">
+                    <Image.Source>
+                      <Binding Path="BestPlay.BeatmapSetId">
+                        <Binding.Converter>
+                          <converters:BeatmapCoverConverter/>
+                        </Binding.Converter>
+                      </Binding>
+                    </Image.Source>
+                  </Image>
+                </Border>
+                <StackPanel Grid.Column="1" Spacing="8">
+                  <TextBlock Text="{Binding BestPlay.BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="15" TextWrapping="Wrap"/>
+                  <StackPanel Orientation="Horizontal" Spacing="16">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="★" Foreground="{StaticResource AccentGold}" FontSize="14"/>
+                      <TextBlock Text="{Binding BestPlay.Stars, StringFormat={}{0:F2}}" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="14"/>
+                    </StackPanel>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12">•</TextBlock>
+                    <TextBlock Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="14">
+                      <Run Text="Acc:"/>
+                      <Run Text="{Binding BestPlay.Accuracy, StringFormat={}{0:F2}%}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12">•</TextBlock>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12">
+                      <Run Text="Hits:"/>
+                      <Run Text="{Binding BestPlay.TotalHits}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12">•</TextBlock>
+                    <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12">
+                      <Run Text="Time:"/>
+                      <Run Text="{Binding BestPlay.PlayTimeSeconds}"/>
+                      <Run Text="s"/>
+                    </TextBlock>
+                  </StackPanel>
+                  <TextBlock Text="{Binding BestPlay.ModsString}" Foreground="{StaticResource AccentPink}" FontWeight="Bold" FontSize="11"/>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="hud-card">
+            <StackPanel Spacing="12">
+              <TextBlock Text="PERFORMANCE vs 30-DAY BASELINE" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="180,*">
+                  <TextBlock Grid.Column="0" Text="Star Rating:" Foreground="{StaticResource TextMuted}" FontSize="12"/>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold">
+                      <Run Text="{Binding SessionAvgStars, StringFormat={}{0:F2}}"/>
+                      <Run Text="★"/>
+                    </TextBlock>
+                    <Border CornerRadius="4" Padding="6,2">
+                      <Border.Background>
+                        <SolidColorBrush Color="{Binding BaselineDeltaStars, Converter={StaticResource DeltaToColorConverter}}"/>
+                      </Border.Background>
+                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
+                        <Run Text="{Binding BaselineDeltaStars, StringFormat={}{0:+0.00;-0.00}}"/>
+                        <Run Text="★ above 30D avg"/>
+                      </TextBlock>
+                    </Border>
+                  </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="180,*">
+                  <TextBlock Grid.Column="0" Text="Pass Rate:" Foreground="{StaticResource TextMuted}" FontSize="12"/>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
+                    <Border CornerRadius="4" Padding="6,2">
+                      <Border.Background>
+                        <SolidColorBrush Color="{Binding BaselineDeltaPassRate, Converter={StaticResource DeltaToColorConverter}}"/>
+                      </Border.Background>
+                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
+                        <Run Text="{Binding BaselineDeltaPassRate, StringFormat={}{0:+0.0;-0.0}%}"/>
+                        <Run Text=" above 30D avg"/>
+                      </TextBlock>
+                    </Border>
+                  </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="180,*">
+                  <TextBlock Grid.Column="0" Text="Speed/BPM:" Foreground="{StaticResource TextMuted}" FontSize="12"/>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding SessionAvgBpm, StringFormat={}{0:F0} BPM}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
+                    <Border CornerRadius="4" Padding="6,2">
+                      <Border.Background>
+                        <SolidColorBrush Color="{Binding BaselineDeltaBpm, Converter={StaticResource DeltaToColorConverter}}"/>
+                      </Border.Background>
+                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
+                        <Run Text="{Binding BaselineDeltaBpm, StringFormat={}{0:+0;-0}}"/>
+                        <Run Text=" BPM above 30D avg"/>
+                      </TextBlock>
+                    </Border>
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Row="2" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Grid.Column="0" Text="Session data has been saved to local database" Foreground="{StaticResource TextMuted}" FontSize="11" VerticalAlignment="Center"/>
+          <Button Grid.Column="1" Classes="osu-action-blue" Content="View in Analytics Dashboard" Click="ViewAnalytics_Click" Margin="0,0,10,0" Padding="16,8"/>
+          <Button Grid.Column="2" Classes="osu-action-pink" Content="Save &amp; Close App" Click="CloseApp_Click" Padding="16,8"/>
+        </Grid>
+      </Border>
+    </Grid>
+  </Panel>
+</Window>

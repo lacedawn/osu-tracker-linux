@@ -1,3 +1,4 @@
+using Circle_Tracker.Analytics;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -197,6 +198,14 @@ namespace Circle_Tracker
         public int LocalPlayCount => _localSqliteSink?.TotalPlaysRecorded ?? 0;
         public SessionManager SessionManager => _sessionManager;
         public IPlaySink PlaySink => _playSink;
+        
+        public event EventHandler<(PlayEntryData Data, PlayContext Context)>? PlayLogged;
+
+        public ISessionAnalyticsService? GetSessionAnalyticsService()
+        {
+            if (_dbManager == null) return null;
+            return new Analytics.SessionAnalyticsService(_dbManager);
+        }
 
         public bool SheetsApiReady => _sheetsManager?.SheetsApiReady ?? false;
         public bool SpreadsheetTimezoneVerified
@@ -837,6 +846,7 @@ namespace Circle_Tracker
                 {
                     await _sessionManager.IncrementPlaysAsync();
                     await _playSink.TryLogPlayAsync(data, context);
+                    PlayLogged?.Invoke(this, (data, context));
                 }
                 finally
                 {
