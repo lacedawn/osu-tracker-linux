@@ -98,25 +98,30 @@ namespace Circle_Tracker.Storage
 
         private async Task InsertPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct)
         {
+            string syncStatus = DetermineSyncStatus(context);
+
             const string sql = @"
                 INSERT INTO plays (
                     session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_checksum,
                     beatmap_string, beatmap_title, beatmap_artist, beatmap_version,
                     mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
                     total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
-                    is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client
+                    is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client,
+                    sync_status, synced_at
                 ) VALUES (
                     @SessionId, @Timestamp, @BeatmapId, @BeatmapSetId, @BeatmapChecksum,
                     @BeatmapString, @BeatmapTitle, @BeatmapArtist, @BeatmapVersion,
                     @ModsBitfield, @ModsString, @Bpm, @Stars, @Aim, @Speed, @Cs, @Ar, @Od, @Hp,
                     @TotalHits, @Hit300, @Hit100, @Hit50, @HitMiss, @Accuracy, @AccuracyReliable,
-                    @IsComplete, @PlayTimeSeconds, @ConsecutivePlayCount, @GameMode, @IsReplay, @DetectedClient
+                    @IsComplete, @PlayTimeSeconds, @ConsecutivePlayCount, @GameMode, @IsReplay, @DetectedClient,
+                    @SyncStatus, @SyncedAt
                 );";
 
+            var nowUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             var parameters = new
             {
                 SessionId = string.IsNullOrWhiteSpace(context.SessionId) ? null : context.SessionId,
-                Timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                Timestamp = nowUtc,
                 BeatmapId = data.BeatmapID,
                 BeatmapSetId = data.BeatmapSetID,
                 BeatmapChecksum = data.BeatmapChecksum ?? "",
@@ -146,11 +151,22 @@ namespace Circle_Tracker.Storage
                 ConsecutivePlayCount = data.PlayCount,
                 GameMode = context.CurrentGameMode,
                 IsReplay = context.IsReplay ? 1 : 0,
-                DetectedClient = context.DetectedClient ?? ""
+                DetectedClient = context.DetectedClient ?? "",
+                SyncStatus = syncStatus,
+                SyncedAt = syncStatus == "Synced" ? nowUtc : (string?)null
             };
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
             await conn.ExecuteAsync(sql, parameters);
+        }
+
+        private static string DetermineSyncStatus(PlayContext context)
+        {
+            if (context.SheetsSyncSucceeded.HasValue)
+            {
+                return context.SheetsSyncSucceeded.Value ? "Synced" : "Pending";
+            }
+            return "Synced";
         }
 
         public void Dispose()

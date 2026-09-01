@@ -268,6 +268,32 @@ namespace Circle_Tracker.Storage
                     throw;
                 }
             }
+
+            if (currentVersion < 2)
+            {
+                await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        ALTER TABLE plays ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced';
+                        ALTER TABLE plays ADD COLUMN synced_at TEXT;
+                        CREATE INDEX IF NOT EXISTS idx_plays_sync_status ON plays(sync_status);",
+                        transaction: tx);
+
+                    await connection.ExecuteAsync(
+                        "INSERT INTO schema_migrations (version, applied_at, description) VALUES (@version, @appliedAt, @description);",
+                        new { version = 2, appliedAt = DateTime.UtcNow.ToString("O"), description = "Add sync tracking columns" },
+                        transaction: tx);
+
+                    await tx.CommitAsync(ct);
+                    _log.LogInformation("Applied migration V2 (Add sync tracking columns)");
+                }
+                catch
+                {
+                    await tx.RollbackAsync(ct);
+                    throw;
+                }
+            }
         }
 
         public SqliteConnection CreateConnection()

@@ -69,11 +69,37 @@ namespace Circle_Tracker.Storage
             var activeSinks = _registrations.Where(r => r.IsEnabled()).Select(r => r.Sink).ToList();
             if (activeSinks.Count == 0) return;
 
-            var tasks = activeSinks.Select(async sink =>
+            var sheetsSink = activeSinks.FirstOrDefault(s => s.SinkName == "Google Sheets" || s.SinkName == "Google Sheets Adapter");
+            var sqliteSink = activeSinks.FirstOrDefault(s => s.SinkName == "Local SQLite");
+
+            bool? sheetsSyncSucceeded = null;
+
+            if (sheetsSink != null && sheetsSink.IsReady)
             {
                 try
                 {
-                    await sink.TryLogPlayAsync(data, context, ct);
+                    await sheetsSink.TryLogPlayAsync(data, context, ct);
+                    sheetsSyncSucceeded = true;
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Error logging play to sink {SinkName}", sheetsSink.SinkName);
+                    sheetsSyncSucceeded = false;
+                }
+            }
+            else if (sheetsSink != null && !sheetsSink.IsReady)
+            {
+                sheetsSyncSucceeded = false;
+            }
+
+            var updatedContext = context with { SheetsSyncSucceeded = sheetsSyncSucceeded };
+
+            var remainingSinks = activeSinks.Where(s => s != sheetsSink).ToList();
+            var tasks = remainingSinks.Select(async sink =>
+            {
+                try
+                {
+                    await sink.TryLogPlayAsync(data, updatedContext, ct);
                 }
                 catch (Exception ex)
                 {

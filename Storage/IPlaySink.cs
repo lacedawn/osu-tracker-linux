@@ -18,6 +18,7 @@ namespace Circle_Tracker.Storage
         int CurrentGameMode,
         string DetectedClient,
         string SoundFilePath,
-        bool SubmitSoundEnabled
+        bool SubmitSoundEnabled,
+        bool? SheetsSyncSucceeded = null
     );
 }
