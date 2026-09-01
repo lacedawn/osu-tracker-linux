@@ -1,3 +1,4 @@
+using Circle_Tracker.Storage;
 using Google;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
@@ -23,12 +24,21 @@ namespace Circle_Tracker
         int Play300c, int Play100c, int Play50c, int PlayMissc,
         bool Complete, int PlayTimeSeconds, string ModsString,
         int PlayCount,
-        bool AccuracyReliable
+        bool AccuracyReliable,
+        string BeatmapTitle = "",
+        string BeatmapArtist = "",
+        string BeatmapVersion = "",
+        decimal BeatmapHp = 0m,
+        string BeatmapChecksum = ""
     );
 
-    public class GoogleSheetsManager : ISheetsSink
+    public class GoogleSheetsManager : ISheetsSink, IPlaySink
     {
         private static readonly ILogger<GoogleSheetsManager> _log = AppLogger.For<GoogleSheetsManager>();
+
+        public string SinkName => "Google Sheets";
+        public bool IsReady => SheetsApiReady;
+        private DateTime _lastPostTime = DateTime.MinValue;
 
         private const int MinHitsToSubmit = 40;
         private const int RateLimitSeconds = 3;
@@ -291,6 +301,17 @@ namespace Circle_Tracker
                 var reqs = new BatchUpdateSpreadsheetRequest { Requests = rangeUpdateRequests };
                 await _sheetsService!.Spreadsheets.BatchUpdate(reqs, SpreadsheetId).ExecuteAsync(ct);
             }
+        }
+
+        public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
+        {
+            return Task.Run(() => InitGoogleAPI(silent), ct);
+        }
+
+        public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
+        {
+            return TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
+                _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
         }
 
         public async Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)

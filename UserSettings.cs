@@ -4,6 +4,9 @@ namespace Circle_Tracker
 {
     public class UserSettings
     {
+        [JsonProperty("enableLocalLogging")] public bool EnableLocalLogging { get; set; } = true;
+        [JsonProperty("enableGoogleSheetsLogging")] public bool EnableGoogleSheetsLogging { get; set; } = false;
+        [JsonProperty("localDatabasePath")] public string LocalDatabasePath { get; set; } = "";
         [JsonProperty("spreadsheetId")] public string SpreadsheetId { get; set; } = "";
         [JsonProperty("sheetName")] public string SheetName { get; set; } = "Raw Data";
         [JsonProperty("submitSoundEnabled")] public bool SubmitSoundEnabled { get; set; } = true;

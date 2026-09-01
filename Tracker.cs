@@ -1,3 +1,4 @@
+using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
@@ -72,13 +73,33 @@ namespace Circle_Tracker
         bool MemoryReadError,
         int PlayingSeconds,
         int IdleSeconds,
-        int PlayCount = 0
+        int PlayCount = 0,
+        bool DatabaseReady = false,
+        int LocalPlayCount = 0
     )
     {
         public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";
     }
 
-    class Tracker
+    internal class SheetsSinkAdapter : IPlaySink
+    {
+        private readonly ISheetsSink _sink;
+        public string SinkName => "Google Sheets Adapter";
+        public bool IsReady => _sink.SheetsApiReady;
+        public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
+        {
+            _sink.InitGoogleAPI(silent);
+            return Task.CompletedTask;
+        }
+        public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
+        {
+            return _sink.TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
+                DateTime.MinValue, _ => { }, context.SoundFilePath, context.SubmitSoundEnabled, ct);
+        }
+        public SheetsSinkAdapter(ISheetsSink sink) => _sink = sink;
+    }
+
+    public class Tracker
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
 
@@ -87,7 +108,12 @@ namespace Circle_Tracker
 
         private readonly IMainWindow _form;
         private readonly ITosuClient _tosuClient;
+        private readonly IPlaySink _playSink;
         private readonly ISheetsSink _sheetsManager;
+        private readonly IDatabaseManager? _dbManager;
+        private readonly LocalSqlitePlaySink? _localSqliteSink;
+        private readonly CompositePlaySink? _compositeSink;
+        private readonly SessionManager _sessionManager;
 
         private static string FindFile(string relativePath)
         {
@@ -103,6 +129,10 @@ namespace Circle_Tracker
 
         public int IdleSeconds { get; private set; } = 0;
         public int PlayingSeconds { get; private set; } = 0;
+
+        public bool EnableLocalLogging { get; set; } = true;
+        public bool EnableGoogleSheetsLogging { get; set; } = false;
+        public string LocalDatabasePath { get; set; } = "";
 
         public string TosuHost { get; set; } = "127.0.0.1";
         public int TosuPort { get; set; } = 24050;
@@ -163,36 +193,53 @@ namespace Circle_Tracker
         private int _consecutivePlayCount = 0;
         private bool _lastLoggedComplete = false;
 
-        public bool SheetsApiReady => _sheetsManager.SheetsApiReady;
+        public bool DatabaseReady => _dbManager?.IsHealthy ?? false;
+        public int LocalPlayCount => _localSqliteSink?.TotalPlaysRecorded ?? 0;
+        public SessionManager SessionManager => _sessionManager;
+        public IPlaySink PlaySink => _playSink;
+
+        public bool SheetsApiReady => _sheetsManager?.SheetsApiReady ?? false;
         public bool SpreadsheetTimezoneVerified
         {
-            get => _sheetsManager.SpreadsheetTimezoneVerified;
-            set => _sheetsManager.SpreadsheetTimezoneVerified = value;
+            get => _sheetsManager?.SpreadsheetTimezoneVerified ?? false;
+            set { if (_sheetsManager != null) _sheetsManager.SpreadsheetTimezoneVerified = value; }
         }
         public bool UseAltFuncSeparator
         {
-            get => _sheetsManager.UseAltFuncSeparator;
-            set => _sheetsManager.UseAltFuncSeparator = value;
+            get => _sheetsManager?.UseAltFuncSeparator ?? false;
+            set { if (_sheetsManager != null) _sheetsManager.UseAltFuncSeparator = value; }
         }
         public string SpreadsheetId
         {
-            get => _sheetsManager.SpreadsheetId;
-            set => _sheetsManager.SpreadsheetId = value;
+            get => _sheetsManager?.SpreadsheetId ?? "";
+            set { if (_sheetsManager != null) _sheetsManager.SpreadsheetId = value; }
         }
         public string SheetName
         {
-            get => _sheetsManager.SheetName;
-            set => _sheetsManager.SheetName = value;
+            get => _sheetsManager?.SheetName ?? "";
+            set { if (_sheetsManager != null) _sheetsManager.SheetName = value; }
         }
-        public int SheetRows => _sheetsManager.SheetRows;
+        public int SheetRows => _sheetsManager?.SheetRows ?? 0;
 
         public Tracker(IMainWindow form, ITosuClient tosuClient)
         {
             _form = form;
             _tosuClient = tosuClient;
-            _sheetsManager = new GoogleSheetsManager(form, GetFunctionSeparator);
-            _sheetsManager.OnSettingsChanged = SaveSettings;
+
+            var sheetsManager = new GoogleSheetsManager(form, GetFunctionSeparator);
+            sheetsManager.OnSettingsChanged = SaveSettings;
+            _sheetsManager = sheetsManager;
+
             LoadSettings();
+
+            _dbManager = new SqliteDatabaseManager(LocalDatabasePath);
+            _localSqliteSink = new LocalSqlitePlaySink(_dbManager);
+            _sessionManager = new SessionManager(_dbManager);
+
+            _compositeSink = new CompositePlaySink();
+            _compositeSink.AddSink(_localSqliteSink, () => EnableLocalLogging);
+            _compositeSink.AddSink(sheetsManager, () => EnableGoogleSheetsLogging);
+            _playSink = _compositeSink;
 
             _tosuClient.Host = TosuHost;
             _tosuClient.Port = TosuPort;
@@ -216,11 +263,51 @@ namespace Circle_Tracker
             _sheetsManager = sheetsSink;
             _sheetsManager.OnSettingsChanged = SaveSettings;
 
+            if (sheetsSink is IPlaySink playSink)
+            {
+                _playSink = playSink;
+            }
+            else
+            {
+                _playSink = new SheetsSinkAdapter(sheetsSink);
+            }
+
+            _dbManager = new SqliteDatabaseManager(":memory:");
+            _sessionManager = new SessionManager(_dbManager);
+
+            GameState = GameStatus.Menu;
+            LastPostTime = DateTime.Now;
+        }
+
+        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null)
+        {
+            _form = form;
+            _tosuClient = tosuClient;
+            _playSink = playSink;
+            _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, GetFunctionSeparator);
+            _sheetsManager.OnSettingsChanged = SaveSettings;
+
+            _dbManager = new SqliteDatabaseManager(":memory:");
+            _sessionManager = sessionManager ?? new SessionManager(_dbManager);
+
             GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
         }
 
         public void InitGoogleAPI(bool silent = false) => _sheetsManager.InitGoogleAPI(silent);
+
+        public async Task InitializeStorageAsync(bool silent = false, CancellationToken ct = default)
+        {
+            if (_compositeSink != null)
+            {
+                await _compositeSink.InitializeAsync(silent, ct);
+            }
+            else
+            {
+                await _playSink.InitializeAsync(silent, ct);
+            }
+            await _sessionManager.InitializeAsync(ct);
+        }
 
         public void SaveSettings()
         {
@@ -228,6 +315,9 @@ namespace Circle_Tracker
             {
                 var settings = new UserSettings
                 {
+                    EnableLocalLogging = EnableLocalLogging,
+                    EnableGoogleSheetsLogging = EnableGoogleSheetsLogging,
+                    LocalDatabasePath = LocalDatabasePath,
                     SpreadsheetId = SpreadsheetId,
                     SheetName = SheetName,
                     SubmitSoundEnabled = SubmitSoundEnabled,
@@ -248,6 +338,9 @@ namespace Circle_Tracker
 
         private void LoadSettings()
         {
+            EnableLocalLogging = true;
+            EnableGoogleSheetsLogging = false;
+            LocalDatabasePath = "";
             SpreadsheetId = "";
             SheetName = "Raw Data";
             SubmitSoundEnabled = true;
@@ -256,6 +349,7 @@ namespace Circle_Tracker
             Username = "";
             TosuHost = "127.0.0.1";
             TosuPort = 24050;
+
             if (!File.Exists(SettingsFilePath))
             {
                 string oldPath = Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
@@ -271,6 +365,9 @@ namespace Circle_Tracker
                 var settings = JsonConvert.DeserializeObject<UserSettings>(json);
                 if (settings != null)
                 {
+                    EnableLocalLogging = settings.EnableLocalLogging;
+                    EnableGoogleSheetsLogging = settings.EnableGoogleSheetsLogging;
+                    LocalDatabasePath = settings.LocalDatabasePath ?? "";
                     SpreadsheetId = settings.SpreadsheetId;
                     SheetName = settings.SheetName;
                     SubmitSoundEnabled = settings.SubmitSoundEnabled;
@@ -350,7 +447,9 @@ namespace Circle_Tracker
                 MemoryReadError: MemoryReadError,
                 PlayingSeconds: PlayingSeconds,
                 IdleSeconds: IdleSeconds,
-                PlayCount: _consecutivePlayCount
+                PlayCount: _consecutivePlayCount,
+                DatabaseReady: DatabaseReady,
+                LocalPlayCount: LocalPlayCount
             );
         }
 
@@ -653,6 +752,8 @@ namespace Circle_Tracker
                 PlayingSeconds++;
             else
                 IdleSeconds++;
+
+            _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, DetectedClient);
             _form.UpdateTime();
         }
 
@@ -711,7 +812,22 @@ namespace Circle_Tracker
                 PlayTimeSeconds: playTime,
                 ModsString: GetModsString(),
                 PlayCount: _consecutivePlayCount,
-                AccuracyReliable: accuracyReliable
+                AccuracyReliable: accuracyReliable,
+                BeatmapTitle: _beatmapTitle,
+                BeatmapArtist: _beatmapArtist,
+                BeatmapVersion: _beatmapVersion,
+                BeatmapHp: _beatmapHp,
+                BeatmapChecksum: _currentBeatmapChecksum
+            );
+
+            var context = new PlayContext(
+                SessionId: _sessionManager.SessionId,
+                IsReplay: IsReplay,
+                RawMods: RawMods,
+                CurrentGameMode: _currentGameMode,
+                DetectedClient: DetectedClient,
+                SoundFilePath: SoundFilePath,
+                SubmitSoundEnabled: SubmitSoundEnabled
             );
 
             _ = Task.Run(async () =>
@@ -719,12 +835,13 @@ namespace Circle_Tracker
                 await _sheetsLock.WaitAsync();
                 try
                 {
-                    await _sheetsManager.TryAppendPlayEntry(data, isReplay: IsReplay, rawMods: RawMods,
-                        currentGameMode: _currentGameMode, lastPostTime: LastPostTime,
-                        setLastPostTime: t => LastPostTime = t,
-                        soundFilePath: SoundFilePath, submitSoundEnabled: SubmitSoundEnabled);
+                    await _sessionManager.IncrementPlaysAsync();
+                    await _playSink.TryLogPlayAsync(data, context);
                 }
-                finally { _sheetsLock.Release(); }
+                finally
+                {
+                    _sheetsLock.Release();
+                }
             });
         }
     }

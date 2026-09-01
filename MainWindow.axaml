@@ -17,9 +17,15 @@
       <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
 
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Ellipse x:Name="TosuStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Ellipse x:Name="TosuStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
+              <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Ellipse x:Name="DbStatusDot" Width="6" Height="6" Fill="#4ade80" VerticalAlignment="Center"/>
+              <TextBlock x:Name="DbStatusText" Text="DB: Ready" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
           </StackPanel>
 
           <TextBlock Grid.Column="1" x:Name="GameStateBadge" Text="IDLE" Foreground="#8f87a3" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -138,7 +144,23 @@
           <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False" Margin="0,4,0,0">
             <Grid ColumnDefinitions="*,*" Margin="4">
               <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,10,0">
-                <TextBlock Classes="stat-label" Text="GOOGLE SHEETS" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
+                <TextBlock Classes="stat-label" Text="DATA PERSISTENCE &amp; STORAGE" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
+                <CheckBox x:Name="EnableLocalLoggingCheckBox" Classes="osu-check" Content="Enable Local SQLite Logging" IsCheckedChanged="EnableLocalLoggingCheckBox_IsCheckedChanged"/>
+                <TextBox x:Name="LocalDbPathTextBox" Classes="osu-input" Watermark="Database path (default: circle_tracker.db)" TextChanged="LocalDbPathTextBox_TextChanged"
+                         ToolTip.Tip="Custom path for the SQLite database file"/>
+                <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on play submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
+
+                <TextBlock Classes="stat-label" Text="TOSU CLIENT &amp; APP" FontSize="10" FontWeight="Bold" Foreground="#8f87a3" Margin="0,8,0,0"/>
+                <Grid ColumnDefinitions="*,8,80">
+                  <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
+                  <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port (24050)" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
+                </Grid>
+                <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Spacing="8" Margin="10,0,0,0">
+                <TextBlock Classes="stat-label" Text="GOOGLE SHEETS (OPTIONAL)" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
+                <CheckBox x:Name="EnableSheetsLoggingCheckBox" Classes="osu-check" Content="Enable Google Sheets Logging" IsCheckedChanged="EnableSheetsLoggingCheckBox_IsCheckedChanged"/>
                 <TextBox x:Name="SpreadsheetIdTextBox" Classes="osu-input" Watermark="Spreadsheet ID" TextChanged="SpreadsheetIdTextBox_TextChanged"
                          ToolTip.Tip="The ID from your Google Sheets URL"/>
                 <TextBox x:Name="SheetNameTextBox" Classes="osu-input" Watermark="Sheet Name" TextChanged="SheetNameTextBox_TextChanged"
@@ -152,20 +174,7 @@
                   </StackPanel>
                 </Grid>
 
-                <StackPanel Spacing="4">
-                  <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
-                  <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
-                </StackPanel>
-              </StackPanel>
-
-              <StackPanel Grid.Column="1" Spacing="8" Margin="10,0,0,0">
-                <TextBlock Classes="stat-label" Text="TOSU CLIENT &amp; APP" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
-                <Grid ColumnDefinitions="*,8,80">
-                  <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
-                  <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port (24050)" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
-                </Grid>
-
-                <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+                <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
               </StackPanel>
             </Grid>
           </Border>

@@ -69,6 +69,10 @@ namespace Circle_Tracker
             _tosuClient = new TosuClient();
             _tracker = new Tracker(this, _tosuClient);
 
+            EnableLocalLoggingCheckBox.IsChecked = _tracker.EnableLocalLogging;
+            EnableSheetsLoggingCheckBox.IsChecked = _tracker.EnableGoogleSheetsLogging;
+            LocalDbPathTextBox.Text = _tracker.LocalDatabasePath;
+
             SheetNameTextBox.Text = _tracker.SheetName;
             SpreadsheetIdTextBox.Text = _tracker.SpreadsheetId;
             SoundEnabledCheckbox.IsChecked = _tracker.SubmitSoundEnabled;
@@ -86,10 +90,10 @@ namespace Circle_Tracker
 
             SetCredentialsFound(File.Exists(Path.Combine(AppContext.BaseDirectory, "credentials.json")));
 
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
-                try { _tracker.InitGoogleAPI(silent: true); }
-                catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
+                try { await _tracker.InitializeStorageAsync(silent: true); }
+                catch (Exception ex) { _log.LogError(ex, "Storage init failed"); }
             });
 
             SetupTimers();
@@ -383,6 +387,9 @@ namespace Circle_Tracker
             TosuStatusDot.Fill = _tosuClient.IsConnected ? GreenBrush : RedBrush;
             TosuStatusText.Text = _tosuClient.IsConnected ? $"tosu: {s.DetectedClient}" : "tosu: Connecting...";
 
+            DbStatusDot.Fill = s.DatabaseReady ? GreenBrush : RedBrush;
+            DbStatusText.Text = s.DatabaseReady ? $"DB: {s.LocalPlayCount} plays" : "DB: Error";
+
             GameStateBadge.Text = s.GameStateLabel;
             GameStateBadge.Foreground = s.GameStateLabel switch
             {
@@ -447,12 +454,33 @@ namespace Circle_Tracker
 
         protected override void OnClosing(WindowClosingEventArgs e)
         {
+            try
+            {
+                _tracker.SessionManager.EndSessionAsync().GetAwaiter().GetResult();
+            }
+            catch { }
+
             _tracker.SaveSettings();
             _tosuClient.Dispose();
             _gameTickTimer?.Stop();
             _uiUpdateTimer?.Stop();
             _secondsTimer?.Stop();
             base.OnClosing(e);
+        }
+
+        private void EnableLocalLoggingCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        {
+            _tracker.EnableLocalLogging = EnableLocalLoggingCheckBox.IsChecked == true;
+        }
+
+        private void EnableSheetsLoggingCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+        {
+            _tracker.EnableGoogleSheetsLogging = EnableSheetsLoggingCheckBox.IsChecked == true;
+        }
+
+        private void LocalDbPathTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+        {
+            _tracker.LocalDatabasePath = LocalDbPathTextBox.Text?.Trim() ?? "";
         }
 
         private void SpreadsheetIdTextBox_TextChanged(object? sender, TextChangedEventArgs e)
