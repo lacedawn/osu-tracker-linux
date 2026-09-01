@@ -14,7 +14,7 @@ namespace Circle_Tracker
         int SheetRows { get; }
         Action? OnSettingsChanged { get; set; }
 
-        void InitGoogleAPI(bool silent = false);
+        Task InitGoogleAPIAsync(bool silent = false);
 
         Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
             DateTime lastPostTime, Action<DateTime> setLastPostTime,

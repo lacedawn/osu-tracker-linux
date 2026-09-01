@@ -112,6 +112,32 @@ namespace CircleTracker.Tests.AnalyticsTests
         }
 
         [Fact]
+        public async Task StarMastery_HighStarsAndPercentiles_CalculatesCorrectly()
+        {
+            var (db, sink, session) = await CreateTestEnvironmentAsync();
+            var service = new SkillAnalyticsService(db);
+            var context = new PlayContext(session.SessionId, false, 0, 0, "osu!stable", "", false);
+
+            // Insert 10 plays for 8.0+ stars bracket: 8.1 to 9.2 stars
+            var accs = new[] { 88.0m, 90.0m, 92.0m, 93.0m, 94.0m, 95.0m, 96.0m, 97.0m, 98.0m, 99.0m };
+            foreach (var acc in accs)
+            {
+                await sink.TryLogPlayAsync(CreatePlay(stars: 8.5, accuracy: acc, complete: true), context);
+            }
+
+            var brackets = await service.GetStarMasteryCurveAsync();
+            var b8 = brackets.Single(b => b.MinStars == 8.0 && b.MaxStars == 99.0);
+
+            b8.TotalAttempts.Should().Be(10);
+            b8.Passes.Should().Be(10);
+            b8.PassRatePercent.Should().Be(100.0);
+            b8.MeanAccuracy.Should().Be(94.2m);
+            b8.MedianAccuracy.Should().Be(94.5m);
+            b8.P90Accuracy.Should().Be(98.0m);
+            b8.SkillZone.Should().Be("Push");
+        }
+
+        [Fact]
         public async Task AimVsSpeed_RatioThresholds_CalculatesCorrectDistributionAndBias()
         {
             var (db, sink, session) = await CreateTestEnvironmentAsync();

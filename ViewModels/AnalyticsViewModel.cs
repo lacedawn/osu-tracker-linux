@@ -19,7 +19,7 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private readonly ISessionAnalyticsService _sessionService;
     private readonly IPlayQueryEngine _queryEngine;
     
-    private int _selectedTabIndex;
+    private int _selectedTabIndex = -1;
 
     private async Task InvokeOnUIThread(Action action)
     {

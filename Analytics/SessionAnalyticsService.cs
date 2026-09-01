@@ -130,48 +130,68 @@ namespace Circle_Tracker.Analytics
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
 
-            string minDate = DateTime.UtcNow.AddDays(-90).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var plays = (await conn.QueryAsync<(string Timestamp, double Accuracy, int TotalHits, double Stars, int IsComplete, int Bpm, int PlayTimeSeconds)>(
-                "SELECT timestamp, accuracy, total_hits, stars, is_complete, bpm, play_time_seconds FROM plays WHERE timestamp >= @minDate;",
-                new { minDate })).ToList();
+            DateTime now = DateTime.UtcNow;
+            string d7 = now.AddDays(-7).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            string d30 = now.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            string d90 = now.AddDays(-90).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-            var parsedPlays = new List<(DateTime Time, double Accuracy, int TotalHits, double Stars, int IsComplete, int Bpm, int PlayTimeSeconds)>();
-            foreach (var p in plays)
-            {
-                if (DateTime.TryParse(p.Timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt))
-                {
-                    parsedPlays.Add((dt, p.Accuracy, p.TotalHits, p.Stars, p.IsComplete, p.Bpm, p.PlayTimeSeconds));
-                }
-            }
+            const string sql = @"
+                SELECT
+                    COUNT(CASE WHEN timestamp >= @d7 THEN 1 END) AS plays_7d,
+                    SUM(CASE WHEN timestamp >= @d7 THEN play_time_seconds ELSE 0 END) AS time_7d,
+                    SUM(CASE WHEN timestamp >= @d7 THEN total_hits ELSE 0 END) AS hits_7d,
+                    SUM(CASE WHEN timestamp >= @d7 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_7d,
+                    AVG(CASE WHEN timestamp >= @d7 THEN accuracy END) AS avg_acc_7d,
+                    AVG(CASE WHEN timestamp >= @d7 THEN stars END) AS avg_stars_7d,
+                    SUM(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_7d,
+                    AVG(CASE WHEN timestamp >= @d7 THEN bpm END) AS avg_bpm_7d,
+
+                    COUNT(CASE WHEN timestamp >= @d30 THEN 1 END) AS plays_30d,
+                    SUM(CASE WHEN timestamp >= @d30 THEN play_time_seconds ELSE 0 END) AS time_30d,
+                    SUM(CASE WHEN timestamp >= @d30 THEN total_hits ELSE 0 END) AS hits_30d,
+                    SUM(CASE WHEN timestamp >= @d30 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_30d,
+                    AVG(CASE WHEN timestamp >= @d30 THEN accuracy END) AS avg_acc_30d,
+                    AVG(CASE WHEN timestamp >= @d30 THEN stars END) AS avg_stars_30d,
+                    SUM(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_30d,
+                    AVG(CASE WHEN timestamp >= @d30 THEN bpm END) AS avg_bpm_30d,
+
+                    COUNT(CASE WHEN timestamp >= @d90 THEN 1 END) AS plays_90d,
+                    SUM(CASE WHEN timestamp >= @d90 THEN play_time_seconds ELSE 0 END) AS time_90d,
+                    SUM(CASE WHEN timestamp >= @d90 THEN total_hits ELSE 0 END) AS hits_90d,
+                    SUM(CASE WHEN timestamp >= @d90 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_90d,
+                    AVG(CASE WHEN timestamp >= @d90 THEN accuracy END) AS avg_acc_90d,
+                    AVG(CASE WHEN timestamp >= @d90 THEN stars END) AS avg_stars_90d,
+                    SUM(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_90d,
+                    AVG(CASE WHEN timestamp >= @d90 THEN bpm END) AS avg_bpm_90d
+                FROM plays
+                WHERE timestamp >= @d90;";
+
+            var row = await conn.QueryFirstOrDefaultAsync<(
+                int Plays7, int Time7, long Hits7, double WAcc7, double? AvgAcc7, double? AvgStars7, int Passes7, double? AvgBpm7,
+                int Plays30, int Time30, long Hits30, double WAcc30, double? AvgAcc30, double? AvgStars30, int Passes30, double? AvgBpm30,
+                int Plays90, int Time90, long Hits90, double WAcc90, double? AvgAcc90, double? AvgStars90, int Passes90, double? AvgBpm90
+            )>(sql, new { d7, d30, d90 });
 
             var result = new Dictionary<string, RollingPeriodStats>();
-            DateTime now = DateTime.UtcNow;
 
-            foreach (var (key, days) in periods)
+            RollingPeriodStats ComputeStats(int days, int totalPlays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
             {
-                DateTime cutoff = now.AddDays(-days);
-                var window = parsedPlays.Where(p => p.Time >= cutoff).ToList();
-
-                int totalPlays = window.Count;
-                double totalActiveHours = window.Sum(p => (double)p.PlayTimeSeconds) / 3600.0;
-
-                long totalHits = window.Sum(p => (long)p.TotalHits);
+                double totalActiveHours = playTimeSec / 3600.0;
                 decimal meanAcc = 0.0m;
                 if (totalHits > 0)
                 {
-                    double weightedAccSum = window.Sum(p => p.Accuracy * p.TotalHits);
                     meanAcc = (decimal)(weightedAccSum / totalHits);
                 }
-                else if (totalPlays > 0)
+                else if (totalPlays > 0 && avgAcc.HasValue)
                 {
-                    meanAcc = (decimal)window.Average(p => p.Accuracy);
+                    meanAcc = (decimal)avgAcc.Value;
                 }
 
-                decimal meanStars = totalPlays > 0 ? (decimal)window.Average(p => p.Stars) : 0.0m;
-                double passRate = totalPlays > 0 ? (100.0 * window.Count(p => p.IsComplete == 1) / totalPlays) : 0.0;
-                double meanBpm = totalPlays > 0 ? window.Average(p => (double)p.Bpm) : 0.0;
+                decimal meanStars = (totalPlays > 0 && avgStars.HasValue) ? (decimal)avgStars.Value : 0.0m;
+                double passRate = totalPlays > 0 ? (100.0 * passes / totalPlays) : 0.0;
+                double meanBpm = (totalPlays > 0 && avgBpm.HasValue) ? avgBpm.Value : 0.0;
 
-                result[key] = new RollingPeriodStats(
+                return new RollingPeriodStats(
                     PeriodDays: days,
                     TotalPlays: totalPlays,
                     TotalActiveHours: Math.Round(totalActiveHours, 2),
@@ -182,88 +202,86 @@ namespace Circle_Tracker.Analytics
                 );
             }
 
+            result["7D"] = ComputeStats(7, row.Plays7, row.Time7, row.Hits7, row.WAcc7, row.AvgAcc7, row.AvgStars7, row.Passes7, row.AvgBpm7);
+            result["30D"] = ComputeStats(30, row.Plays30, row.Time30, row.Hits30, row.WAcc30, row.AvgAcc30, row.AvgStars30, row.Passes30, row.AvgBpm30);
+            result["90D"] = ComputeStats(90, row.Plays90, row.Time90, row.Hits90, row.WAcc90, row.AvgAcc90, row.AvgStars90, row.Passes90, row.AvgBpm90);
+
             return result;
         }
 
         public async Task<IReadOnlyList<ChokeMapRecord>> GetTopChokeMapsAsync(int limit = 10, CancellationToken ct = default)
         {
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-
-            var plays = (await conn.QueryAsync<(int BeatmapId, int BeatmapSetId, string BeatmapString, double Accuracy, int HitMiss, int ConsecutivePlayCount, int IsComplete)>(
-                "SELECT beatmap_id, beatmap_set_id, beatmap_string, accuracy, hit_miss, consecutive_play_count, is_complete FROM plays WHERE beatmap_id > 0;")).ToList();
-
-            var groups = plays.GroupBy(p => p.BeatmapId);
-            var records = new List<ChokeMapRecord>();
-
-            foreach (var group in groups)
-            {
-                var mapPlays = group.ToList();
-                int totalAttempts = mapPlays.Count;
-                int maxConsecutive = mapPlays.Max(p => p.ConsecutivePlayCount);
-
-                if (maxConsecutive < 3 && totalAttempts < 5)
-                    continue;
-
-                var chokes = mapPlays.Where(p => p.HitMiss >= 1 && p.HitMiss <= 2 && p.Accuracy >= 95.0).ToList();
-                if (chokes.Count == 0)
-                    continue;
-
-                var first = mapPlays[0];
-                int chokeCount = chokes.Count;
-                decimal bestAcc = (decimal)chokes.Max(p => p.Accuracy);
-                int minMisses = chokes.Min(p => p.HitMiss);
-                string coverUrl = first.BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{first.BeatmapSetId}/covers/cover.jpg" : "";
-
-                records.Add(new ChokeMapRecord(
-                    BeatmapId: first.BeatmapId,
-                    BeatmapSetId: first.BeatmapSetId,
-                    BeatmapString: first.BeatmapString ?? "",
-                    CoverUrl: coverUrl,
-                    ChokeCount: chokeCount,
-                    BestChokeAcc: Math.Round(bestAcc, 2),
-                    MinMisses: minMisses,
-                    TotalMapAttempts: totalAttempts
-                ));
-            }
-
-            return records
-                .OrderByDescending(r => r.ChokeCount)
-                .ThenByDescending(r => r.BestChokeAcc)
-                .Take(limit)
-                .ToList()
-                .AsReadOnly();
+            // Push grouping, filtering, and aggregation entirely into SQLite
+            const string sql = @"
+                SELECT
+                    beatmap_id,
+                    beatmap_set_id,
+                    beatmap_string,
+                    COUNT(*) AS total_attempts,
+                    MAX(consecutive_play_count) AS max_consecutive,
+                    SUM(CASE WHEN hit_miss >= 1 AND hit_miss <= 2 AND accuracy >= 95.0 THEN 1 ELSE 0 END) AS choke_count,
+                    MAX(CASE WHEN hit_miss >= 1 AND hit_miss <= 2 AND accuracy >= 95.0 THEN accuracy ELSE 0 END) AS best_choke_acc,
+                    MIN(CASE WHEN hit_miss >= 1 AND hit_miss <= 2 AND accuracy >= 95.0 THEN hit_miss ELSE 999 END) AS min_misses
+                FROM plays
+                WHERE beatmap_id > 0
+                GROUP BY beatmap_id
+                HAVING choke_count > 0 AND (max_consecutive >= 3 OR total_attempts >= 5)
+                ORDER BY choke_count DESC, best_choke_acc DESC
+                LIMIT @limit;";
+            var rows = (await conn.QueryAsync<(
+                int BeatmapId, int BeatmapSetId, string BeatmapString,
+                int TotalAttempts, int MaxConsecutive,
+                int ChokeCount, double BestChokeAcc, int MinMisses
+            )>(sql, new { limit })).ToList();
+            return rows.Select(r => new ChokeMapRecord(
+                BeatmapId: r.BeatmapId,
+                BeatmapSetId: r.BeatmapSetId,
+                BeatmapString: r.BeatmapString ?? "",
+                CoverUrl: r.BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{r.BeatmapSetId}/covers/cover.jpg" : "",
+                ChokeCount: r.ChokeCount,
+                BestChokeAcc: Math.Round((decimal)r.BestChokeAcc, 2),
+                MinMisses: r.MinMisses == 999 ? 0 : r.MinMisses,
+                TotalMapAttempts: r.TotalAttempts
+            )).ToList().AsReadOnly();
         }
 
         public async Task<HeadToHeadComparison> CompareSessionToBaselineAsync(string sessionId, CancellationToken ct = default)
         {
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
 
-            string minDate = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var plays = (await conn.QueryAsync<(string? SessionId, string Timestamp, double Accuracy, double Stars, int IsComplete, int PlayTimeSeconds)>(
-                "SELECT session_id, timestamp, accuracy, stars, is_complete, play_time_seconds FROM plays;")).ToList();
+            string cutoff = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-            var sessionPlays = plays.Where(p => string.Equals(p.SessionId, sessionId, StringComparison.OrdinalIgnoreCase)).ToList();
+            const string sql = @"
+                SELECT
+                    COUNT(CASE WHEN session_id = @sessionId THEN 1 END) AS SessionPlays,
+                    AVG(CASE WHEN session_id = @sessionId THEN accuracy END) AS SessionAcc,
+                    AVG(CASE WHEN session_id = @sessionId THEN stars END) AS SessionStars,
+                    SUM(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN 1 ELSE 0 END) AS SessionPasses,
+                    SUM(CASE WHEN session_id = @sessionId THEN play_time_seconds ELSE 0 END) AS SessionSeconds,
 
-            DateTime cutoff = DateTime.UtcNow.AddDays(-30);
-            var baselinePlays = new List<(string? SessionId, string Timestamp, double Accuracy, double Stars, int IsComplete, int PlayTimeSeconds)>();
-            foreach (var p in plays)
-            {
-                if (DateTime.TryParse(p.Timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt) && dt >= cutoff)
-                {
-                    baselinePlays.Add(p);
-                }
-            }
+                    COUNT(CASE WHEN timestamp >= @cutoff THEN 1 END) AS BaselinePlays,
+                    AVG(CASE WHEN timestamp >= @cutoff THEN accuracy END) AS BaselineAcc,
+                    AVG(CASE WHEN timestamp >= @cutoff THEN stars END) AS BaselineStars,
+                    SUM(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN 1 ELSE 0 END) AS BaselinePasses
+                FROM plays
+                WHERE session_id = @sessionId OR timestamp >= @cutoff;";
 
-            int sCount = sessionPlays.Count;
-            decimal sAcc = sCount > 0 ? (decimal)sessionPlays.Average(p => p.Accuracy) : 0.0m;
-            decimal sStars = sCount > 0 ? (decimal)sessionPlays.Average(p => p.Stars) : 0.0m;
-            double sPassRate = sCount > 0 ? (100.0 * sessionPlays.Count(p => p.IsComplete == 1) / sCount) : 0.0;
-            double sMinutes = sessionPlays.Sum(p => (double)p.PlayTimeSeconds) / 60.0;
+            var row = await conn.QueryFirstOrDefaultAsync<(
+                int SessionPlays, double? SessionAcc, double? SessionStars, int SessionPasses, int SessionSeconds,
+                int BaselinePlays, double? BaselineAcc, double? BaselineStars, int BaselinePasses
+            )>(sql, new { sessionId, cutoff });
 
-            int bCount = baselinePlays.Count;
-            decimal bAcc = bCount > 0 ? (decimal)baselinePlays.Average(p => p.Accuracy) : 0.0m;
-            decimal bStars = bCount > 0 ? (decimal)baselinePlays.Average(p => p.Stars) : 0.0m;
-            double bPassRate = bCount > 0 ? (100.0 * baselinePlays.Count(p => p.IsComplete == 1) / bCount) : 0.0;
+            int sCount = row.SessionPlays;
+            decimal sAcc = sCount > 0 ? (decimal)(row.SessionAcc ?? 0.0) : 0.0m;
+            decimal sStars = sCount > 0 ? (decimal)(row.SessionStars ?? 0.0) : 0.0m;
+            double sPassRate = sCount > 0 ? (100.0 * row.SessionPasses / sCount) : 0.0;
+            double sMinutes = row.SessionSeconds / 60.0;
+
+            int bCount = row.BaselinePlays;
+            decimal bAcc = bCount > 0 ? (decimal)(row.BaselineAcc ?? 0.0) : 0.0m;
+            decimal bStars = bCount > 0 ? (decimal)(row.BaselineStars ?? 0.0) : 0.0m;
+            double bPassRate = bCount > 0 ? (100.0 * row.BaselinePasses / bCount) : 0.0;
 
             return new HeadToHeadComparison(
                 SessionAcc: Math.Round(sAcc, 2),

@@ -69,6 +69,7 @@ public class LiveSessionTracker : ILiveSessionTracker
 {
     private readonly ISessionAnalyticsService _sessionService;
     private readonly List<PlayEntryData> _sessionPlays = new();
+    private readonly object _playsLock = new();
     private DateTime _sessionStartTime = DateTime.UtcNow;
     private decimal _sessionPeakAccuracy = 0m;
     private decimal _highestStarPass = 0m;
@@ -87,7 +88,10 @@ public class LiveSessionTracker : ILiveSessionTracker
 
     public LiveSessionMetrics GetCurrentMetrics()
     {
-        if (_sessionPlays.Count == 0)
+        List<PlayEntryData> snapshot;
+        lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
+
+        if (snapshot.Count == 0)
         {
             return new LiveSessionMetrics(
                 SessionPlayCount: 0,
@@ -105,11 +109,11 @@ public class LiveSessionTracker : ILiveSessionTracker
             );
         }
 
-        var passCount = _sessionPlays.Count(p => p.Complete);
-        var totalPlayTime = _sessionPlays.Sum(p => p.PlayTimeSeconds);
-        var avgAccuracy = _sessionPlays.Average(p => p.Accuracy);
-        var avgStars = _sessionPlays.Average(p => p.BeatmapStars);
-        var avgBpm = _sessionPlays.Average(p => p.BeatmapBpm);
+        var passCount = snapshot.Count(p => p.Complete);
+        var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
+        var avgAccuracy = snapshot.Average(p => p.Accuracy);
+        var avgStars = snapshot.Average(p => p.BeatmapStars);
+        var avgBpm = snapshot.Average(p => p.BeatmapBpm);
 
         var deltaAcc = _baseline30Day != null ? avgAccuracy - _baseline30Day.MeanAccuracy : 0m;
         var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
@@ -120,7 +124,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         var fatigueWarning = DetectFatigueWarning(elapsedMinutes);
 
         return new LiveSessionMetrics(
-            SessionPlayCount: _sessionPlays.Count,
+            SessionPlayCount: snapshot.Count,
             SessionPassCount: passCount,
             ActivePlayMinutes: totalPlayTime / 60.0,
             SessionAverageAccuracy: avgAccuracy,
@@ -142,7 +146,10 @@ public class LiveSessionTracker : ILiveSessionTracker
             await LoadBaselineAsync();
         }
 
-        _sessionPlays.Add(play);
+        lock (_playsLock)
+        {
+            _sessionPlays.Add(play);
+        }
 
         if (play.Accuracy > _sessionPeakAccuracy)
         {
@@ -161,7 +168,10 @@ public class LiveSessionTracker : ILiveSessionTracker
             await LoadBaselineAsync(ct);
         }
 
-        if (_sessionPlays.Count == 0)
+        List<PlayEntryData> snapshot;
+        lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
+
+        if (snapshot.Count == 0)
         {
             return new SessionSummaryReport(
                 TotalPlays: 0,
@@ -179,13 +189,13 @@ public class LiveSessionTracker : ILiveSessionTracker
             );
         }
 
-        var passes = _sessionPlays.Where(p => p.Complete).ToList();
+        var passes = snapshot.Where(p => p.Complete).ToList();
         var passCount = passes.Count;
-        var totalPlayTime = _sessionPlays.Sum(p => p.PlayTimeSeconds);
-        var avgAccuracy = _sessionPlays.Average(p => p.Accuracy);
-        var avgStars = _sessionPlays.Average(p => p.BeatmapStars);
-        var avgBpm = _sessionPlays.Average(p => p.BeatmapBpm);
-        var passRate = _sessionPlays.Count > 0 ? (passCount / (double)_sessionPlays.Count) * 100.0 : 0;
+        var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
+        var avgAccuracy = snapshot.Average(p => p.Accuracy);
+        var avgStars = snapshot.Average(p => p.BeatmapStars);
+        var avgBpm = snapshot.Average(p => p.BeatmapBpm);
+        var passRate = snapshot.Count > 0 ? (passCount / (double)snapshot.Count) * 100.0 : 0;
 
         var deltaAcc = _baseline30Day != null ? avgAccuracy - _baseline30Day.MeanAccuracy : 0m;
         var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
@@ -195,7 +205,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         var bestPlay = GetBestPlay();
 
         return new SessionSummaryReport(
-            TotalPlays: _sessionPlays.Count,
+            TotalPlays: snapshot.Count,
             TotalPasses: passCount,
             ActivePlayMinutes: totalPlayTime / 60.0,
             SessionAccuracy: avgAccuracy,
@@ -212,7 +222,10 @@ public class LiveSessionTracker : ILiveSessionTracker
 
     public void ResetSession()
     {
-        _sessionPlays.Clear();
+        lock (_playsLock)
+        {
+            _sessionPlays.Clear();
+        }
         _sessionStartTime = DateTime.UtcNow;
         _sessionPeakAccuracy = 0m;
         _highestStarPass = 0m;
@@ -223,7 +236,7 @@ public class LiveSessionTracker : ILiveSessionTracker
     private async Task LoadBaselineAsync(CancellationToken ct = default)
     {
         var allMetrics = await _sessionService.GetRollingAveragesAsync(ct);
-        if (allMetrics.TryGetValue("30day", out var baseline))
+        if (allMetrics.TryGetValue("30D", out var baseline))
         {
             _baseline30Day = baseline;
         }
@@ -294,12 +307,15 @@ public class LiveSessionTracker : ILiveSessionTracker
 
     private bool DetectFatigueWarning(double elapsedMinutes)
     {
-        if (elapsedMinutes < 60 || _sessionPlays.Count < 10)
+        List<PlayEntryData> snapshot;
+        lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
+
+        if (elapsedMinutes < 60 || snapshot.Count < 10)
         {
             return false;
         }
 
-        var recentPlays = _sessionPlays.TakeLast(5).ToList();
+        var recentPlays = snapshot.TakeLast(5).ToList();
         if (recentPlays.Count < 5)
         {
             return false;
@@ -313,8 +329,11 @@ public class LiveSessionTracker : ILiveSessionTracker
 
     private BestPlayCard? GetBestPlay()
     {
-        var completedPlays = _sessionPlays.Where(p => p.Complete).ToList();
-        if (completedPlays.Count() == 0)
+        List<PlayEntryData> snapshot;
+        lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
+
+        var completedPlays = snapshot.Where(p => p.Complete).ToList();
+        if (completedPlays.Count == 0)
         {
             return null;
         }

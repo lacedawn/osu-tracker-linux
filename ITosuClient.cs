@@ -15,6 +15,6 @@ namespace Circle_Tracker
         Task ConnectAsync(CancellationToken ct = default);
         Task DisconnectAsync();
         Task ReconnectAsync();
-        Task<PpCalcResult?> CalculatePpAsync(int modNumber = 0);
+        Task<PpCalcResult?> CalculatePpAsync(int modNumber = 0, CancellationToken ct = default);
     }
 }

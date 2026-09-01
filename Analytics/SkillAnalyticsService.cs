@@ -33,43 +33,61 @@ namespace Circle_Tracker.Analytics
             };
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-            var plays = (await conn.QueryAsync<(double Stars, double Accuracy, int IsComplete)>(
-                "SELECT stars, accuracy, is_complete FROM plays WHERE stars >= 4.0 ORDER BY stars ASC;")).ToList();
+
+            const string sql = @"
+                WITH BracketPlays AS (
+                    SELECT
+                        CASE 
+                            WHEN stars >= 8.0 THEN 8.0 
+                            ELSE CAST(stars * 2 AS INTEGER) / 2.0 
+                        END AS bracket,
+                        accuracy,
+                        is_complete,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY CASE WHEN stars >= 8.0 THEN 8.0 ELSE CAST(stars * 2 AS INTEGER) / 2.0 END 
+                            ORDER BY accuracy ASC
+                        ) - 1 AS row_idx,
+                        COUNT(*) OVER (
+                            PARTITION BY CASE WHEN stars >= 8.0 THEN 8.0 ELSE CAST(stars * 2 AS INTEGER) / 2.0 END
+                        ) AS total_count
+                    FROM plays
+                    WHERE stars >= 4.0
+                )
+                SELECT 
+                    bracket AS Bracket,
+                    total_count AS TotalCount,
+                    SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END) AS Passes,
+                    AVG(accuracy) AS MeanAcc,
+                    AVG(CASE 
+                        WHEN total_count % 2 = 1 AND row_idx = total_count / 2 THEN accuracy
+                        WHEN total_count % 2 = 0 AND (row_idx = (total_count / 2) - 1 OR row_idx = total_count / 2) THEN accuracy
+                        ELSE NULL 
+                    END) AS MedianAcc,
+                    MAX(CASE 
+                        WHEN row_idx = CAST((total_count - 1) * 0.90 AS INTEGER) THEN accuracy 
+                        ELSE NULL 
+                    END) AS P90Acc
+                FROM BracketPlays
+                GROUP BY bracket, total_count;";
+
+            var rows = (await conn.QueryAsync<(
+                double Bracket, int TotalCount, int Passes, double MeanAcc, double? MedianAcc, double? P90Acc
+            )>(sql)).ToDictionary(r => r.Bracket);
 
             var result = new List<StarMasteryBracket>();
 
             foreach (var (min, max) in bracketsDef)
             {
-                var bracketPlays = max >= 99.0
-                    ? plays.Where(p => p.Stars >= min).ToList()
-                    : plays.Where(p => p.Stars >= min && p.Stars < max).ToList();
-
-                int total = bracketPlays.Count;
-                int passes = bracketPlays.Count(p => p.IsComplete == 1);
-                double passRate = total > 0 ? (100.0 * passes / total) : 0.0;
-
-                decimal meanAcc = 0.0m;
-                decimal medianAcc = 0.0m;
-                decimal p90Acc = 0.0m;
-                string skillZone = "Comfort";
-
-                if (total > 0)
+                if (rows.TryGetValue(min, out var row) && row.TotalCount > 0)
                 {
-                    meanAcc = (decimal)bracketPlays.Average(p => p.Accuracy);
+                    int total = row.TotalCount;
+                    int passes = row.Passes;
+                    double passRate = (100.0 * passes / total);
+                    decimal meanAcc = (decimal)row.MeanAcc;
+                    decimal medianAcc = (decimal)(row.MedianAcc ?? row.MeanAcc);
+                    decimal p90Acc = (decimal)(row.P90Acc ?? row.MeanAcc);
 
-                    var sortedAccs = bracketPlays.Select(p => (decimal)p.Accuracy).OrderBy(a => a).ToList();
-                    if (total % 2 == 1)
-                    {
-                        medianAcc = sortedAccs[total / 2];
-                    }
-                    else
-                    {
-                        medianAcc = (sortedAccs[(total / 2) - 1] + sortedAccs[total / 2]) / 2.0m;
-                    }
-
-                    int p90Index = (int)Math.Floor(0.90 * (total - 1));
-                    p90Acc = sortedAccs[Math.Clamp(p90Index, 0, total - 1)];
-
+                    string skillZone;
                     if (meanAcc >= 95.00m)
                     {
                         skillZone = "Comfort";
@@ -82,19 +100,33 @@ namespace Circle_Tracker.Analytics
                     {
                         skillZone = "Pass-Only";
                     }
-                }
 
-                result.Add(new StarMasteryBracket(
-                    MinStars: min,
-                    MaxStars: max,
-                    TotalAttempts: total,
-                    Passes: passes,
-                    PassRatePercent: Math.Round(passRate, 2),
-                    MeanAccuracy: Math.Round(meanAcc, 2),
-                    MedianAccuracy: Math.Round(medianAcc, 2),
-                    P90Accuracy: Math.Round(p90Acc, 2),
-                    SkillZone: skillZone
-                ));
+                    result.Add(new StarMasteryBracket(
+                        MinStars: min,
+                        MaxStars: max,
+                        TotalAttempts: total,
+                        Passes: passes,
+                        PassRatePercent: Math.Round(passRate, 2),
+                        MeanAccuracy: Math.Round(meanAcc, 2),
+                        MedianAccuracy: Math.Round(medianAcc, 2),
+                        P90Accuracy: Math.Round(p90Acc, 2),
+                        SkillZone: skillZone
+                    ));
+                }
+                else
+                {
+                    result.Add(new StarMasteryBracket(
+                        MinStars: min,
+                        MaxStars: max,
+                        TotalAttempts: 0,
+                        Passes: 0,
+                        PassRatePercent: 0.0,
+                        MeanAccuracy: 0.0m,
+                        MedianAccuracy: 0.0m,
+                        P90Accuracy: 0.0m,
+                        SkillZone: "Comfort"
+                    ));
+                }
             }
 
             return result.AsReadOnly();
@@ -103,42 +135,40 @@ namespace Circle_Tracker.Analytics
         public async Task<AimSpeedProfile> GetAimSpeedProfileAsync(CancellationToken ct = default)
         {
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-            var plays = (await conn.QueryAsync<(double Aim, double Speed, double Accuracy, int IsComplete)>(
-                "SELECT aim, speed, accuracy, is_complete FROM plays;")).ToList();
 
-            var aimPlays = new List<(double Aim, double Speed, double Accuracy, int IsComplete)>();
-            var speedPlays = new List<(double Aim, double Speed, double Accuracy, int IsComplete)>();
-            var balancedPlays = new List<(double Aim, double Speed, double Accuracy, int IsComplete)>();
+            const string sql = @"
+                SELECT
+                    COUNT(CASE WHEN aim >= 1.20 * speed THEN 1 END) AS AimCount,
+                    AVG(CASE WHEN aim >= 1.20 * speed THEN accuracy END) AS AimAvgAcc,
+                    SUM(CASE WHEN aim >= 1.20 * speed AND is_complete = 1 THEN 1 ELSE 0 END) AS AimPasses,
 
-            foreach (var play in plays)
-            {
-                double ratio = play.Aim / Math.Max(0.1, play.Speed);
-                if (play.Aim >= 1.20 * play.Speed)
-                {
-                    aimPlays.Add(play);
-                }
-                else if (play.Speed >= 1.20 * play.Aim)
-                {
-                    speedPlays.Add(play);
-                }
-                else
-                {
-                    balancedPlays.Add(play);
-                }
-            }
+                    COUNT(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) THEN 1 END) AS SpeedCount,
+                    AVG(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) THEN accuracy END) AS SpeedAvgAcc,
+                    SUM(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) AND is_complete = 1 THEN 1 ELSE 0 END) AS SpeedPasses,
 
-            int aimCount = aimPlays.Count;
-            int speedCount = speedPlays.Count;
-            int balancedCount = balancedPlays.Count;
+                    COUNT(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) THEN 1 END) AS BalancedCount,
+                    AVG(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) THEN accuracy END) AS BalancedAvgAcc,
+                    SUM(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) AND is_complete = 1 THEN 1 ELSE 0 END) AS BalancedPasses
+                FROM plays;";
 
-            decimal aimAvgAcc = aimCount > 0 ? (decimal)aimPlays.Average(p => p.Accuracy) : 0.0m;
-            double aimPassRate = aimCount > 0 ? (100.0 * aimPlays.Count(p => p.IsComplete == 1) / aimCount) : 0.0;
+            var row = await conn.QueryFirstOrDefaultAsync<(
+                int AimCount, double? AimAvgAcc, int AimPasses,
+                int SpeedCount, double? SpeedAvgAcc, int SpeedPasses,
+                int BalancedCount, double? BalancedAvgAcc, int BalancedPasses
+            )>(sql);
 
-            decimal speedAvgAcc = speedCount > 0 ? (decimal)speedPlays.Average(p => p.Accuracy) : 0.0m;
-            double speedPassRate = speedCount > 0 ? (100.0 * speedPlays.Count(p => p.IsComplete == 1) / speedCount) : 0.0;
+            int aimCount = row.AimCount;
+            int speedCount = row.SpeedCount;
+            int balancedCount = row.BalancedCount;
 
-            decimal balancedAvgAcc = balancedCount > 0 ? (decimal)balancedPlays.Average(p => p.Accuracy) : 0.0m;
-            double balancedPassRate = balancedCount > 0 ? (100.0 * balancedPlays.Count(p => p.IsComplete == 1) / balancedCount) : 0.0;
+            decimal aimAvgAcc = (aimCount > 0 && row.AimAvgAcc.HasValue) ? (decimal)row.AimAvgAcc.Value : 0.0m;
+            double aimPassRate = aimCount > 0 ? (100.0 * row.AimPasses / aimCount) : 0.0;
+
+            decimal speedAvgAcc = (speedCount > 0 && row.SpeedAvgAcc.HasValue) ? (decimal)row.SpeedAvgAcc.Value : 0.0m;
+            double speedPassRate = speedCount > 0 ? (100.0 * row.SpeedPasses / speedCount) : 0.0;
+
+            decimal balancedAvgAcc = (balancedCount > 0 && row.BalancedAvgAcc.HasValue) ? (decimal)row.BalancedAvgAcc.Value : 0.0m;
+            double balancedPassRate = balancedCount > 0 ? (100.0 * row.BalancedPasses / balancedCount) : 0.0;
 
             int totalBiased = aimCount + speedCount;
             double aimBiasPercent = totalBiased > 0 ? (100.0 * aimCount / totalBiased) : 50.0;
@@ -171,35 +201,62 @@ namespace Circle_Tracker.Analytics
             };
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-            var plays = (await conn.QueryAsync<(double Od, double Accuracy, int Hit300, int Hit100)>(
-                "SELECT od, accuracy, hit_300, hit_100 FROM plays;")).ToList();
+
+            const string sql = @"
+                SELECT
+                    CASE
+                        WHEN od <= 8.05 THEN 0
+                        WHEN od > 8.05 AND od <= 9.05 THEN 1
+                        WHEN od > 9.05 AND od <= 9.75 THEN 2
+                        WHEN od > 9.75 AND od <= 10.05 THEN 3
+                        ELSE 4
+                    END AS tier_idx,
+                    COUNT(*) AS total_plays,
+                    AVG(accuracy) AS mean_acc,
+                    SUM(hit_300) AS total_300,
+                    SUM(hit_100) AS total_100
+                FROM plays
+                GROUP BY tier_idx;";
+
+            var rows = (await conn.QueryAsync<(
+                int TierIdx, int TotalPlays, double? MeanAcc, long? Total300, long? Total100
+            )>(sql)).ToDictionary(r => r.TierIdx);
 
             var result = new List<OdAccuracyTier>();
 
-            foreach (var (name, min, max, window) in tiersDef)
+            for (int i = 0; i < tiersDef.Length; i++)
             {
-                var tierPlays = min <= 0.0
-                    ? plays.Where(p => p.Od <= max).ToList()
-                    : max >= 12.0
-                        ? plays.Where(p => p.Od > 10.0).ToList()
-                        : plays.Where(p => p.Od > (min - 0.05) && p.Od <= (max + 0.05)).ToList();
+                var (name, min, max, window) = tiersDef[i];
+                if (rows.TryGetValue(i, out var row) && row.TotalPlays > 0)
+                {
+                    int total = row.TotalPlays;
+                    decimal meanAcc = (decimal)(row.MeanAcc ?? 0.0);
+                    long sum300 = row.Total300 ?? 0;
+                    long sum100 = row.Total100 ?? 0;
+                    double ratio = sum300 > 0 ? ((double)sum100 / sum300) : 0.0;
 
-                int total = tierPlays.Count;
-                decimal meanAcc = total > 0 ? (decimal)tierPlays.Average(p => p.Accuracy) : 0.0m;
-
-                long sum300 = tierPlays.Sum(p => (long)p.Hit300);
-                long sum100 = tierPlays.Sum(p => (long)p.Hit100);
-                double ratio = sum300 > 0 ? ((double)sum100 / sum300) : 0.0;
-
-                result.Add(new OdAccuracyTier(
-                    TierName: name,
-                    MinOd: min,
-                    MaxOd: max,
-                    HitWindow300Ms: window,
-                    TotalPlays: total,
-                    MeanAccuracy: Math.Round(meanAcc, 2),
-                    Ratio100sTo300s: Math.Round(ratio, 4)
-                ));
+                    result.Add(new OdAccuracyTier(
+                        TierName: name,
+                        MinOd: min,
+                        MaxOd: max,
+                        HitWindow300Ms: window,
+                        TotalPlays: total,
+                        MeanAccuracy: Math.Round(meanAcc, 2),
+                        Ratio100sTo300s: Math.Round(ratio, 4)
+                    ));
+                }
+                else
+                {
+                    result.Add(new OdAccuracyTier(
+                        TierName: name,
+                        MinOd: min,
+                        MaxOd: max,
+                        HitWindow300Ms: window,
+                        TotalPlays: 0,
+                        MeanAccuracy: 0.0m,
+                        Ratio100sTo300s: 0.0
+                    ));
+                }
             }
 
             return result.AsReadOnly();
@@ -218,30 +275,61 @@ namespace Circle_Tracker.Analytics
             };
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-            var plays = (await conn.QueryAsync<(int Bpm, double Accuracy, int HitMiss, int TotalHits)>(
-                "SELECT bpm, accuracy, hit_miss, total_hits FROM plays;")).ToList();
+
+            const string sql = @"
+                SELECT
+                    CASE 
+                        WHEN bpm < 170 THEN 0
+                        WHEN bpm BETWEEN 170 AND 189 THEN 1
+                        WHEN bpm BETWEEN 190 AND 209 THEN 2
+                        WHEN bpm BETWEEN 210 AND 229 THEN 3
+                        WHEN bpm BETWEEN 230 AND 249 THEN 4
+                        ELSE 5
+                    END AS bracket_idx,
+                    COUNT(*) AS play_count,
+                    AVG(accuracy) AS mean_acc,
+                    SUM(hit_miss) AS total_misses,
+                    SUM(total_hits) AS total_hits
+                FROM plays
+                GROUP BY bracket_idx;";
+
+            var rows = (await conn.QueryAsync<(
+                int BracketIdx, int PlayCount, double? MeanAcc, long? TotalMisses, long? TotalHits
+            )>(sql)).ToDictionary(r => r.BracketIdx);
 
             var result = new List<BpmBracketStats>();
 
-            foreach (var (label, min, max) in bpmBrackets)
+            for (int i = 0; i < bpmBrackets.Length; i++)
             {
-                var bracketPlays = plays.Where(p => p.Bpm >= min && p.Bpm <= max).ToList();
+                var (label, min, max) = bpmBrackets[i];
+                if (rows.TryGetValue(i, out var row) && row.PlayCount > 0)
+                {
+                    int count = row.PlayCount;
+                    decimal meanAcc = (decimal)(row.MeanAcc ?? 0.0);
+                    long sumMiss = row.TotalMisses ?? 0;
+                    long sumHits = row.TotalHits ?? 0;
+                    double missDensity = sumHits > 0 ? (100.0 * sumMiss / sumHits) : 0.0;
 
-                int count = bracketPlays.Count;
-                decimal meanAcc = count > 0 ? (decimal)bracketPlays.Average(p => p.Accuracy) : 0.0m;
-
-                long sumMiss = bracketPlays.Sum(p => (long)p.HitMiss);
-                long sumHits = bracketPlays.Sum(p => (long)p.TotalHits);
-                double missDensity = sumHits > 0 ? (100.0 * sumMiss / sumHits) : 0.0;
-
-                result.Add(new BpmBracketStats(
-                    Label: label,
-                    MinBpm: min,
-                    MaxBpm: max,
-                    PlayCount: count,
-                    MeanAccuracy: Math.Round(meanAcc, 2),
-                    MissesPerHundredHits: Math.Round(missDensity, 2)
-                ));
+                    result.Add(new BpmBracketStats(
+                        Label: label,
+                        MinBpm: min,
+                        MaxBpm: max,
+                        PlayCount: count,
+                        MeanAccuracy: Math.Round(meanAcc, 2),
+                        MissesPerHundredHits: Math.Round(missDensity, 2)
+                    ));
+                }
+                else
+                {
+                    result.Add(new BpmBracketStats(
+                        Label: label,
+                        MinBpm: min,
+                        MaxBpm: max,
+                        PlayCount: 0,
+                        MeanAccuracy: 0.0m,
+                        MissesPerHundredHits: 0.0
+                    ));
+                }
             }
 
             return result.AsReadOnly();

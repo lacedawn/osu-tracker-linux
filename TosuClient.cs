@@ -276,7 +276,7 @@ namespace Circle_Tracker
             IsConnected = false;
         }
 
-        public async Task<PpCalcResult?> CalculatePpAsync(int modNumber = 0)
+        public async Task<PpCalcResult?> CalculatePpAsync(int modNumber = 0, CancellationToken ct = default)
         {
             try
             {
@@ -284,12 +284,16 @@ namespace Circle_Tracker
                     ? $"http://{Host}:{Port}/api/calculate/pp?mods={modNumber}"
                     : $"http://{Host}:{Port}/api/calculate/pp";
 
-                using var response = await _httpClient.GetAsync(url);
+                using var response = await _httpClient.GetAsync(url, ct);
                 if (response.IsSuccessStatusCode)
                 {
-                    string json = await response.Content.ReadAsStringAsync();
+                    string json = await response.Content.ReadAsStringAsync(ct);
                     return JsonConvert.DeserializeObject<PpCalcResult>(json);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

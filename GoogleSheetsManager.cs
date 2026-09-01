@@ -113,7 +113,7 @@ namespace Circle_Tracker
             _form.SetSheetsApiReady(val);
         }
 
-        public void InitGoogleAPI(bool silent = false)
+        public async Task InitGoogleAPIAsync(bool silent = false)
         {
             bool credentialsFound = File.Exists(CredentialsFilePath);
             _form.SetCredentialsFound(credentialsFound);
@@ -152,7 +152,7 @@ namespace Circle_Tracker
                 });
 
                 var getSheetRequest = _sheetsService.Spreadsheets.Get(SpreadsheetId);
-                _userSpreadsheet = getSheetRequest.Execute();
+                _userSpreadsheet = await getSheetRequest.ExecuteAsync();
             }
             catch (GoogleApiException e)
             {
@@ -181,7 +181,7 @@ namespace Circle_Tracker
             }
             SheetRows = _rawDataSheet.Properties.GridProperties.RowCount ?? 1000;
 
-            try { Task.Run(() => WriteHeaders()).GetAwaiter().GetResult(); }
+            try { await WriteHeaders(); }
             catch (GoogleApiException e)
             {
                 if (!silent)
@@ -196,7 +196,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            try { Task.Run(() => AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet)).GetAwaiter().GetResult(); }
+            try { await AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet); }
             catch (GoogleApiException e)
             {
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
@@ -204,7 +204,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            Task.Run(() => ResizeNamedRanges(_userSpreadsheet, SheetRows)).GetAwaiter().GetResult();
+            await ResizeNamedRanges(_userSpreadsheet, SheetRows);
             PromptTimezone(_userSpreadsheet);
             SetSheetsApiReady(true);
             _log.LogInformation("Google Sheets API successfully initialized and connected");
@@ -305,7 +305,7 @@ namespace Circle_Tracker
 
         public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
         {
-            return Task.Run(() => InitGoogleAPI(silent), ct);
+            return InitGoogleAPIAsync(silent);
         }
 
         public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)

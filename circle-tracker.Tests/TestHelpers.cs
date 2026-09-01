@@ -81,7 +81,7 @@ namespace CircleTracker.Tests
 
             var mockClient = new Mock<ITosuClient>();
             mockClient.Setup(c => c.IsConnected).Returns(connected);
-            mockClient.Setup(c => c.CalculatePpAsync(It.IsAny<int>()))
+            mockClient.Setup(c => c.CalculatePpAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
                       .ReturnsAsync((PpCalcResult?)null);
 
             var mockSink = new Mock<ISheetsSink>();

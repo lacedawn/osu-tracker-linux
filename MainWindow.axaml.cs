@@ -24,6 +24,7 @@ namespace Circle_Tracker
         private readonly TosuClient _tosuClient;
         private readonly Tracker _tracker;
         private LiveSessionTracker? _liveSessionTracker;
+        private DateTime _sessionStartTime = DateTime.UtcNow;
 
         private DispatcherTimer? _gameTickTimer;
         private DispatcherTimer? _uiUpdateTimer;
@@ -149,6 +150,7 @@ namespace Circle_Tracker
                 if (sessionService != null)
                 {
                     _liveSessionTracker = new LiveSessionTracker(sessionService);
+                    _sessionStartTime = DateTime.UtcNow;
                     
                     _liveSessionTracker.MetricsUpdated += OnLiveSessionMetricsUpdated;
                     _liveSessionTracker.AchievementUnlocked += OnAchievementUnlocked;
@@ -217,8 +219,8 @@ namespace Circle_Tracker
 
             SessionStatsText.Text = $"{metrics.SessionPlayCount} plays • {metrics.SessionPassCount} passes • {metrics.ActivePlayMinutes:F1} min active";
             
-            var elapsed = (DateTime.UtcNow - DateTime.UtcNow.AddMinutes(-metrics.ActivePlayMinutes)).TotalMinutes;
-            SessionElapsedText.Text = $"{elapsed:F0}m elapsed";
+            var wallClockMinutes = (DateTime.UtcNow - _sessionStartTime).TotalMinutes;
+            SessionElapsedText.Text = $"{wallClockMinutes:F0}m session";
         }
 
         private void OnAchievementUnlocked(object? sender, PostPlayAchievement achievement)
@@ -674,9 +676,9 @@ namespace Circle_Tracker
 
         private void ConnectApiButton_Click(object? sender, RoutedEventArgs e)
         {
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
-                try { _tracker.InitGoogleAPI(); }
+                try { await _tracker.InitGoogleAPIAsync(); }
                 catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
             });
         }

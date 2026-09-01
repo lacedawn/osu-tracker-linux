@@ -33,7 +33,7 @@ public class LiveSessionTrackerTests
         sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
             {
-                ["30day"] = baseline
+                ["30D"] = baseline
             });
 
         var tracker = new LiveSessionTracker(sessionService.Object);
@@ -288,7 +288,7 @@ public class LiveSessionTrackerTests
         sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
             {
-                ["30day"] = baseline
+                ["30D"] = baseline
             });
 
         var tracker = new LiveSessionTracker(sessionService.Object);

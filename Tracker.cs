@@ -89,8 +89,7 @@ namespace Circle_Tracker
         public bool IsReady => _sink.SheetsApiReady;
         public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
         {
-            _sink.InitGoogleAPI(silent);
-            return Task.CompletedTask;
+            return _sink.InitGoogleAPIAsync(silent);
         }
         public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
         {
@@ -186,6 +185,7 @@ namespace Circle_Tracker
 
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
+        private readonly object _snapshotLock = new();
         private readonly SemaphoreSlim _sheetsLock = new SemaphoreSlim(1, 1);
         private string _lastLoggedBeatmapChecksum = "";
         private int _lastLoggedBeatmapId = 0;
@@ -193,6 +193,7 @@ namespace Circle_Tracker
         private int _lastLoggedMods = -1;
         private int _consecutivePlayCount = 0;
         private bool _lastLoggedComplete = false;
+        private CancellationTokenSource? _ppApiCts;
 
         public bool DatabaseReady => _dbManager?.IsHealthy ?? false;
         public int LocalPlayCount => _localSqliteSink?.TotalPlaysRecorded ?? 0;
@@ -303,7 +304,7 @@ namespace Circle_Tracker
             LastPostTime = DateTime.Now;
         }
 
-        public void InitGoogleAPI(bool silent = false) => _sheetsManager.InitGoogleAPI(silent);
+        public Task InitGoogleAPIAsync(bool silent = false) => _sheetsManager.InitGoogleAPIAsync(silent);
 
         public async Task InitializeStorageAsync(bool silent = false, CancellationToken ct = default)
         {
@@ -417,49 +418,52 @@ namespace Circle_Tracker
 
         public TrackerSnapshot GetSnapshot()
         {
-            string gameStateLabel = IsReplay
-                ? "REPLAY"
-                : GameState == GameStatus.Playing
-                    ? "PLAYING"
-                    : GameState == GameStatus.ResultsScreen
-                        ? "RESULTS"
-                        : "IDLE";
+            lock (_snapshotLock)
+            {
+                string gameStateLabel = IsReplay
+                    ? "REPLAY"
+                    : GameState == GameStatus.Playing
+                        ? "PLAYING"
+                        : GameState == GameStatus.ResultsScreen
+                            ? "RESULTS"
+                            : "IDLE";
 
-            return new TrackerSnapshot(
-                IsPlaying: IsPlaying,
-                IsReplay: IsReplay,
-                DetectedClient: DetectedClient,
-                BeatmapString: BeatmapString ?? "",
-                BeatmapTitle: _beatmapTitle,
-                BeatmapArtist: _beatmapArtist,
-                BeatmapVersion: _beatmapVersion,
-                BeatmapId: BeatmapID,
-                BeatmapSetId: BeatmapSetID,
-                BeatmapHp: _beatmapHp,
-                BeatmapStars: BeatmapStars,
-                BeatmapAim: BeatmapAim,
-                BeatmapSpeed: BeatmapSpeed,
-                BeatmapCs: BeatmapCs,
-                BeatmapAr: BeatmapAr,
-                BeatmapOd: BeatmapOd,
-                BeatmapBpm: BeatmapBpm,
-                TotalBeatmapHits: TotalBeatmapHits,
-                Play300c: Play300c,
-                Play100c: Play100c,
-                Play50c: Play50c,
-                PlayMissc: PlayMissc,
-                Accuracy: Accuracy,
-                Time: Time,
-                ModsString: GetModsString(),
-                GameStateLabel: gameStateLabel,
-                SheetsApiReady: SheetsApiReady,
-                MemoryReadError: MemoryReadError,
-                PlayingSeconds: PlayingSeconds,
-                IdleSeconds: IdleSeconds,
-                PlayCount: _consecutivePlayCount,
-                DatabaseReady: DatabaseReady,
-                LocalPlayCount: LocalPlayCount
-            );
+                return new TrackerSnapshot(
+                    IsPlaying: IsPlaying,
+                    IsReplay: IsReplay,
+                    DetectedClient: DetectedClient,
+                    BeatmapString: BeatmapString ?? "",
+                    BeatmapTitle: _beatmapTitle,
+                    BeatmapArtist: _beatmapArtist,
+                    BeatmapVersion: _beatmapVersion,
+                    BeatmapId: BeatmapID,
+                    BeatmapSetId: BeatmapSetID,
+                    BeatmapHp: _beatmapHp,
+                    BeatmapStars: BeatmapStars,
+                    BeatmapAim: BeatmapAim,
+                    BeatmapSpeed: BeatmapSpeed,
+                    BeatmapCs: BeatmapCs,
+                    BeatmapAr: BeatmapAr,
+                    BeatmapOd: BeatmapOd,
+                    BeatmapBpm: BeatmapBpm,
+                    TotalBeatmapHits: TotalBeatmapHits,
+                    Play300c: Play300c,
+                    Play100c: Play100c,
+                    Play50c: Play50c,
+                    PlayMissc: PlayMissc,
+                    Accuracy: Accuracy,
+                    Time: Time,
+                    ModsString: GetModsString(),
+                    GameStateLabel: gameStateLabel,
+                    SheetsApiReady: SheetsApiReady,
+                    MemoryReadError: MemoryReadError,
+                    PlayingSeconds: PlayingSeconds,
+                    IdleSeconds: IdleSeconds,
+                    PlayCount: _consecutivePlayCount,
+                    DatabaseReady: DatabaseReady,
+                    LocalPlayCount: LocalPlayCount
+                );
+            }
         }
 
         private string GetModsString()
@@ -575,11 +579,18 @@ namespace Circle_Tracker
             BeatmapOd = bm.Stats?.Od?.Converted ?? bm.Stats?.Od?.Original ?? 0;
         }
 
-        private async Task UpdateDifficultyFromPpApi(int modNumber)
+        private void FireUpdateDifficultyFromPpApi(int modNumber)
+        {
+            _ppApiCts?.Cancel();
+            _ppApiCts = new CancellationTokenSource();
+            _ = UpdateDifficultyFromPpApi(modNumber, _ppApiCts.Token);
+        }
+
+        private async Task UpdateDifficultyFromPpApi(int modNumber, CancellationToken ct = default)
         {
             try
             {
-                var ppResult = await _tosuClient.CalculatePpAsync(modNumber);
+                var ppResult = await _tosuClient.CalculatePpAsync(modNumber, ct);
                 var diff = ppResult?.Difficulty ?? ppResult?.Performance?.Difficulty;
                 if (diff != null)
                 {
@@ -616,128 +627,131 @@ namespace Circle_Tracker
         {
             if (!_tosuClient.IsConnected)
             {
-                DetectedClient = "Disconnected";
+                lock (_snapshotLock) { DetectedClient = "Disconnected"; }
                 return;
             }
 
             var state = _tosuClient.LatestState;
             if (state == null)
             {
-                DetectedClient = "Connecting...";
+                lock (_snapshotLock) { DetectedClient = "Connecting..."; }
                 return;
             }
 
-            DetectedClient = DetectClient(state);
-
-            GameStatus newGameState = ParseGameState(state.State?.Number ?? -1);
-            bool songSelectGameState = IsSongSelectState(newGameState);
-
-            if (!string.IsNullOrEmpty(state.Profile?.Name))
-                Username = state.Profile.Name;
-
-            string newChecksum = state.Beatmap?.Checksum ?? "";
-            if (newChecksum != _currentBeatmapChecksum && newChecksum != "")
+            lock (_snapshotLock)
             {
-                _currentBeatmapChecksum = newChecksum;
-                UpdateBeatmapFromState(state);
-                _ = UpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
-            }
+                DetectedClient = DetectClient(state);
 
-            _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
-            IsReplay = DetectReplay(state);
+                GameStatus newGameState = ParseGameState(state.State?.Number ?? -1);
+                bool songSelectGameState = IsSongSelectState(newGameState);
 
-            MemoryReadError = songSelectGameState && string.IsNullOrEmpty(state.Files?.Beatmap);
-            if (MemoryReadError && string.IsNullOrEmpty(BeatmapString))
-                BeatmapString = "";
+                if (!string.IsNullOrEmpty(state.Profile?.Name))
+                    Username = state.Profile.Name;
 
-            if (state.Beatmap?.Stats?.Stars != null)
-            {
-                var stars = state.Beatmap.Stats.Stars;
-                if (stars.Total > 0) BeatmapStars = stars.Total;
-                if (stars.Aim > 0) BeatmapAim = stars.Aim;
-                if (stars.Speed > 0) BeatmapSpeed = stars.Speed;
-            }
-
-            if (newGameState != GameState)
-            {
-                if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
+                string newChecksum = state.Beatmap?.Checksum ?? "";
+                if (newChecksum != _currentBeatmapChecksum && newChecksum != "")
                 {
-                    bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
-                    _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
-                        newGameState, beatmapCompleted, TotalBeatmapHits);
-                    TryPostBeatmapEntry(beatmapCompleted);
-
-                    Play300c = 0;
-                    Play100c = 0;
-                    Play50c = 0;
-                    PlayMissc = 0;
-                    Accuracy = 0;
-                    TotalBeatmapHits = 0;
-                    Time = 0;
-                }
-                GameState = newGameState;
-            }
-
-            if (songSelectGameState && state.Play?.Mods != null)
-            {
-                int newMods = state.Play.Mods.Number;
-                if (newMods != RawMods)
-                {
-                    UpdateModsFromBitfield(newMods);
+                    _currentBeatmapChecksum = newChecksum;
                     UpdateBeatmapFromState(state);
-                    _ = UpdateDifficultyFromPpApi(newMods);
+                    FireUpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
                 }
-            }
 
-            if (newGameState == GameStatus.Playing && state.Play != null)
-            {
-                var hits = state.Play.Hits;
-                if (hits != null)
+                _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
+                IsReplay = DetectReplay(state);
+
+                MemoryReadError = songSelectGameState && string.IsNullOrEmpty(state.Files?.Beatmap);
+                if (MemoryReadError && string.IsNullOrEmpty(BeatmapString))
+                    BeatmapString = "";
+
+                if (state.Beatmap?.Stats?.Stars != null)
                 {
-                    decimal newAcc = state.Play.Accuracy;
-                    int new300c = hits.H300;
-                    int new100c = hits.H100;
-                    int new50c = hits.H50;
-                    int newMissc = hits.Misses;
-                    int newHits = new300c + new100c + new50c;
-                    int newSongTime = state.Beatmap?.Time?.Live ?? 0;
+                    var stars = state.Beatmap.Stats.Stars;
+                    if (stars.Total > 0) BeatmapStars = stars.Total;
+                    if (stars.Aim > 0) BeatmapAim = stars.Aim;
+                    if (stars.Speed > 0) BeatmapSpeed = stars.Speed;
+                }
 
-                    if (newMissc > PlayMissc)
-                        PlayMissc = newMissc;
-
-                    if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < MaxHitJumpPerTick)
+                if (newGameState != GameState)
+                {
+                    if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
                     {
-                        Accuracy = newAcc;
-                        Play300c = new300c;
-                        Play100c = new100c;
-                        Play50c = new50c;
-                        TotalBeatmapHits = newHits;
-                    }
+                        bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
+                        _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
+                            newGameState, beatmapCompleted, TotalBeatmapHits);
+                        TryPostBeatmapEntry(beatmapCompleted);
 
-                    if (newSongTime < Time && Time > 0)
-                    {
-                        if (TotalBeatmapHits >= MinHitsToSubmit)
-                        {
-                            _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
-                                newSongTime, Time, TotalBeatmapHits);
-                            TryPostBeatmapEntry(false);
-                        }
                         Play300c = 0;
                         Play100c = 0;
                         Play50c = 0;
                         PlayMissc = 0;
                         Accuracy = 0;
                         TotalBeatmapHits = 0;
-                        Time = newSongTime;
+                        Time = 0;
                     }
-                    else
+                    GameState = newGameState;
+                }
+
+                if (songSelectGameState && state.Play?.Mods != null)
+                {
+                    int newMods = state.Play.Mods.Number;
+                    if (newMods != RawMods)
                     {
-                        Time = newSongTime;
+                        UpdateModsFromBitfield(newMods);
+                        UpdateBeatmapFromState(state);
+                        FireUpdateDifficultyFromPpApi(newMods);
                     }
                 }
 
-                if (state.Play.Mods != null)
-                    UpdateModsFromBitfield(state.Play.Mods.Number);
+                if (newGameState == GameStatus.Playing && state.Play != null)
+                {
+                    var hits = state.Play.Hits;
+                    if (hits != null)
+                    {
+                        decimal newAcc = state.Play.Accuracy;
+                        int new300c = hits.H300;
+                        int new100c = hits.H100;
+                        int new50c = hits.H50;
+                        int newMissc = hits.Misses;
+                        int newHits = new300c + new100c + new50c;
+                        int newSongTime = state.Beatmap?.Time?.Live ?? 0;
+
+                        if (newMissc > PlayMissc)
+                            PlayMissc = newMissc;
+
+                        if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < MaxHitJumpPerTick)
+                        {
+                            Accuracy = newAcc;
+                            Play300c = new300c;
+                            Play100c = new100c;
+                            Play50c = new50c;
+                            TotalBeatmapHits = newHits;
+                        }
+
+                        if (newSongTime < Time && Time > 0)
+                        {
+                            if (TotalBeatmapHits >= MinHitsToSubmit)
+                            {
+                                _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
+                                    newSongTime, Time, TotalBeatmapHits);
+                                TryPostBeatmapEntry(false);
+                            }
+                            Play300c = 0;
+                            Play100c = 0;
+                            Play50c = 0;
+                            PlayMissc = 0;
+                            Accuracy = 0;
+                            TotalBeatmapHits = 0;
+                            Time = newSongTime;
+                        }
+                        else
+                        {
+                            Time = newSongTime;
+                        }
+                    }
+
+                    if (state.Play.Mods != null)
+                        UpdateModsFromBitfield(state.Play.Mods.Number);
+                }
             }
         }
 
