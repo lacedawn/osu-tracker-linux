@@ -138,6 +138,7 @@ namespace Circle_Tracker.Analytics
             const string sql = @"
                 SELECT
                     COUNT(CASE WHEN timestamp >= @d7 THEN 1 END) AS plays_7d,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d7 THEN DATE(timestamp) END) AS active_days_7d,
                     SUM(CASE WHEN timestamp >= @d7 THEN play_time_seconds ELSE 0 END) AS time_7d,
                     SUM(CASE WHEN timestamp >= @d7 THEN total_hits ELSE 0 END) AS hits_7d,
                     SUM(CASE WHEN timestamp >= @d7 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_7d,
@@ -147,6 +148,7 @@ namespace Circle_Tracker.Analytics
                     AVG(CASE WHEN timestamp >= @d7 THEN bpm END) AS avg_bpm_7d,
 
                     COUNT(CASE WHEN timestamp >= @d30 THEN 1 END) AS plays_30d,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d30 THEN DATE(timestamp) END) AS active_days_30d,
                     SUM(CASE WHEN timestamp >= @d30 THEN play_time_seconds ELSE 0 END) AS time_30d,
                     SUM(CASE WHEN timestamp >= @d30 THEN total_hits ELSE 0 END) AS hits_30d,
                     SUM(CASE WHEN timestamp >= @d30 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_30d,
@@ -156,6 +158,7 @@ namespace Circle_Tracker.Analytics
                     AVG(CASE WHEN timestamp >= @d30 THEN bpm END) AS avg_bpm_30d,
 
                     COUNT(CASE WHEN timestamp >= @d90 THEN 1 END) AS plays_90d,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d90 THEN DATE(timestamp) END) AS active_days_90d,
                     SUM(CASE WHEN timestamp >= @d90 THEN play_time_seconds ELSE 0 END) AS time_90d,
                     SUM(CASE WHEN timestamp >= @d90 THEN total_hits ELSE 0 END) AS hits_90d,
                     SUM(CASE WHEN timestamp >= @d90 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_90d,
@@ -167,14 +170,14 @@ namespace Circle_Tracker.Analytics
                 WHERE timestamp >= @d90;";
 
             var row = await conn.QueryFirstOrDefaultAsync<(
-                int Plays7, int Time7, long Hits7, double WAcc7, double? AvgAcc7, double? AvgStars7, int Passes7, double? AvgBpm7,
-                int Plays30, int Time30, long Hits30, double WAcc30, double? AvgAcc30, double? AvgStars30, int Passes30, double? AvgBpm30,
-                int Plays90, int Time90, long Hits90, double WAcc90, double? AvgAcc90, double? AvgStars90, int Passes90, double? AvgBpm90
+                int Plays7, int ActiveDays7, int Time7, long Hits7, double WAcc7, double? AvgAcc7, double? AvgStars7, int Passes7, double? AvgBpm7,
+                int Plays30, int ActiveDays30, int Time30, long Hits30, double WAcc30, double? AvgAcc30, double? AvgStars30, int Passes30, double? AvgBpm30,
+                int Plays90, int ActiveDays90, int Time90, long Hits90, double WAcc90, double? AvgAcc90, double? AvgStars90, int Passes90, double? AvgBpm90
             )>(sql, new { d7, d30, d90 });
 
             var result = new Dictionary<string, RollingPeriodStats>();
 
-            RollingPeriodStats ComputeStats(int days, int totalPlays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
+            RollingPeriodStats ComputeStats(int days, int totalPlays, int activeDays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
             {
                 double totalActiveHours = playTimeSec / 3600.0;
                 decimal meanAcc = 0.0m;
@@ -190,6 +193,10 @@ namespace Circle_Tracker.Analytics
                 decimal meanStars = (totalPlays > 0 && avgStars.HasValue) ? (decimal)avgStars.Value : 0.0m;
                 double passRate = totalPlays > 0 ? (100.0 * passes / totalPlays) : 0.0;
                 double meanBpm = (totalPlays > 0 && avgBpm.HasValue) ? avgBpm.Value : 0.0;
+                
+                // Calculate per-day averages based on actual active days, not window size
+                double playsPerDay = activeDays > 0 ? (double)totalPlays / activeDays : 0.0;
+                double hoursPerDay = activeDays > 0 ? totalActiveHours / activeDays : 0.0;
 
                 return new RollingPeriodStats(
                     PeriodDays: days,
@@ -198,13 +205,15 @@ namespace Circle_Tracker.Analytics
                     MeanAccuracy: Math.Round(meanAcc, 2),
                     MeanStars: Math.Round(meanStars, 2),
                     PassRatePercent: Math.Round(passRate, 2),
-                    MeanBpm: Math.Round(meanBpm, 1)
+                    MeanBpm: Math.Round(meanBpm, 1),
+                    PlaysPerActiveDay: Math.Round(playsPerDay, 1),
+                    HoursPerActiveDay: Math.Round(hoursPerDay, 2)
                 );
             }
 
-            result["7D"] = ComputeStats(7, row.Plays7, row.Time7, row.Hits7, row.WAcc7, row.AvgAcc7, row.AvgStars7, row.Passes7, row.AvgBpm7);
-            result["30D"] = ComputeStats(30, row.Plays30, row.Time30, row.Hits30, row.WAcc30, row.AvgAcc30, row.AvgStars30, row.Passes30, row.AvgBpm30);
-            result["90D"] = ComputeStats(90, row.Plays90, row.Time90, row.Hits90, row.WAcc90, row.AvgAcc90, row.AvgStars90, row.Passes90, row.AvgBpm90);
+            result["7D"] = ComputeStats(7, row.Plays7, row.ActiveDays7, row.Time7, row.Hits7, row.WAcc7, row.AvgAcc7, row.AvgStars7, row.Passes7, row.AvgBpm7);
+            result["30D"] = ComputeStats(30, row.Plays30, row.ActiveDays30, row.Time30, row.Hits30, row.WAcc30, row.AvgAcc30, row.AvgStars30, row.Passes30, row.AvgBpm30);
+            result["90D"] = ComputeStats(90, row.Plays90, row.ActiveDays90, row.Time90, row.Hits90, row.WAcc90, row.AvgAcc90, row.AvgStars90, row.Passes90, row.AvgBpm90);
 
             return result;
         }

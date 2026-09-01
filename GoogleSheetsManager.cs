@@ -57,6 +57,38 @@ namespace Circle_Tracker
 
         public static string CredentialsFilePath => FindFile("credentials.json");
 
+        public static SheetsService? CreateSheetsService()
+        {
+            try
+            {
+                string credPath = CredentialsFilePath;
+                if (!File.Exists(credPath))
+                {
+                    _log.LogWarning("credentials.json not found at {Path}", credPath);
+                    return null;
+                }
+
+                string[] scopes = { SheetsService.Scope.Spreadsheets };
+                GoogleCredential credential;
+                
+                using (var stream = new FileStream(credPath, FileMode.Open, FileAccess.Read))
+                {
+                    credential = GoogleCredential.FromStream(stream).CreateScoped(scopes);
+                }
+
+                return new SheetsService(new Google.Apis.Services.BaseClientService.Initializer()
+                {
+                    HttpClientInitializer = credential,
+                    ApplicationName = "Circle Tracker"
+                });
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to create Google Sheets service");
+                return null;
+            }
+        }
+
         private static readonly List<(string, string)> DataRanges = new List<(string, string)>()
         {
             ("Date and Time", "play_date"),
@@ -314,7 +346,7 @@ namespace Circle_Tracker
                 _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
         }
 
-        public async Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
+        public async Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string? soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
         {
             try
             {
@@ -442,7 +474,7 @@ namespace Circle_Tracker
         }
 
         private async Task AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
-            DateTime lastPostTime, Action<DateTime> setLastPostTime, string soundFilePath,
+            DateTime lastPostTime, Action<DateTime> setLastPostTime, string? soundFilePath,
             bool submitSoundEnabled, CancellationToken ct)
         {
             string? skipReason = GetSkipReason(data, isReplay, rawMods, currentGameMode, lastPostTime);

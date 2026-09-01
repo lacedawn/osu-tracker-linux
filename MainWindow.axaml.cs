@@ -683,6 +683,114 @@ namespace Circle_Tracker
             });
         }
 
+        private void ImportSheetsButton_Click(object? sender, RoutedEventArgs e)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        ShowMessage(
+                            "Starting import from Google Sheets...\n\n" +
+                            "This may take several minutes for large spreadsheets.\n" +
+                            "The app will notify you when complete.",
+                            "Import Started");
+                    });
+
+                    if (!_tracker.SheetsApiReady)
+                    {
+                        await _tracker.InitGoogleAPIAsync();
+                        await Task.Delay(1000);
+                    }
+
+                    if (!_tracker.SheetsApiReady)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            ShowMessage(
+                                "Please connect to Google Sheets API first.\n\n" +
+                                "Click 'Connect Sheets API' and authorize the application.",
+                                "Not Connected");
+                        });
+                        return;
+                    }
+
+                    string spreadsheetId = _tracker.SpreadsheetId;
+                    string sheetName = _tracker.SheetName;
+
+                    if (string.IsNullOrWhiteSpace(spreadsheetId))
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            ShowMessage(
+                                "Please enter your Spreadsheet ID in the settings above.",
+                                "Missing Spreadsheet ID");
+                        });
+                        return;
+                    }
+
+                    var dbManager = _tracker.SessionManager.GetDatabaseManager();
+                    var sheetsService = GoogleSheetsManager.CreateSheetsService();
+                    
+                    if (sheetsService == null)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            ShowMessage("Failed to create Google Sheets service", "Error");
+                        });
+                        return;
+                    }
+
+                    var importer = new Circle_Tracker.Sync.GoogleSheetsHistoricalImporter(sheetsService, dbManager);
+
+                    var progress = new Progress<Circle_Tracker.Sync.MigrationProgress>(p =>
+                    {
+                        _log.LogInformation(
+                            "Import progress: {Processed}/{Total} rows ({Percent:F1}%) - {Imported} imported, {Skipped} skipped - Current: {Beatmap}",
+                            p.ProcessedRows, p.TotalRows, p.ProgressPercent, p.ImportedCount, p.SkippedDuplicates, p.CurrentBeatmapString);
+                    });
+
+                    var result = await importer.ImportFromSpreadsheetAsync(
+                        spreadsheetId,
+                        sheetName,
+                        progress,
+                        CancellationToken.None);
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (result.Success)
+                        {
+                            ShowMessage(
+                                $"Import complete!\n\n" +
+                                $"✓ Imported: {result.SyncedCount} plays\n" +
+                                $"⊘ Skipped (duplicates): {result.FailedCount}\n\n" +
+                                $"Your historical data is now available in the Analytics Dashboard!",
+                                "Import Successful");
+                        }
+                        else
+                        {
+                            ShowMessage(
+                                $"Import failed:\n\n{result.ErrorMessage}\n\n" +
+                                $"Check errorlog.txt for details.",
+                                "Import Failed");
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Import from Google Sheets failed");
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        ShowMessage(
+                            $"An error occurred during import:\n\n{ex.Message}\n\n" +
+                            $"Check errorlog.txt for details.",
+                            "Import Error");
+                    });
+                }
+            });
+        }
+
         private void AnalyticsButton_Click(object? sender, RoutedEventArgs e)
         {
             OpenAnalyticsWindow();

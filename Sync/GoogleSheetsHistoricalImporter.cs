@@ -47,6 +47,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         {
             var range = $"'{sheetName}'!A2:X";
             var request = _sheetsService.Spreadsheets.Values.Get(spreadsheetId, range);
+            request.ValueRenderOption = SpreadsheetsResource.ValuesResource.GetRequest.ValueRenderOptionEnum.FORMULA;
             var response = await request.ExecuteAsync(ct);
 
             if (response?.Values == null || response.Values.Count == 0)
@@ -83,7 +84,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                     var timestamp = ParseTimestamp(GetCellValue(row, 0));
                     if (!timestamp.HasValue)
                     {
-                        _log.LogWarning($"Row {i + 2} has invalid timestamp, skipping");
+                        _log.LogWarning($"Row {i + 2} has invalid timestamp: '{GetCellValue(row, 0)}', skipping");
                         failedCount++;
                         continue;
                     }
@@ -195,11 +196,48 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
+        // Try Excel/Google Sheets serial number format first (e.g., "46258.44861111111")
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double serialNumber))
+        {
+            // Check if it's a reasonable serial number (between 1900 and 2100)
+            if (serialNumber > 1 && serialNumber < 100000)
+            {
+                try
+                {
+                    // Excel epoch: December 30, 1899 (OLE Automation)
+                    var excelEpoch = new DateTime(1899, 12, 30, 0, 0, 0, DateTimeKind.Utc);
+                    var timestamp = excelEpoch.AddDays(serialNumber);
+                    return timestamp;
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // Fall through to other parsing methods
+                }
+            }
+        }
+
+        // Try common formats
         string[] formats = {
-            "yyyy-MM-dd h:mm tt",
+            // ISO formats
+            "yyyy-MM-dd HH:mm:ss",
             "yyyy-MM-dd HH:mm",
             "yyyy-MM-dd h:mm:ss tt",
-            "yyyy-MM-dd HH:mm:ss"
+            "yyyy-MM-dd h:mm tt",
+            // US formats
+            "M/d/yyyy h:mm:ss tt",
+            "M/d/yyyy h:mm tt",
+            "M/d/yyyy HH:mm:ss",
+            "M/d/yyyy HH:mm",
+            // EU formats
+            "d/M/yyyy HH:mm:ss",
+            "d/M/yyyy HH:mm",
+            "d/M/yyyy h:mm:ss tt",
+            "d/M/yyyy h:mm tt",
+            // Alternative separators
+            "yyyy.MM.dd HH:mm:ss",
+            "yyyy.MM.dd HH:mm",
+            "dd.MM.yyyy HH:mm:ss",
+            "dd.MM.yyyy HH:mm"
         };
 
         foreach (var format in formats)
@@ -211,12 +249,21 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
             }
         }
 
+        // Fallback to flexible parsing
         if (DateTime.TryParse(value, CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var fallback))
         {
             return fallback;
         }
 
+        // Last resort: try current culture
+        if (DateTime.TryParse(value, CultureInfo.CurrentCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var lastResort))
+        {
+            return lastResort;
+        }
+
+        _log.LogWarning("Failed to parse timestamp: '{Value}'", value);
         return null;
     }
 

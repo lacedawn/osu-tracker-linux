@@ -189,9 +189,13 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             _starMasteryBrackets.Clear();
             foreach (var bracket in starMastery)
             {
+                string label = bracket.MaxStars >= 99.0 
+                    ? $"{bracket.MinStars:F1}+★" 
+                    : $"{bracket.MinStars:F1}-{bracket.MaxStars:F1}★";
+                    
                 _starMasteryBrackets.Add(new StarMasteryBracket
                 {
-                    Label = $"{bracket.MinStars:F1}-{bracket.MaxStars:F1}★",
+                    Label = label,
                     MinStar = bracket.MinStars,
                     MaxStar = bracket.MaxStars,
                     PassCount = bracket.Passes,
@@ -228,9 +232,13 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             _bpmSpeedBrackets.Clear();
             foreach (var bracket in bpmSpeed)
             {
+                string label = bracket.MaxBpm >= int.MaxValue / 2
+                    ? $"{bracket.MinBpm}+ BPM"
+                    : $"{bracket.MinBpm}-{bracket.MaxBpm} BPM";
+                    
                 _bpmSpeedBrackets.Add(new BpmSpeedBracket
                 {
-                    Label = $"{bracket.MinBpm}-{bracket.MaxBpm} BPM",
+                    Label = label,
                     MinBpm = bracket.MinBpm,
                     MaxBpm = bracket.MaxBpm,
                     AvgAccuracy = (double)bracket.MeanAccuracy,
@@ -274,43 +282,43 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (allMetrics.TryGetValue("7day", out var metrics7))
+            if (allMetrics.TryGetValue("7D", out var metrics7))
             {
                 Rolling7Day = new RollingPeriodMetrics
                 {
                     Days = 7,
                     AvgStars = (double)metrics7.MeanStars,
                     WeightedAccuracy = (double)metrics7.MeanAccuracy,
-                    DailyPlayCount = metrics7.TotalPlays / (double)metrics7.PeriodDays,
-                    DailyActiveHours = metrics7.TotalActiveHours / metrics7.PeriodDays,
+                    DailyPlayCount = metrics7.PlaysPerActiveDay,
+                    DailyActiveHours = metrics7.HoursPerActiveDay,
                     PassRatePercent = metrics7.PassRatePercent,
                     AvgBpm = metrics7.MeanBpm
                 };
             }
 
-            if (allMetrics.TryGetValue("30day", out var metrics30))
+            if (allMetrics.TryGetValue("30D", out var metrics30))
             {
                 Rolling30Day = new RollingPeriodMetrics
                 {
                     Days = 30,
                     AvgStars = (double)metrics30.MeanStars,
                     WeightedAccuracy = (double)metrics30.MeanAccuracy,
-                    DailyPlayCount = metrics30.TotalPlays / (double)metrics30.PeriodDays,
-                    DailyActiveHours = metrics30.TotalActiveHours / metrics30.PeriodDays,
+                    DailyPlayCount = metrics30.PlaysPerActiveDay,
+                    DailyActiveHours = metrics30.HoursPerActiveDay,
                     PassRatePercent = metrics30.PassRatePercent,
                     AvgBpm = metrics30.MeanBpm
                 };
             }
 
-            if (allMetrics.TryGetValue("90day", out var metrics90))
+            if (allMetrics.TryGetValue("90D", out var metrics90))
             {
                 Rolling90Day = new RollingPeriodMetrics
                 {
                     Days = 90,
                     AvgStars = (double)metrics90.MeanStars,
                     WeightedAccuracy = (double)metrics90.MeanAccuracy,
-                    DailyPlayCount = metrics90.TotalPlays / (double)metrics90.PeriodDays,
-                    DailyActiveHours = metrics90.TotalActiveHours / metrics90.PeriodDays,
+                    DailyPlayCount = metrics90.PlaysPerActiveDay,
+                    DailyActiveHours = metrics90.HoursPerActiveDay,
                     PassRatePercent = metrics90.PassRatePercent,
                     AvgBpm = metrics90.MeanBpm
                 };

@@ -17,7 +17,7 @@ namespace Circle_Tracker.Storage
         int RawMods,
         int CurrentGameMode,
         string DetectedClient,
-        string SoundFilePath,
+        string? SoundFilePath,
         bool SubmitSoundEnabled,
         bool? SheetsSyncSucceeded = null
     );

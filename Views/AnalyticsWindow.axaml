@@ -199,8 +199,20 @@
                               <TextBlock Text="{Binding Rolling7Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
                             </StackPanel>
                             <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                              <TextBlock Text="{Binding Rolling7Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
                             </StackPanel>
                           </StackPanel>
                         </Border>
@@ -217,8 +229,20 @@
                               <TextBlock Text="{Binding Rolling30Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
                             </StackPanel>
                             <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
-                              <TextBlock Text="{Binding Rolling30Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                              <TextBlock Text="{Binding Rolling30Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
                             </StackPanel>
                           </StackPanel>
                         </Border>
@@ -235,8 +259,20 @@
                               <TextBlock Text="{Binding Rolling90Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
                             </StackPanel>
                             <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Daily Plays</TextBlock>
-                              <TextBlock Text="{Binding Rolling90Day.DailyPlayCount, StringFormat={}{0:F0}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                              <TextBlock Text="{Binding Rolling90Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
                             </StackPanel>
                           </StackPanel>
                         </Border>

@@ -227,6 +227,9 @@
                   </StackPanel>
                 </Grid>
 
+                <Button x:Name="ImportSheetsButton" Classes="secondary-flat" Content="Import Historical Data from Sheets" Click="ImportSheetsButton_Click" 
+                        ToolTip.Tip="Import all existing plays from your Google Sheets into local database for analytics"/>
+
                 <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
               </StackPanel>
             </Grid>

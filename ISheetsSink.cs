@@ -18,7 +18,7 @@ namespace Circle_Tracker
 
         Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
             DateTime lastPostTime, Action<DateTime> setLastPostTime,
-            string soundFilePath, bool submitSoundEnabled,
+            string? soundFilePath, bool submitSoundEnabled,
             CancellationToken ct = default);
     }
 }

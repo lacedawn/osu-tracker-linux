@@ -12,7 +12,9 @@ namespace Circle_Tracker.Analytics
         decimal MeanAccuracy,
         decimal MeanStars,
         double PassRatePercent,
-        double MeanBpm
+        double MeanBpm,
+        double PlaysPerActiveDay,
+        double HoursPerActiveDay
     );
 
     public record ChokeMapRecord(
