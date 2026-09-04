@@ -514,23 +514,7 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private async Task LoadChokesAsync(CancellationToken ct)
     {
         var chokes = await Task.Run(() => _sessionService.GetTopChokeMapsAsync(10, ct), ct);
-
-        var grinded = await Task.Run(async () =>
-        {
-            var filter = new PlayQueryFilter { PageSize = 5000 };
-            var result = await _queryEngine.QueryPlaysAsync(filter, ct);
-            return result.Items.GroupBy(p => p.BeatmapId)
-                .Select(g => new GrindCard
-                {
-                    BeatmapString = g.First().BeatmapString,
-                    BeatmapSetId = g.First().BeatmapSetId,
-                    TotalAttempts = g.Count(),
-                    CumulativeHours = g.Sum(p => p.PlayTimeSeconds) / 3600.0
-                })
-                .OrderByDescending(c => c.TotalAttempts)
-                .Take(10)
-                .ToList();
-        }, ct);
+        var grinded = await _queryEngine.GetMostGrindedBeatmapsAsync(10, ct);
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -550,7 +534,15 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
             _mostGrinded.Clear();
             foreach (var grind in grinded)
-                _mostGrinded.Add(grind);
+            {
+                _mostGrinded.Add(new GrindCard
+                {
+                    BeatmapString = grind.BeatmapString,
+                    BeatmapSetId = grind.BeatmapSetId,
+                    TotalAttempts = grind.TotalAttempts,
+                    CumulativeHours = grind.CumulativeHours
+                });
+            }
         }, DispatcherPriority.Background);
     }
 

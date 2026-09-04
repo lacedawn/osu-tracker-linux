@@ -359,5 +359,73 @@ namespace CircleTracker.Tests.StorageTests
             result.TotalCount.Should().Be(2);
             result.Items.Should().OnlyContain(p => p.IsComplete);
         }
+
+        private static async Task SeedPlaysBatchAsync(
+            SqliteDatabaseManager db,
+            int count,
+            int beatmapId,
+            int beatmapSetId,
+            string beatmapString,
+            int playTimeSeconds = 60)
+        {
+            await using var conn = await db.CreateConnectionAsync();
+            using var transaction = conn.BeginTransaction();
+            const string sql = @"
+                INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_checksum,
+                    beatmap_string, beatmap_title, beatmap_artist, beatmap_version,
+                    mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
+                    total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
+                    is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
+                VALUES (NULL, '2026-01-01T00:00:00.000Z', @bid, @bsid, '',
+                    @bs, @bs, 'Artist', 'Diff',
+                    0, '', 180, 5.0, 2.5, 2.5, 4.0, 9.0, 8.0, 6.0,
+                    100, 100, 0, 0, 0, 100.0, 1,
+                    1, @pts, 1, 0, 0, 'osu!stable');";
+
+            for (int i = 0; i < count; i++)
+            {
+                await conn.ExecuteAsync(sql, new { bid = beatmapId, bsid = beatmapSetId, bs = beatmapString, pts = playTimeSeconds }, transaction);
+            }
+            transaction.Commit();
+        }
+
+        [Fact]
+        public async Task GetMostGrindedBeatmapsAsync_WithMoreThan500Plays_AggregatesAllRecordsWithoutClamping()
+        {
+            var (db, engine) = await CreateTestEnvironmentAsync();
+
+            await SeedPlaysBatchAsync(db, 700, 101, 1001, "Freedom Dive");
+            await SeedPlaysBatchAsync(db, 400, 102, 1002, "Blue Zenith");
+            await SeedPlaysBatchAsync(db, 100, 103, 1003, "The Big Black");
+
+            var results = await engine.GetMostGrindedBeatmapsAsync(limit: 5);
+
+            results.Should().HaveCount(3);
+            results[0].BeatmapId.Should().Be(101);
+            results[0].TotalAttempts.Should().Be(700);
+            results[1].TotalAttempts.Should().Be(400);
+        }
+
+        [Fact]
+        public async Task GetMostGrindedBeatmapsAsync_WithEmptyDatabase_ReturnsEmptyListWithoutException()
+        {
+            var (_, engine) = await CreateTestEnvironmentAsync();
+
+            var results = await engine.GetMostGrindedBeatmapsAsync();
+
+            results.Should().NotBeNull().And.BeEmpty();
+        }
+
+        [Fact]
+        public async Task GetMostGrindedBeatmapsAsync_CorrectlyCalculatesCumulativeHours()
+        {
+            var (db, engine) = await CreateTestEnvironmentAsync();
+
+            await SeedPlaysBatchAsync(db, 10, 201, 2001, "Test Map", playTimeSeconds: 360);
+
+            var results = await engine.GetMostGrindedBeatmapsAsync();
+
+            results[0].CumulativeHours.Should().BeApproximately(1.0, 0.01);
+        }
     }
 }

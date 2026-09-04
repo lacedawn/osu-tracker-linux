@@ -151,6 +151,26 @@ namespace Circle_Tracker.Storage.Querying
             return results.AsReadOnly();
         }
 
+        public async Task<IReadOnlyList<GrindedBeatmapSummary>> GetMostGrindedBeatmapsAsync(int limit = 10, CancellationToken ct = default)
+        {
+            const string sql = @"
+                SELECT 
+                    beatmap_id AS BeatmapId,
+                    beatmap_set_id AS BeatmapSetId,
+                    beatmap_string AS BeatmapString,
+                    COUNT(*) AS TotalAttempts,
+                    COALESCE(SUM(play_time_seconds), 0) / 3600.0 AS CumulativeHours
+                FROM plays
+                WHERE beatmap_id > 0
+                GROUP BY beatmap_id
+                ORDER BY TotalAttempts DESC
+                LIMIT @Limit;";
+
+            await using var conn = await _dbManager.CreateConnectionAsync(ct);
+            var results = await conn.QueryAsync<GrindedBeatmapSummary>(sql, new { Limit = limit });
+            return results.ToList().AsReadOnly();
+        }
+
         private string BuildWhereClause(PlayQueryFilter filter, DynamicParameters parameters)
         {
             var clauses = new List<string>();

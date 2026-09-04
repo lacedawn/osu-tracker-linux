@@ -503,4 +503,36 @@ public class AnalyticsViewModelTests
         viewModel.DailyTrends[0].Passes.Should().Be(8);
         viewModel.DailyTrends[0].PassRatePercent.Should().Be(80.0);
     }
+
+    [AvaloniaFact]
+    public async Task SelectedTabIndex_ChokesTab_LoadsMostGrindedBeatmaps()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        sessionService.Setup(s => s.GetTopChokeMapsAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChokeMapRecord>
+            {
+                new(101, 1001, "Freedom Dive", "", 1, 98.0m, 1, 10)
+            });
+
+        var grindedList = new List<GrindedBeatmapSummary>
+        {
+            new(101, 1001, "Freedom Dive", 700, 5.5)
+        };
+        queryEngine.Setup(q => q.GetMostGrindedBeatmapsAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(grindedList);
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SelectedTabIndex = 3;
+        await Task.Delay(200);
+
+        viewModel.MostGrinded.Should().HaveCount(1);
+        viewModel.MostGrinded[0].BeatmapString.Should().Be("Freedom Dive");
+        viewModel.MostGrinded[0].BeatmapSetId.Should().Be(1001);
+        viewModel.MostGrinded[0].TotalAttempts.Should().Be(700);
+        viewModel.MostGrinded[0].CumulativeHours.Should().Be(5.5);
+    }
 }

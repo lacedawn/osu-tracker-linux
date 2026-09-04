@@ -9,5 +9,6 @@ namespace Circle_Tracker.Storage.Querying
         Task<PagedResult<PlayRecord>> QueryPlaysAsync(PlayQueryFilter filter, CancellationToken ct = default);
         Task<PlayFilterSummary> GetSummaryOnlyAsync(PlayQueryFilter filter, CancellationToken ct = default);
         Task<IReadOnlyList<string>> AutocompleteSearchAsync(string term, int limit = 10, CancellationToken ct = default);
+        Task<IReadOnlyList<GrindedBeatmapSummary>> GetMostGrindedBeatmapsAsync(int limit = 10, CancellationToken ct = default);
     }
 }
