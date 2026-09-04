@@ -11,7 +11,7 @@ namespace Circle_Tracker.Storage
         private static readonly ILogger<SessionManager> _log = AppLogger.For<SessionManager>();
 
         private readonly IDatabaseManager _dbManager;
-        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
+        internal readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
         private bool _isInitialized = false;
 
         public string SessionId { get; }
@@ -98,9 +98,13 @@ namespace Circle_Tracker.Storage
 
         public async Task EndSessionAsync(CancellationToken ct = default)
         {
+            if (EndTimeUtc.HasValue) return;
+
             await _lock.WaitAsync(ct);
             try
             {
+                if (EndTimeUtc.HasValue) return;
+
                 EndTimeUtc = DateTime.UtcNow;
                 await UpsertSessionRowAsync(ct);
                 _log.LogInformation("Session {SessionId} ended cleanly", SessionId);
@@ -159,20 +163,59 @@ namespace Circle_Tracker.Storage
         {
             try
             {
-                EndSessionAsync().GetAwaiter().GetResult();
+                if (_lock.Wait(0))
+                {
+                    try
+                    {
+                        if (!EndTimeUtc.HasValue)
+                        {
+                            EndTimeUtc = DateTime.UtcNow;
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                            UpsertSessionRowAsync(cts.Token).GetAwaiter().GetResult();
+                        }
+                    }
+                    finally
+                    {
+                        _lock.Release();
+                    }
+                }
             }
             catch { }
-            _lock.Dispose();
+            finally
+            {
+                try
+                {
+                    _lock.Dispose();
+                }
+                catch { }
+            }
         }
 
         public async ValueTask DisposeAsync()
         {
             try
             {
-                await EndSessionAsync();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await DisposeAsync(cts.Token);
             }
             catch { }
-            _lock.Dispose();
+        }
+
+        public async ValueTask DisposeAsync(CancellationToken ct)
+        {
+            try
+            {
+                await EndSessionAsync(ct);
+            }
+            catch { }
+            finally
+            {
+                try
+                {
+                    _lock.Dispose();
+                }
+                catch { }
+            }
         }
     }
 }

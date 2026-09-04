@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Circle_Tracker.Services;
+using Circle_Tracker.Storage;
 using Circle_Tracker.Views;
 using Microsoft.Extensions.Logging;
 using System;
@@ -33,6 +34,7 @@ namespace Circle_Tracker
 
         private bool _suppressStartupCheckboxEvent = false;
         private CancellationTokenSource? _reconnectDebounce;
+        private bool _isExplicitShutdownComplete = false;
 
         private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0xde, 0x80));
         private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xf8, 0x71, 0x71));
@@ -619,20 +621,86 @@ namespace Circle_Tracker
             SessionTimeText.Text = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
         }
 
-        protected override void OnClosing(WindowClosingEventArgs e)
+        protected override async void OnClosing(WindowClosingEventArgs e)
         {
+            if (_isExplicitShutdownComplete)
+            {
+                base.OnClosing(e);
+                return;
+            }
+
+            e.Cancel = true;
+
             try
             {
-                _tracker.SessionManager.EndSessionAsync().GetAwaiter().GetResult();
+                IsEnabled = false;
+                await PerformShutdownAsync();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Error during application shutdown");
+            }
+            finally
+            {
+                _isExplicitShutdownComplete = true;
+                Close();
+            }
+        }
 
-            _tracker.SaveSettings();
-            _tosuClient.Dispose();
+        private async Task PerformShutdownAsync()
+        {
             _gameTickTimer?.Stop();
             _uiUpdateTimer?.Stop();
             _secondsTimer?.Stop();
-            base.OnClosing(e);
+            _achievementBannerTimer?.Stop();
+
+            _coverLoadCts?.Cancel();
+            _coverLoadCts?.Dispose();
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _tracker.SessionManager.EndSessionAsync(cts.Token);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to end session cleanly during shutdown");
+            }
+
+            if (_tracker.PlaySink is CompositePlaySink composite)
+            {
+                foreach (var reg in composite.Registrations)
+                {
+                    if (reg.Sink is IAsyncDisposable asyncRegSink)
+                    {
+                        try { await asyncRegSink.DisposeAsync(); } catch { }
+                    }
+                    else if (reg.Sink is IDisposable dispRegSink)
+                    {
+                        try { dispRegSink.Dispose(); } catch { }
+                    }
+                }
+            }
+            else if (_tracker.PlaySink is IAsyncDisposable asyncSink)
+            {
+                try { await asyncSink.DisposeAsync(); } catch { }
+            }
+            else if (_tracker.PlaySink is IDisposable dispSink)
+            {
+                try { dispSink.Dispose(); } catch { }
+            }
+
+            try
+            {
+                _tosuClient.Dispose();
+            }
+            catch { }
+
+            try
+            {
+                _tracker.SaveSettings();
+            }
+            catch { }
         }
 
         private void EnableLocalLoggingCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
