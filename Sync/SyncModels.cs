@@ -14,7 +14,10 @@ public record SyncResult(
     int SyncedCount,
     int FailedCount,
     string? ErrorMessage
-);
+)
+{
+    public bool IsSuccess => Success;
+}
 
 public enum ExportFormat
 {

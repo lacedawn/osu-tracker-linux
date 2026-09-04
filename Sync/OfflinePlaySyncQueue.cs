@@ -15,6 +15,7 @@ public interface IOfflinePlaySyncQueue
 {
     Task<int> GetPendingCountAsync(CancellationToken ct = default);
     Task<SyncResult> FlushQueueAsync(CancellationToken ct = default);
+    Task<SyncResult> FlushPendingQueueAsync(CancellationToken ct = default);
     void StartBackgroundSync(TimeSpan checkInterval);
     void StopBackgroundSync();
 }
@@ -22,25 +23,26 @@ public interface IOfflinePlaySyncQueue
 public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
 {
     private static readonly ILogger<OfflinePlaySyncQueue> _log = AppLogger.For<OfflinePlaySyncQueue>();
-    private const int MaxBatchSize = 50;
 
     private readonly Storage.IDatabaseManager _dbManager;
-    private readonly SheetsService _sheetsService;
+    private readonly SheetsService? _sheetsService;
     private readonly string _spreadsheetId;
     private readonly string _sheetName;
     private readonly Func<string> _getFunctionSeparator;
     private readonly Func<bool> _getSheetsApiReady;
+    private readonly Func<IList<IList<object>>, CancellationToken, Task>? _sheetsAppender;
 
     private CancellationTokenSource? _backgroundCts;
     private Task? _backgroundTask;
 
     public OfflinePlaySyncQueue(
         Storage.IDatabaseManager dbManager,
-        SheetsService sheetsService,
+        SheetsService? sheetsService,
         string spreadsheetId,
         string sheetName,
         Func<string> getFunctionSeparator,
-        Func<bool> getSheetsApiReady)
+        Func<bool> getSheetsApiReady,
+        Func<IList<IList<object>>, CancellationToken, Task>? sheetsAppender = null)
     {
         _dbManager = dbManager;
         _sheetsService = sheetsService;
@@ -48,6 +50,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
         _sheetName = sheetName;
         _getFunctionSeparator = getFunctionSeparator;
         _getSheetsApiReady = getSheetsApiReady;
+        _sheetsAppender = sheetsAppender;
     }
 
     public async Task<int> GetPendingCountAsync(CancellationToken ct = default)
@@ -57,7 +60,12 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
             "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
     }
 
-    public async Task<SyncResult> FlushQueueAsync(CancellationToken ct = default)
+    public Task<SyncResult> FlushQueueAsync(CancellationToken ct = default)
+    {
+        return FlushPendingQueueAsync(ct);
+    }
+
+    public async Task<SyncResult> FlushPendingQueueAsync(CancellationToken ct = default)
     {
         try
         {
@@ -75,10 +83,9 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
                        is_complete, play_time_seconds, consecutive_play_count
                 FROM plays
                 WHERE sync_status = 'Pending'
-                ORDER BY id ASC
-                LIMIT @Limit;";
+                ORDER BY id ASC;";
 
-            var pendingPlays = (await conn.QueryAsync<PendingPlay>(selectSql, new { Limit = MaxBatchSize })).ToList();
+            var pendingPlays = (await conn.QueryAsync<PendingPlay>(selectSql)).ToList();
 
             if (pendingPlays.Count == 0)
             {
@@ -87,13 +94,24 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
 
             var rows = pendingPlays.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
 
-            var valueRange = new ValueRange { Values = rows };
-            var range = $"'{_sheetName}'!A:X";
-            var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
-            appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            if (_sheetsAppender != null)
+            {
+                await _sheetsAppender(rows, ct);
+            }
+            else if (_sheetsService != null)
+            {
+                var valueRange = new ValueRange { Values = rows };
+                var range = $"'{_sheetName}'!A:X";
+                var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
+                appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
-            _log.LogInformation("Syncing {Count} pending plays to Google Sheets", pendingPlays.Count);
-            var response = await appendRequest.ExecuteAsync(ct);
+                _log.LogInformation("Syncing {Count} pending plays to Google Sheets", pendingPlays.Count);
+                await appendRequest.ExecuteAsync(ct);
+            }
+            else
+            {
+                throw new InvalidOperationException("Google Sheets service is not configured");
+            }
 
             var nowUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             var playIds = pendingPlays.Select(p => p.Id).ToArray();
@@ -101,11 +119,27 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
             const string updateSql = @"
                 UPDATE plays
                 SET sync_status = 'Synced', synced_at = @SyncedAt
-                WHERE id = @Id;";
+                WHERE id IN @Ids;";
 
-            foreach (var id in playIds)
+            using var tx = conn.BeginTransaction();
+            try
             {
-                await conn.ExecuteAsync(updateSql, new { Id = id, SyncedAt = nowUtc });
+                foreach (var chunk in playIds.Chunk(500))
+                {
+                    await conn.ExecuteAsync(updateSql, new { Ids = chunk, SyncedAt = nowUtc }, tx);
+                }
+                tx.Commit();
+            }
+            catch
+            {
+                try
+                {
+                    tx.Rollback();
+                }
+                catch
+                {
+                }
+                throw;
             }
 
             _log.LogInformation("Successfully synced {Count} plays to Google Sheets", pendingPlays.Count);
