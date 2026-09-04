@@ -75,15 +75,9 @@
               <TextBlock Text="HIGHLIGHT OF THE SESSION" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
               <Grid ColumnDefinitions="Auto,*">
                 <Border Grid.Column="0" Width="120" Height="90" CornerRadius="6" ClipToBounds="True" Background="#252038" Margin="0,0,16,0">
-                  <Image Stretch="UniformToFill">
-                    <Image.Source>
-                      <Binding Path="BestPlay.BeatmapSetId">
-                        <Binding.Converter>
-                          <converters:BeatmapCoverConverter/>
-                        </Binding.Converter>
-                      </Binding>
-                    </Image.Source>
-                  </Image>
+                  <Image Stretch="UniformToFill"
+                         converters:BeatmapCoverConverter.BeatmapSetId="{Binding BestPlay.BeatmapSetId}"
+                         Source="{Binding BestPlay.BeatmapSetId, Converter={StaticResource BeatmapCoverConverter}}"/>
                 </Border>
                 <StackPanel Grid.Column="1" Spacing="8">
                   <TextBlock Text="{Binding BestPlay.BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="15" TextWrapping="Wrap"/>
