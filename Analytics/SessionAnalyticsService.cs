@@ -215,12 +215,16 @@ namespace Circle_Tracker.Analytics
             const string sql = @"
                 SELECT
                     COUNT(CASE WHEN session_id = @sessionId THEN 1 END) AS SessionPlays,
+                    SUM(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN total_hits ELSE 0 END) AS SessionHits,
+                    SUM(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN accuracy * total_hits ELSE 0.0 END) AS SessionWAcc,
                     AVG(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN accuracy END) AS SessionAcc,
                     AVG(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN stars END) AS SessionStars,
                     SUM(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN 1 ELSE 0 END) AS SessionPasses,
                     SUM(CASE WHEN session_id = @sessionId THEN play_time_seconds ELSE 0 END) AS SessionSeconds,
 
                     COUNT(CASE WHEN timestamp >= @cutoff THEN 1 END) AS BaselinePlays,
+                    SUM(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN total_hits ELSE 0 END) AS BaselineHits,
+                    SUM(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN accuracy * total_hits ELSE 0.0 END) AS BaselineWAcc,
                     AVG(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN accuracy END) AS BaselineAcc,
                     AVG(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN stars END) AS BaselineStars,
                     SUM(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN 1 ELSE 0 END) AS BaselinePasses
@@ -228,20 +232,24 @@ namespace Circle_Tracker.Analytics
                 WHERE session_id = @sessionId OR timestamp >= @cutoff;";
 
             var row = await conn.QueryFirstOrDefaultAsync<(
-                int SessionPlays, double? SessionAcc, double? SessionStars, int SessionPasses, int SessionSeconds,
-                int BaselinePlays, double? BaselineAcc, double? BaselineStars, int BaselinePasses
+                int SessionPlays, long SessionHits, double SessionWAcc, double? SessionAcc, double? SessionStars, int SessionPasses, int SessionSeconds,
+                int BaselinePlays, long BaselineHits, double BaselineWAcc, double? BaselineAcc, double? BaselineStars, int BaselinePasses
             )>(sql, new { sessionId, cutoff });
 
             int sCount = row.SessionPlays;
             int sPasses = row.SessionPasses;
-            decimal sAcc = sPasses > 0 ? (decimal)(row.SessionAcc ?? 0.0) : 0.0m;
+            decimal sAcc = row.SessionHits > 0 
+                ? (decimal)(row.SessionWAcc / row.SessionHits) 
+                : (sPasses > 0 ? (decimal)(row.SessionAcc ?? 0.0) : 0.0m);
             decimal sStars = sPasses > 0 ? (decimal)(row.SessionStars ?? 0.0) : 0.0m;
             double sPassRate = sCount > 0 ? (100.0 * sPasses / sCount) : 0.0;
             double sMinutes = row.SessionSeconds / 60.0;
 
             int bCount = row.BaselinePlays;
             int bPasses = row.BaselinePasses;
-            decimal bAcc = bPasses > 0 ? (decimal)(row.BaselineAcc ?? 0.0) : 0.0m;
+            decimal bAcc = row.BaselineHits > 0 
+                ? (decimal)(row.BaselineWAcc / row.BaselineHits) 
+                : (bPasses > 0 ? (decimal)(row.BaselineAcc ?? 0.0) : 0.0m);
             decimal bStars = bPasses > 0 ? (decimal)(row.BaselineStars ?? 0.0) : 0.0m;
             double bPassRate = bCount > 0 ? (100.0 * bPasses / bCount) : 0.0;
 

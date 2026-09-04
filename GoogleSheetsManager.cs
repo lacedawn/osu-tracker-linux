@@ -30,7 +30,16 @@ namespace Circle_Tracker
         string BeatmapVersion = "",
         decimal BeatmapHp = 0m,
         string BeatmapChecksum = ""
-    );
+    )
+    {
+        private readonly int? _totalHits;
+
+        public int TotalHits
+        {
+            get => _totalHits ?? ((Play300c + Play100c + Play50c + PlayMissc) > 0 ? (Play300c + Play100c + Play50c + PlayMissc) : TotalBeatmapHits);
+            init => _totalHits = value;
+        }
+    }
 
     public class GoogleSheetsManager : ISheetsSink, IPlaySink
     {

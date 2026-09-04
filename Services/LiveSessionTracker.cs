@@ -18,7 +18,10 @@ public record LiveSessionMetrics(
     decimal BaselineDeltaStars,
     double SessionAverageBpm,
     double BaselineDeltaBpm
-);
+)
+{
+    public decimal SessionAccuracy => SessionAverageAccuracy;
+}
 
 public record PostPlayAchievement(
     string Title,
@@ -39,7 +42,8 @@ public record SessionSummaryReport(
     double BaselineDeltaBpm,
     double PassRatePercent,
     double BaselineDeltaPassRate,
-    BestPlayCard? BestPlay
+    BestPlayCard? BestPlay,
+    decimal PassAccuracy = 0m
 );
 
 public record BestPlayCard(
@@ -54,8 +58,11 @@ public record BestPlayCard(
 
 public interface ILiveSessionTracker
 {
+    decimal SessionAccuracy { get; }
+    decimal BaselineDeltaAccuracy { get; }
     LiveSessionMetrics GetCurrentMetrics();
     Task OnPlayLoggedAsync(PlayEntryData play, PlayContext context);
+    Task ProcessPlay(PlayEntryData play, PlayContext? context = null);
     event EventHandler<LiveSessionMetrics>? MetricsUpdated;
     event EventHandler<PostPlayAchievement>? AchievementUnlocked;
     Task<SessionSummaryReport> GenerateSessionSummaryAsync(CancellationToken ct = default);
@@ -74,6 +81,9 @@ public class LiveSessionTracker : ILiveSessionTracker
     private double _highestAimPass = 0;
     
     private RollingPeriodStats? _baseline30Day;
+
+    public decimal SessionAccuracy { get; private set; } = 0m;
+    public decimal BaselineDeltaAccuracy { get; private set; } = 0m;
 
     public event EventHandler<LiveSessionMetrics>? MetricsUpdated;
     public event EventHandler<PostPlayAchievement>? AchievementUnlocked;
@@ -112,7 +122,10 @@ public class LiveSessionTracker : ILiveSessionTracker
         double deltaBpm = 0.0;
         if (passCount > 0)
         {
-            avgAccuracy = (decimal)passedPlays.Average(p => p.Accuracy);
+            long totalPassHits = passedPlays.Sum(p => (long)p.TotalHits);
+            avgAccuracy = totalPassHits > 0
+                ? (decimal)(passedPlays.Sum(p => (double)p.Accuracy * p.TotalHits) / totalPassHits)
+                : (decimal)passedPlays.Average(p => p.Accuracy);
             avgStars = (decimal)passedPlays.Average(p => p.BeatmapStars);
             avgBpm = passedPlays.Average(p => p.BeatmapBpm);
             if (_baseline30Day != null)
@@ -135,6 +148,20 @@ public class LiveSessionTracker : ILiveSessionTracker
         );
     }
 
+    public async Task ProcessPlay(PlayEntryData play, PlayContext? context = null)
+    {
+        context ??= new PlayContext(
+            SessionId: Guid.NewGuid().ToString(),
+            IsReplay: false,
+            RawMods: 0,
+            CurrentGameMode: 0,
+            DetectedClient: "lazer",
+            SoundFilePath: null,
+            SubmitSoundEnabled: false
+        );
+        await OnPlayLoggedAsync(play, context);
+    }
+
     public async Task OnPlayLoggedAsync(PlayEntryData play, PlayContext context)
     {
         if (_baseline30Day == null)
@@ -142,10 +169,19 @@ public class LiveSessionTracker : ILiveSessionTracker
             await LoadBaselineAsync();
         }
 
+        List<PlayEntryData> snapshot;
         lock (_playsLock)
         {
             _sessionPlays.Add(play);
+            snapshot = _sessionPlays.ToList();
         }
+
+        long totalSessionHits = snapshot.Sum(p => (long)p.TotalHits);
+        SessionAccuracy = totalSessionHits > 0
+            ? (decimal)(snapshot.Sum(p => (double)p.Accuracy * p.TotalHits) / totalSessionHits)
+            : (snapshot.Count > 0 ? snapshot.Average(p => p.Accuracy) : 0m);
+
+        BaselineDeltaAccuracy = _baseline30Day != null ? SessionAccuracy - _baseline30Day.MeanAccuracy : 0m;
 
         if (play.Accuracy > _sessionPeakAccuracy)
         {
@@ -181,19 +217,25 @@ public class LiveSessionTracker : ILiveSessionTracker
                 BaselineDeltaBpm: 0,
                 PassRatePercent: 0,
                 BaselineDeltaPassRate: 0,
-                BestPlay: null
+                BestPlay: null,
+                PassAccuracy: 0m
             );
         }
 
         var passes = snapshot.Where(p => p.Complete).ToList();
         var passCount = passes.Count;
         var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
-        var avgAccuracy = snapshot.Average(p => p.Accuracy);
+        long totalSessionHits = snapshot.Sum(p => (long)p.TotalHits);
+        decimal hitWeightedAcc = totalSessionHits > 0
+            ? (decimal)(snapshot.Sum(p => (double)p.Accuracy * p.TotalHits) / totalSessionHits)
+            : (snapshot.Count > 0 ? snapshot.Average(p => p.Accuracy) : 0m);
+
+        var passAccuracy = passCount > 0 ? (decimal)passes.Average(p => p.Accuracy) : 0m;
         var avgStars = snapshot.Average(p => p.BeatmapStars);
         var avgBpm = snapshot.Average(p => p.BeatmapBpm);
         var passRate = snapshot.Count > 0 ? (passCount / (double)snapshot.Count) * 100.0 : 0;
 
-        var deltaAcc = _baseline30Day != null ? avgAccuracy - _baseline30Day.MeanAccuracy : 0m;
+        var deltaAcc = _baseline30Day != null ? hitWeightedAcc - _baseline30Day.MeanAccuracy : 0m;
         var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
         var deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
         var deltaPassRate = _baseline30Day != null ? passRate - _baseline30Day.PassRatePercent : 0;
@@ -204,7 +246,7 @@ public class LiveSessionTracker : ILiveSessionTracker
             TotalPlays: snapshot.Count,
             TotalPasses: passCount,
             ActivePlayMinutes: totalPlayTime / 60.0,
-            SessionAccuracy: avgAccuracy,
+            SessionAccuracy: hitWeightedAcc,
             BaselineDeltaAccuracy: deltaAcc,
             SessionAvgStars: avgStars,
             BaselineDeltaStars: deltaStars,
@@ -212,7 +254,8 @@ public class LiveSessionTracker : ILiveSessionTracker
             BaselineDeltaBpm: deltaBpm,
             PassRatePercent: passRate,
             BaselineDeltaPassRate: deltaPassRate,
-            BestPlay: bestPlay
+            BestPlay: bestPlay,
+            PassAccuracy: passAccuracy
         );
     }
 
@@ -227,6 +270,8 @@ public class LiveSessionTracker : ILiveSessionTracker
         _highestStarPass = 0m;
         _highestBpmPass = 0;
         _highestAimPass = 0;
+        SessionAccuracy = 0m;
+        BaselineDeltaAccuracy = 0m;
     }
 
     private async Task LoadBaselineAsync(CancellationToken ct = default)

@@ -581,4 +581,163 @@ public class LiveSessionTrackerTests
         capturedAchievement.Description.Should().Contain("240");
         capturedAchievement.AccentColorHex.Should().Be("#7dd3fc");
     }
+
+    private static PlayEntryData CreatePlayEntry(
+        int totalHits,
+        decimal accuracy,
+        bool complete,
+        int playTimeSeconds = 60)
+    {
+        return new PlayEntryData(
+            BeatmapString: "Test Map",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 2.5m,
+            BeatmapSpeed: 2.5m,
+            BeatmapStars: 5.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.0m,
+            TotalBeatmapHits: totalHits,
+            Accuracy: accuracy,
+            Play300c: totalHits,
+            Play100c: 0,
+            Play50c: 0,
+            PlayMissc: 0,
+            Complete: complete,
+            PlayTimeSeconds: playTimeSeconds,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Test Map",
+            BeatmapArtist: "Artist",
+            BeatmapVersion: "Normal",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        )
+        {
+            TotalHits = totalHits
+        };
+    }
+
+    [Fact]
+    public async Task GenerateSessionSummary_MixedRetriesAndFullPass_ComputesAccurateHitWeightedDelta()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 200,
+            TotalActiveHours: 20.0,
+            MeanAccuracy: 98.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        for (int i = 0; i < 10; i++)
+        {
+            var retry = CreatePlayEntry(totalHits: 20, accuracy: 75.0m, complete: false, playTimeSeconds: 10);
+            await tracker.ProcessPlay(retry);
+        }
+
+        var fullPass = CreatePlayEntry(totalHits: 1800, accuracy: 99.5m, complete: true, playTimeSeconds: 180);
+        await tracker.ProcessPlay(fullPass);
+
+        var report = await tracker.GenerateSessionSummaryAsync();
+
+        report.SessionAccuracy.Should().BeApproximately(97.05m, 0.05m);
+        report.BaselineDeltaAccuracy.Should().BeApproximately(-0.95m, 0.05m);
+    }
+
+    [Fact]
+    public async Task GenerateSessionSummary_ZeroHitsSession_DoesNotThrowDivideByZero()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 100,
+            TotalActiveHours: 10.0,
+            MeanAccuracy: 98.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var failedPlay = CreatePlayEntry(totalHits: 0, accuracy: 0m, complete: false, playTimeSeconds: 5);
+        await tracker.ProcessPlay(failedPlay);
+
+        var report = await tracker.GenerateSessionSummaryAsync();
+
+        report.SessionAccuracy.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task ProcessPlay_RealTimeHudDelta_ReflectsWeightedCalculations()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 200,
+            TotalActiveHours: 20.0,
+            MeanAccuracy: 98.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play1 = CreatePlayEntry(totalHits: 100, accuracy: 92.0m, complete: false, playTimeSeconds: 20);
+        await tracker.ProcessPlay(play1);
+
+        tracker.SessionAccuracy.Should().BeApproximately(92.0m, 0.01m);
+        tracker.BaselineDeltaAccuracy.Should().BeApproximately(-6.0m, 0.01m);
+
+        var play2 = CreatePlayEntry(totalHits: 300, accuracy: 100.0m, complete: true, playTimeSeconds: 60);
+        await tracker.ProcessPlay(play2);
+
+        tracker.SessionAccuracy.Should().BeApproximately(98.0m, 0.01m);
+        tracker.BaselineDeltaAccuracy.Should().BeApproximately(0.0m, 0.01m);
+
+        var play3 = CreatePlayEntry(totalHits: 400, accuracy: 96.0m, complete: true, playTimeSeconds: 100);
+        await tracker.ProcessPlay(play3);
+
+        tracker.SessionAccuracy.Should().BeApproximately(97.0m, 0.01m);
+        tracker.BaselineDeltaAccuracy.Should().BeApproximately(-1.0m, 0.01m);
+    }
 }
