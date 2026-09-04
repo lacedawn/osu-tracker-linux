@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Circle_Tracker.ViewModels;
 
-public class AnalyticsViewModel : INotifyPropertyChanged
+public class AnalyticsViewModel : INotifyPropertyChanged, IDisposable
 {
     private static readonly ILogger<AnalyticsViewModel> _log = AppLogger.For<AnalyticsViewModel>();
 
@@ -38,14 +38,15 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     }
     private bool _isLoading;
     private CancellationTokenSource? _loadCts;
+    private CancellationTokenSource? _searchCts;
     
     private ObservableCollection<StarMasteryBracket> _starMasteryBrackets = new();
-    private ObservableCollection<OdPrecisionTier> _odPrecisionTiers = new();
-    private ObservableCollection<BpmSpeedBracket> _bpmSpeedBrackets = new();
+    private ObservableCollection<OdAccuracyTier> _odPrecisionTiers = new();
+    private ObservableCollection<BpmBracketStats> _bpmSpeedBrackets = new();
     
-    private RollingPeriodMetrics? _rolling7Day;
-    private RollingPeriodMetrics? _rolling30Day;
-    private RollingPeriodMetrics? _rolling90Day;
+    private RollingPeriodStats? _rolling7Day;
+    private RollingPeriodStats? _rolling30Day;
+    private RollingPeriodStats? _rolling90Day;
     
     private ObservableCollection<PlayRecord> _sessionPlays = new();
     public ObservableCollection<PlayRecord> SessionPlays => _sessionPlays;
@@ -116,8 +117,8 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     }
 
     public ObservableCollection<StarMasteryBracket> StarMasteryBrackets => _starMasteryBrackets;
-    public ObservableCollection<OdPrecisionTier> OdPrecisionTiers => _odPrecisionTiers;
-    public ObservableCollection<BpmSpeedBracket> BpmSpeedBrackets => _bpmSpeedBrackets;
+    public ObservableCollection<OdAccuracyTier> OdPrecisionTiers => _odPrecisionTiers;
+    public ObservableCollection<BpmBracketStats> BpmSpeedBrackets => _bpmSpeedBrackets;
 
     public HeadToHeadComparison? SessionBaseline
     {
@@ -125,9 +126,9 @@ public class AnalyticsViewModel : INotifyPropertyChanged
         set { _sessionBaseline = value; OnPropertyChanged(); }
     }
     
-    public RollingPeriodMetrics? Rolling7Day { get => _rolling7Day; set { _rolling7Day = value; OnPropertyChanged(); } }
-    public RollingPeriodMetrics? Rolling30Day { get => _rolling30Day; set { _rolling30Day = value; OnPropertyChanged(); } }
-    public RollingPeriodMetrics? Rolling90Day { get => _rolling90Day; set { _rolling90Day = value; OnPropertyChanged(); } }
+    public RollingPeriodStats? Rolling7Day { get => _rolling7Day; set { _rolling7Day = value; OnPropertyChanged(); } }
+    public RollingPeriodStats? Rolling30Day { get => _rolling30Day; set { _rolling30Day = value; OnPropertyChanged(); } }
+    public RollingPeriodStats? Rolling90Day { get => _rolling90Day; set { _rolling90Day = value; OnPropertyChanged(); } }
     
     public ObservableCollection<ChokeCard> TopChokes => _topChokes;
     public ObservableCollection<GrindCard> MostGrinded => _mostGrinded;
@@ -267,7 +268,21 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             {
                 _searchText = value;
                 OnPropertyChanged();
-                _ = ApplyFiltersAsync();
+
+                _searchCts?.Cancel();
+                _searchCts?.Dispose();
+                _searchCts = new CancellationTokenSource();
+                var token = _searchCts.Token;
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(300, token);
+                        await ApplyFiltersAsync(token);
+                    }
+                    catch (OperationCanceledException) { }
+                }, token);
             }
         }
     }
@@ -327,63 +342,19 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             _starMasteryBrackets.Clear();
             foreach (var bracket in starMastery)
             {
-                string label = bracket.MaxStars >= 99.0 
-                    ? $"{bracket.MinStars:F1}+★" 
-                    : $"{bracket.MinStars:F1}–{bracket.MinStars + 0.4:F1}★";
-                string subtext = bracket.TotalAttempts > 0 
-                    ? $"{bracket.Passes}/{bracket.TotalAttempts} passed ({bracket.PassRatePercent:F0}%)" 
-                    : "No plays";
-                string zoneColor = bracket.SkillZone switch
-                {
-                    "Comfort" => "#4ade80",
-                    "Push" => "#fb923c",
-                    "Pass-Only" => "#f87171",
-                    _ => "#94a3b8"
-                };
-                _starMasteryBrackets.Add(new StarMasteryBracket
-                {
-                    Label = label,
-                    MinStar = bracket.MinStars,
-                    MaxStar = bracket.MaxStars,
-                    PassCount = bracket.Passes,
-                    AttemptCount = bracket.TotalAttempts,
-                    MeanAccuracy = (double)bracket.MeanAccuracy,
-                    PassRatePercent = bracket.PassRatePercent,
-                    ProgressPercent = bracket.Passes > 0 ? (double)bracket.MeanAccuracy : 0.0,
-                    ZoneColor = zoneColor,
-                    ZoneLabel = bracket.SkillZone,
-                    Subtext = subtext
-                });
+                _starMasteryBrackets.Add(bracket);
             }
 
             _odPrecisionTiers.Clear();
             foreach (var tier in odPrecision)
             {
-                _odPrecisionTiers.Add(new OdPrecisionTier
-                {
-                    Label = $"OD {tier.MinOd:F1}-{tier.MaxOd:F1}",
-                    MinOd = tier.MinOd,
-                    MaxOd = tier.MaxOd,
-                    AvgAccuracy = (double)tier.MeanAccuracy,
-                    HitWindow300Ms = tier.HitWindow300Ms
-                });
+                _odPrecisionTiers.Add(tier);
             }
 
             _bpmSpeedBrackets.Clear();
             foreach (var bracket in bpmSpeed)
             {
-                string label = bracket.MaxBpm >= int.MaxValue / 2
-                    ? $"{bracket.MinBpm}+ BPM"
-                    : $"{bracket.MinBpm}-{bracket.MaxBpm} BPM";
-                    
-                _bpmSpeedBrackets.Add(new BpmSpeedBracket
-                {
-                    Label = label,
-                    MinBpm = bracket.MinBpm,
-                    MaxBpm = bracket.MaxBpm,
-                    AvgAccuracy = (double)bracket.MeanAccuracy,
-                    MissDensityPer100 = bracket.MissesPerHundredHits
-                });
+                _bpmSpeedBrackets.Add(bracket);
             }
         };
 
@@ -451,53 +422,17 @@ public class AnalyticsViewModel : INotifyPropertyChanged
         {
             if (allMetrics.TryGetValue("7D", out var metrics7))
             {
-                Rolling7Day = new RollingPeriodMetrics
-                {
-                    Days = 7,
-                    AvgStars = (double)metrics7.MeanStars,
-                    WeightedAccuracy = (double)metrics7.MeanAccuracy,
-                    DailyPlayCount = metrics7.PlaysPerActiveDay,
-                    DailyActiveHours = metrics7.HoursPerActiveDay,
-                    PassRatePercent = metrics7.PassRatePercent,
-                    AvgBpm = metrics7.MeanBpm,
-                    HasSufficientData = metrics7.HasSufficientData,
-                    DateRangeText = metrics7.DateRangeText,
-                    HistoryDaysAvailable = metrics7.HistoryDaysAvailable
-                };
+                Rolling7Day = metrics7;
             }
 
             if (allMetrics.TryGetValue("30D", out var metrics30))
             {
-                Rolling30Day = new RollingPeriodMetrics
-                {
-                    Days = 30,
-                    AvgStars = (double)metrics30.MeanStars,
-                    WeightedAccuracy = (double)metrics30.MeanAccuracy,
-                    DailyPlayCount = metrics30.PlaysPerActiveDay,
-                    DailyActiveHours = metrics30.HoursPerActiveDay,
-                    PassRatePercent = metrics30.PassRatePercent,
-                    AvgBpm = metrics30.MeanBpm,
-                    HasSufficientData = metrics30.HasSufficientData,
-                    DateRangeText = metrics30.DateRangeText,
-                    HistoryDaysAvailable = metrics30.HistoryDaysAvailable
-                };
+                Rolling30Day = metrics30;
             }
 
             if (allMetrics.TryGetValue("90D", out var metrics90))
             {
-                Rolling90Day = new RollingPeriodMetrics
-                {
-                    Days = 90,
-                    AvgStars = (double)metrics90.MeanStars,
-                    WeightedAccuracy = (double)metrics90.MeanAccuracy,
-                    DailyPlayCount = metrics90.PlaysPerActiveDay,
-                    DailyActiveHours = metrics90.HoursPerActiveDay,
-                    PassRatePercent = metrics90.PassRatePercent,
-                    AvgBpm = metrics90.MeanBpm,
-                    HasSufficientData = metrics90.HasSufficientData,
-                    DateRangeText = metrics90.DateRangeText,
-                    HistoryDaysAvailable = metrics90.HistoryDaysAvailable
-                };
+                Rolling90Day = metrics90;
             }
 
             _dailyTrends.Clear();
@@ -591,10 +526,10 @@ public class AnalyticsViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task ApplyFiltersAsync()
+    private async Task ApplyFiltersAsync(CancellationToken ct = default)
     {
         CurrentPage = 1;
-        await LoadPlayHistoryAsync(default);
+        await LoadPlayHistoryAsync(ct);
     }
 
     private async Task ExportCsvAsync()
@@ -617,60 +552,20 @@ public class AnalyticsViewModel : INotifyPropertyChanged
         }
     }
 
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = null;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+    }
+
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
-}
-
-public class StarMasteryBracket
-{
-    public string Label { get; set; } = "";
-    public double MinStar { get; set; }
-    public double MaxStar { get; set; }
-    public int PassCount { get; set; }
-    public int AttemptCount { get; set; }
-    public double MeanAccuracy { get; set; }
-    public double PassRatePercent { get; set; }
-    public double ProgressPercent { get; set; }
-    public string ZoneColor { get; set; } = "";
-    public string ZoneLabel { get; set; } = "";
-    public string Subtext { get; set; } = "";
-}
-
-public class OdPrecisionTier
-{
-    public string Label { get; set; } = "";
-    public double MinOd { get; set; }
-    public double MaxOd { get; set; }
-    public double AvgAccuracy { get; set; }
-    public double HitWindow300Ms { get; set; }
-}
-
-public class BpmSpeedBracket
-{
-    public string Label { get; set; } = "";
-    public int MinBpm { get; set; }
-    public int MaxBpm { get; set; }
-    public double AvgAccuracy { get; set; }
-    public double MissDensityPer100 { get; set; }
-}
-
-
-public class RollingPeriodMetrics
-{
-    public int Days { get; set; }
-    public double AvgStars { get; set; }
-    public double WeightedAccuracy { get; set; }
-    public double DailyPlayCount { get; set; }
-    public double DailyActiveHours { get; set; }
-    public double PassRatePercent { get; set; }
-    public double AvgBpm { get; set; }
-    public bool HasSufficientData { get; set; } = true;
-    public string DateRangeText { get; set; } = "";
-    public int HistoryDaysAvailable { get; set; }
-    public int DaysRemaining => Math.Max(0, Days - HistoryDaysAvailable);
-    public double ProgressPercent => Days > 0 ? Math.Min(100.0, Math.Round(100.0 * HistoryDaysAvailable / Days, 1)) : 0.0;
 }
 
 public class ChokeCard

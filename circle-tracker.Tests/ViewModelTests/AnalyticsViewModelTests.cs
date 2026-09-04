@@ -105,7 +105,7 @@ public class AnalyticsViewModelTests
 
         queryCallCount = 0;
         viewModel.SearchText = "Test Map";
-        await Task.Delay(100);
+        await Task.Delay(350);
 
         queryCallCount.Should().BeGreaterThan(0);
     }
@@ -328,12 +328,12 @@ public class AnalyticsViewModelTests
         await Task.Delay(50);
 
         viewModel.SearchText = "freedom dive";
-        await Task.Delay(50);
+        await Task.Delay(350);
         lastFilter.Should().NotBeNull();
         lastFilter!.SearchQuery.Should().Be("freedom dive");
 
         viewModel.SearchText = "";
-        await Task.Delay(50);
+        await Task.Delay(350);
         lastFilter.Should().NotBeNull();
         lastFilter!.SearchQuery.Should().BeNull();
     }
@@ -534,5 +534,110 @@ public class AnalyticsViewModelTests
         viewModel.MostGrinded[0].BeatmapSetId.Should().Be(1001);
         viewModel.MostGrinded[0].TotalAttempts.Should().Be(700);
         viewModel.MostGrinded[0].CumulativeHours.Should().Be(5.5);
+    }
+
+    [AvaloniaFact]
+    public async Task SearchText_RapidKeystrokes_DebouncesAndDispatchesOnlyFinalQuery()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        PlayQueryFilter? capturedFilter = null;
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .Returns<PlayQueryFilter, CancellationToken>(async (filter, ct) =>
+            {
+                capturedFilter = filter;
+                await Task.Delay(10, ct);
+                return new PagedResult<PlayRecord>(
+                    new List<PlayRecord>(),
+                    0,
+                    1,
+                    50,
+                    new PlayFilterSummary(0, 0m, 0m, 0, 0, 0, 0)
+                );
+            });
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SearchText = "f";
+        await Task.Delay(50);
+        viewModel.SearchText = "fr";
+        await Task.Delay(50);
+        viewModel.SearchText = "free";
+        await Task.Delay(50);
+        viewModel.SearchText = "freedom";
+
+        await Task.Delay(450);
+
+        queryEngine.Verify(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()), Times.Once());
+        capturedFilter.Should().NotBeNull();
+        capturedFilter!.SearchText.Should().Be("freedom");
+    }
+
+    [AvaloniaFact]
+    public async Task SearchText_WhenViewModelDisposedOrCancelled_AbortsInFlightSearch()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        var queryExecuted = false;
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .Returns<PlayQueryFilter, CancellationToken>(async (filter, ct) =>
+            {
+                await Task.Delay(50, ct);
+                queryExecuted = true;
+                return new PagedResult<PlayRecord>(
+                    new List<PlayRecord>(),
+                    0,
+                    1,
+                    50,
+                    new PlayFilterSummary(0, 0m, 0m, 0, 0, 0, 0)
+                );
+            });
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SearchText = "test";
+        await Task.Delay(20);
+        viewModel.Dispose();
+        await Task.Delay(350);
+
+        queryExecuted.Should().BeFalse();
+        queryEngine.Verify(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [AvaloniaFact]
+    public async Task SearchText_WhenUpdatedWithinDebounceWindow_CancelsPreviousSearch()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        var queriedFilters = new List<PlayQueryFilter>();
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .Returns<PlayQueryFilter, CancellationToken>(async (filter, ct) =>
+            {
+                queriedFilters.Add(filter);
+                await Task.Delay(10, ct);
+                return new PagedResult<PlayRecord>(
+                    new List<PlayRecord>(),
+                    0,
+                    1,
+                    50,
+                    new PlayFilterSummary(0, 0m, 0m, 0, 0, 0, 0)
+                );
+            });
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SearchText = "initial";
+        await Task.Delay(50);
+        viewModel.SearchText = "updated";
+        await Task.Delay(450);
+
+        queriedFilters.Should().ContainSingle();
+        queriedFilters[0].SearchText.Should().Be("updated");
     }
 }

@@ -86,6 +86,7 @@ namespace Circle_Tracker.Storage.Querying
         public string? DetectedClient { get; init; }
 
         public string? SearchQuery { get; init; }
+        public string? SearchText => SearchQuery;
 
         public PlaySortField SortBy { get; init; } = PlaySortField.Timestamp;
         public SortOrder Order { get; init; } = SortOrder.Descending;

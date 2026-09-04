@@ -1,3 +1,5 @@
+using System;
+
 namespace Circle_Tracker.Analytics
 {
     public record RollingPeriodStats(
@@ -13,7 +15,17 @@ namespace Circle_Tracker.Analytics
         bool HasSufficientData = true,
         string DateRangeText = "",
         int HistoryDaysAvailable = 0
-    );
+    )
+    {
+        public int Days => PeriodDays;
+        public double AvgStars => (double)MeanStars;
+        public double WeightedAccuracy => (double)MeanAccuracy;
+        public double DailyPlayCount => PlaysPerActiveDay;
+        public double DailyActiveHours => HoursPerActiveDay;
+        public double AvgBpm => MeanBpm;
+        public int DaysRemaining => Math.Max(0, PeriodDays - HistoryDaysAvailable);
+        public double ProgressPercent => PeriodDays > 0 ? Math.Min(100.0, Math.Round(100.0 * HistoryDaysAvailable / PeriodDays, 1)) : 0.0;
+    }
 
     public record ChokeMapRecord(
         int BeatmapId, int BeatmapSetId, string BeatmapString,
