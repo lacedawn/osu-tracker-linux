@@ -10,16 +10,20 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using Circle_Tracker.Analytics;
 using Circle_Tracker.Storage.Querying;
+using Microsoft.Extensions.Logging;
 
 namespace Circle_Tracker.ViewModels;
 
 public class AnalyticsViewModel : INotifyPropertyChanged
 {
+    private static readonly ILogger<AnalyticsViewModel> _log = AppLogger.For<AnalyticsViewModel>();
+
     private readonly ISkillAnalyticsService _skillService;
     private readonly ISessionAnalyticsService _sessionService;
     private readonly IPlayQueryEngine _queryEngine;
     
     private int _selectedTabIndex = -1;
+    private HeadToHeadComparison? _sessionBaseline;
 
     private async Task InvokeOnUIThread(Action action)
     {
@@ -96,6 +100,12 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     public AimSpeedBias? AimSpeedBias => _aimSpeedBias;
     public ObservableCollection<OdPrecisionTier> OdPrecisionTiers => _odPrecisionTiers;
     public ObservableCollection<BpmSpeedBracket> BpmSpeedBrackets => _bpmSpeedBrackets;
+
+    public HeadToHeadComparison? SessionBaseline
+    {
+        get => _sessionBaseline;
+        set { _sessionBaseline = value; OnPropertyChanged(); }
+    }
     
     public RollingPeriodMetrics? Rolling7Day { get => _rolling7Day; set { _rolling7Day = value; OnPropertyChanged(); } }
     public RollingPeriodMetrics? Rolling30Day { get => _rolling30Day; set { _rolling30Day = value; OnPropertyChanged(); } }
@@ -249,7 +259,24 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
     private async Task LoadSessionDynamicsAsync(CancellationToken ct)
     {
-        await Task.CompletedTask;
+        try
+        {
+            var recent = await _queryEngine.QueryPlaysAsync(new PlayQueryFilter { PageSize = 1 }, ct);
+            string? latestSession = recent?.Items?.FirstOrDefault()?.SessionId;
+            if (!string.IsNullOrEmpty(latestSession))
+            {
+                var comparison = await Task.Run(() => _sessionService.CompareSessionToBaselineAsync(latestSession, ct), ct);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    SessionBaseline = comparison;
+                }, DispatcherPriority.Background);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to load session dynamics baseline comparison");
+        }
     }
 
     private async Task LoadTrendsAsync(CancellationToken ct)
@@ -268,7 +295,10 @@ public class AnalyticsViewModel : INotifyPropertyChanged
                     DailyPlayCount = metrics7.PlaysPerActiveDay,
                     DailyActiveHours = metrics7.HoursPerActiveDay,
                     PassRatePercent = metrics7.PassRatePercent,
-                    AvgBpm = metrics7.MeanBpm
+                    AvgBpm = metrics7.MeanBpm,
+                    HasSufficientData = metrics7.HasSufficientData,
+                    DateRangeText = metrics7.DateRangeText,
+                    HistoryDaysAvailable = metrics7.HistoryDaysAvailable
                 };
             }
 
@@ -282,7 +312,10 @@ public class AnalyticsViewModel : INotifyPropertyChanged
                     DailyPlayCount = metrics30.PlaysPerActiveDay,
                     DailyActiveHours = metrics30.HoursPerActiveDay,
                     PassRatePercent = metrics30.PassRatePercent,
-                    AvgBpm = metrics30.MeanBpm
+                    AvgBpm = metrics30.MeanBpm,
+                    HasSufficientData = metrics30.HasSufficientData,
+                    DateRangeText = metrics30.DateRangeText,
+                    HistoryDaysAvailable = metrics30.HistoryDaysAvailable
                 };
             }
 
@@ -296,7 +329,10 @@ public class AnalyticsViewModel : INotifyPropertyChanged
                     DailyPlayCount = metrics90.PlaysPerActiveDay,
                     DailyActiveHours = metrics90.HoursPerActiveDay,
                     PassRatePercent = metrics90.PassRatePercent,
-                    AvgBpm = metrics90.MeanBpm
+                    AvgBpm = metrics90.MeanBpm,
+                    HasSufficientData = metrics90.HasSufficientData,
+                    DateRangeText = metrics90.DateRangeText,
+                    HistoryDaysAvailable = metrics90.HistoryDaysAvailable
                 };
             }
         }, DispatcherPriority.Background);
@@ -451,6 +487,9 @@ public class RollingPeriodMetrics
     public double DailyActiveHours { get; set; }
     public double PassRatePercent { get; set; }
     public double AvgBpm { get; set; }
+    public bool HasSufficientData { get; set; } = true;
+    public string DateRangeText { get; set; } = "";
+    public int HistoryDaysAvailable { get; set; }
 }
 
 public class ChokeCard

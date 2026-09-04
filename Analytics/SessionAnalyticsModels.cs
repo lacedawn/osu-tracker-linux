@@ -9,7 +9,10 @@ namespace Circle_Tracker.Analytics
         double PassRatePercent,
         double MeanBpm,
         double PlaysPerActiveDay,
-        double HoursPerActiveDay
+        double HoursPerActiveDay,
+        bool HasSufficientData = true,
+        string DateRangeText = "",
+        int HistoryDaysAvailable = 0
     );
 
     public record ChokeMapRecord(

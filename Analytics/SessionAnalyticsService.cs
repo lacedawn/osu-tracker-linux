@@ -74,10 +74,25 @@ namespace Circle_Tracker.Analytics
                 int Plays90, int ActiveDays90, int Time90, long Hits90, double WAcc90, double? AvgAcc90, double? AvgStars90, int Passes90, double? AvgBpm90
             )>(sql, new { d7, d30, d90 });
 
+            const string spanSql = "SELECT MIN(timestamp) FROM plays;";
+            var earliestStr = await conn.ExecuteScalarAsync<string?>(spanSql);
+            double totalHistoryDays = 0;
+            if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var earliestDate))
+            {
+                totalHistoryDays = Math.Max(0, (now - earliestDate).TotalDays);
+            }
+            else if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, out var earliestFallback))
+            {
+                totalHistoryDays = Math.Max(0, (now - earliestFallback).TotalDays);
+            }
+
             var result = new Dictionary<string, RollingPeriodStats>();
 
             RollingPeriodStats ComputeStats(int days, int totalPlays, int activeDays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
             {
+                DateTime startDate = now.AddDays(-days);
+                string dateRangeStr = $"{startDate:MMM dd, yyyy} – {now:MMM dd, yyyy}";
+                bool sufficient = days == 7 ? totalPlays > 0 : totalHistoryDays >= days;
                 double totalActiveHours = playTimeSec / 3600.0;
                 decimal meanAcc = 0.0m;
                 if (totalHits > 0)
@@ -106,7 +121,10 @@ namespace Circle_Tracker.Analytics
                     PassRatePercent: Math.Round(passRate, 2),
                     MeanBpm: Math.Round(meanBpm, 1),
                     PlaysPerActiveDay: Math.Round(playsPerDay, 1),
-                    HoursPerActiveDay: Math.Round(hoursPerDay, 2)
+                    HoursPerActiveDay: Math.Round(hoursPerDay, 2),
+                    HasSufficientData: sufficient,
+                    DateRangeText: dateRangeStr,
+                    HistoryDaysAvailable: (int)Math.Floor(totalHistoryDays)
                 );
             }
 
