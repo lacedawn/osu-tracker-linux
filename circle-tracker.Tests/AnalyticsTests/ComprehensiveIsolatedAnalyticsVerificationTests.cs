@@ -251,7 +251,7 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
                 Math.Abs(stats.PassRatePercent - expectedPassRate).Should().BeLessThanOrEqualTo(0.5, $"Pass rate mismatch for period {key}");
             }
 
-            bool expectedSufficient = periodDays == 7 ? windowPlays.Count > 0 : historyDays >= periodDays;
+            bool expectedSufficient = historyDays >= periodDays;
             stats.HasSufficientData.Should().Be(expectedSufficient, $"Sufficiency flag mismatch for period {key}");
         }
     }

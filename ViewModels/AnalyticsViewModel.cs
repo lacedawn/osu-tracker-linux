@@ -677,6 +677,8 @@ public class RollingPeriodMetrics
     public bool HasSufficientData { get; set; } = true;
     public string DateRangeText { get; set; } = "";
     public int HistoryDaysAvailable { get; set; }
+    public int DaysRemaining => Math.Max(0, Days - HistoryDaysAvailable);
+    public double ProgressPercent => Days > 0 ? Math.Min(100.0, Math.Round(100.0 * HistoryDaysAvailable / Days, 1)) : 0.0;
 }
 
 public class ChokeCard

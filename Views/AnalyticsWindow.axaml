@@ -254,8 +254,15 @@
                             <StackPanel Spacing="8">
                               <TextBlock Text="7-DAY ROLLING" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="12"/>
                               <TextBlock Text="{Binding Rolling7Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-                              
-                              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                              <StackPanel IsVisible="{Binding !Rolling7Day.HasSufficientData}" Spacing="8" Margin="0,12,0,0">
+                                <StackPanel Spacing="3">
+                                  <TextBlock Text="Building Baseline" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="12"/>
+                                  <TextBlock Text="{Binding Rolling7Day.DaysRemaining, StringFormat={}Unlocks in {0} days when history reaches 7 days.}" Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ProgressBar Value="{Binding Rolling7Day.ProgressPercent}" Minimum="0" Maximum="100" Height="4" Foreground="{StaticResource AccentPurple}" Background="#252038"/>
+                                <TextBlock Text="{Binding Rolling7Day.ProgressPercent, StringFormat={}{0:F0}% collected}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                              </StackPanel>
+                              <Grid IsVisible="{Binding Rolling7Day.HasSufficientData}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
                                   <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars (Passes)</TextBlock>
                                   <TextBlock Text="{Binding Rolling7Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="18"/>
@@ -287,10 +294,13 @@
                             <StackPanel Spacing="8">
                               <TextBlock Text="30-DAY ROLLING" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
                               <TextBlock Text="{Binding Rolling30Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-                              <StackPanel IsVisible="{Binding !Rolling30Day.HasSufficientData}" Spacing="6" Margin="0,12,0,0">
-                                <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
-                                <TextBlock Text="Requires at least 30 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding Rolling30Day.HistoryDaysAvailable, StringFormat={}Current database covers {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                              <StackPanel IsVisible="{Binding !Rolling30Day.HasSufficientData}" Spacing="8" Margin="0,12,0,0">
+                                <StackPanel Spacing="3">
+                                  <TextBlock Text="Building Baseline" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
+                                  <TextBlock Text="{Binding Rolling30Day.DaysRemaining, StringFormat={}Unlocks in {0} days when history reaches 30 days.}" Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ProgressBar Value="{Binding Rolling30Day.ProgressPercent}" Minimum="0" Maximum="100" Height="4" Foreground="{StaticResource AccentCyan}" Background="#252038"/>
+                                <TextBlock Text="{Binding Rolling30Day.ProgressPercent, StringFormat={}{0:F0}% collected}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
                               </StackPanel>
                               <Grid IsVisible="{Binding Rolling30Day.HasSufficientData}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
@@ -324,10 +334,13 @@
                             <StackPanel Spacing="8">
                               <TextBlock Text="90-DAY ROLLING" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
                               <TextBlock Text="{Binding Rolling90Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-                              <StackPanel IsVisible="{Binding !Rolling90Day.HasSufficientData}" Spacing="6" Margin="0,12,0,0">
-                                <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
-                                <TextBlock Text="Requires at least 90 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding Rolling90Day.HistoryDaysAvailable, StringFormat={}Current database covers {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                              <StackPanel IsVisible="{Binding !Rolling90Day.HasSufficientData}" Spacing="8" Margin="0,12,0,0">
+                                <StackPanel Spacing="3">
+                                  <TextBlock Text="Building Baseline" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
+                                  <TextBlock Text="{Binding Rolling90Day.DaysRemaining, StringFormat={}Unlocks in {0} days when history reaches 90 days.}" Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ProgressBar Value="{Binding Rolling90Day.ProgressPercent}" Minimum="0" Maximum="100" Height="4" Foreground="{StaticResource AccentGreen}" Background="#252038"/>
+                                <TextBlock Text="{Binding Rolling90Day.ProgressPercent, StringFormat={}{0:F0}% collected}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
                               </StackPanel>
                               <Grid IsVisible="{Binding Rolling90Day.HasSufficientData}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">

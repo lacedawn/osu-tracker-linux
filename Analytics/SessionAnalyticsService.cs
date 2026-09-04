@@ -94,9 +94,20 @@ namespace Circle_Tracker.Analytics
             RollingPeriodStats ComputeStats(int days, int totalPlays, int activeDays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
             {
                 DateTime windowStart = now.AddDays(-days);
-                bool sufficient = days == 7 ? totalPlays > 0 : totalHistoryDays >= days;
-                DateTime displayStart = (windowStart < earliestDate) ? earliestDate : windowStart;
-                string dateRangeStr = $"{displayStart:MMM dd, yyyy} – {now:MMM dd, yyyy}";
+                bool sufficient = totalHistoryDays >= days;
+                int historyDays = (int)Math.Floor(totalHistoryDays);
+                string dateRangeStr;
+                if (sufficient)
+                {
+                    DateTime displayStart = (windowStart < earliestDate) ? earliestDate : windowStart;
+                    dateRangeStr = $"{displayStart:MMM dd, yyyy} – {now:MMM dd, yyyy}";
+                }
+                else
+                {
+                    dateRangeStr = totalHistoryDays > 0 && earliestDate < now
+                        ? $"Tracking since {earliestDate:MMM dd, yyyy} ({historyDays}/{days} days)"
+                        : $"Collecting data (0/{days} days)";
+                }
                 double totalActiveHours = playTimeSec / 3600.0;
                 decimal meanAcc = 0.0m;
                 if (totalHits > 0)
