@@ -253,6 +253,8 @@ namespace CircleTracker.Tests.AnalyticsTests
             var (db, _, analytics, _) = await CreateTestEnvironmentAsync();
             DateTime now = DateTime.UtcNow;
 
+            DateTime baseDate = now.Date.AddDays(-1).AddHours(12);
+
             await using (var conn = await db.CreateConnectionAsync())
             {
                 await conn.ExecuteAsync(@"
@@ -263,8 +265,8 @@ namespace CircleTracker.Tests.AnalyticsTests
                     VALUES (NULL, @t2, 2, 2, 'Song 2', 'Title', 'Artist', 'Diff', 0, '', 180, 6.0, 3.0, 3.0, 4.0, 9.0, 8.0, 6.0, 100, 90, 10, 0, 0, 90.0, 1, 0, 60, 1, 0, 0, 'osu!stable');",
                     new
                     {
-                        t1 = now.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        t2 = now.AddDays(-1).AddMinutes(10).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                        t1 = baseDate.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                        t2 = baseDate.AddMinutes(10).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                     });
             }
 
