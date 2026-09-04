@@ -238,10 +238,11 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
                 double expectedPlaysPerDay = expectedActiveDays > 0 ? Math.Round((double)windowPlays.Count / expectedActiveDays, 1) : 0.0;
                 Math.Abs(stats.PlaysPerActiveDay - expectedPlaysPerDay).Should().BeLessThanOrEqualTo(0.5, $"Plays/day mismatch for period {key}");
 
-                long totalHits = windowPlays.Sum(p => (long)p.total_hits);
-                if (totalHits > 0)
+                var passPlays = windowPlays.Where(p => p.is_complete == 1).ToList();
+                long totalPassHits = passPlays.Sum(p => (long)p.total_hits);
+                if (totalPassHits > 0)
                 {
-                    decimal expectedWeightedAcc = Math.Round((decimal)(windowPlays.Sum(p => p.accuracy * p.total_hits) / totalHits), 2);
+                    decimal expectedWeightedAcc = Math.Round((decimal)(passPlays.Sum(p => p.accuracy * p.total_hits) / totalPassHits), 2);
                     Math.Abs(stats.MeanAccuracy - expectedWeightedAcc).Should().BeLessThanOrEqualTo(0.5m, $"Weighted accuracy mismatch for period {key}");
                 }
 
@@ -309,27 +310,35 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
         comparison.SessionPlays.Should().Be(sessionPlays.Count);
         if (sessionPlays.Count > 0)
         {
-            decimal expectedAcc = Math.Round((decimal)sessionPlays.Average(p => p.accuracy), 2);
-            decimal expectedStars = Math.Round((decimal)sessionPlays.Average(p => p.stars), 2);
+            var passedSessionPlays = sessionPlays.Where(p => p.is_complete == 1).ToList();
+            if (passedSessionPlays.Count > 0)
+            {
+                decimal expectedAcc = Math.Round((decimal)passedSessionPlays.Average(p => p.accuracy), 2);
+                decimal expectedStars = Math.Round((decimal)passedSessionPlays.Average(p => p.stars), 2);
+                Math.Abs(comparison.SessionAcc - expectedAcc).Should().BeLessThanOrEqualTo(0.5m);
+                Math.Abs(comparison.SessionStars - expectedStars).Should().BeLessThanOrEqualTo(0.5m);
+            }
             int passes = sessionPlays.Count(p => p.is_complete == 1);
             double expectedPassRate = Math.Round(100.0 * passes / sessionPlays.Count, 2);
             double expectedMinutes = Math.Round(sessionPlays.Sum(p => p.play_time_seconds) / 60.0, 1);
 
-            Math.Abs(comparison.SessionAcc - expectedAcc).Should().BeLessThanOrEqualTo(0.5m);
-            Math.Abs(comparison.SessionStars - expectedStars).Should().BeLessThanOrEqualTo(0.5m);
             Math.Abs(comparison.SessionPassRate - expectedPassRate).Should().BeLessThanOrEqualTo(0.5);
             Math.Abs(comparison.SessionActiveMinutes - expectedMinutes).Should().BeLessThanOrEqualTo(0.5);
         }
 
         if (baselinePlays.Count > 0)
         {
-            decimal expectedBaseAcc = Math.Round((decimal)baselinePlays.Average(p => p.accuracy), 2);
-            decimal expectedBaseStars = Math.Round((decimal)baselinePlays.Average(p => p.stars), 2);
+            var passedBaselinePlays = baselinePlays.Where(p => p.is_complete == 1).ToList();
+            if (passedBaselinePlays.Count > 0)
+            {
+                decimal expectedBaseAcc = Math.Round((decimal)passedBaselinePlays.Average(p => p.accuracy), 2);
+                decimal expectedBaseStars = Math.Round((decimal)passedBaselinePlays.Average(p => p.stars), 2);
+                Math.Abs(comparison.Baseline30DAcc - expectedBaseAcc).Should().BeLessThanOrEqualTo(0.5m);
+                Math.Abs(comparison.Baseline30DStars - expectedBaseStars).Should().BeLessThanOrEqualTo(0.5m);
+            }
             int basePasses = baselinePlays.Count(p => p.is_complete == 1);
             double expectedBasePassRate = Math.Round(100.0 * basePasses / baselinePlays.Count, 2);
 
-            Math.Abs(comparison.Baseline30DAcc - expectedBaseAcc).Should().BeLessThanOrEqualTo(0.5m);
-            Math.Abs(comparison.Baseline30DStars - expectedBaseStars).Should().BeLessThanOrEqualTo(0.5m);
             Math.Abs(comparison.Baseline30DPassRate - expectedBasePassRate).Should().BeLessThanOrEqualTo(0.5);
 
             Math.Abs(comparison.DeltaAcc - (comparison.SessionAcc - comparison.Baseline30DAcc)).Should().BeLessThanOrEqualTo(0.01m);
@@ -353,6 +362,10 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
         var directChokes = await _sessionService.GetTopChokeMapsAsync(10);
         var cachedChokes = await _cachedAnalytics.GetTopChokeMapsAsync(10);
         cachedChokes.Should().BeEquivalentTo(directChokes);
+
+        var directDaily = await _sessionService.GetDailyActivityLogAsync(14);
+        var cachedDaily = await _cachedAnalytics.GetDailyActivityLogAsync(14);
+        cachedDaily.Should().BeEquivalentTo(directDaily);
     }
 
     [Fact]

@@ -9,5 +9,6 @@ namespace Circle_Tracker.Analytics
         Task<Dictionary<string, RollingPeriodStats>> GetRollingAveragesAsync(CancellationToken ct = default);
         Task<IReadOnlyList<ChokeMapRecord>> GetTopChokeMapsAsync(int limit = 10, CancellationToken ct = default);
         Task<HeadToHeadComparison> CompareSessionToBaselineAsync(string sessionId, CancellationToken ct = default);
+        Task<IReadOnlyList<DailyTrendItem>> GetDailyActivityLogAsync(int days = 14, CancellationToken ct = default);
     }
 }

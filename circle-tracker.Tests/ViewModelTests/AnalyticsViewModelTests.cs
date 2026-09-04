@@ -439,4 +439,68 @@ public class AnalyticsViewModelTests
             It.IsAny<PlayQueryFilter>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [AvaloniaFact]
+    public async Task SessionDynamics_PopulatesSessionPlaysAndPace()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        var samplePlay = new PlayRecord(1, "test_session", DateTime.UtcNow, 100, 200, "hash", "Title [Hard]", "Title", "Artist", "Hard", 0, "", 180, 5.0m, 2.5m, 2.5m, 4m, 9m, 8m, 6m, 100, 95, 5, 0, 0, 98.5m, true, true, 120, 1, 0, false, "osu!stable");
+
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.Is<PlayQueryFilter>(f => f.PageSize == 1), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<PlayRecord>(new List<PlayRecord> { samplePlay }, 1, 1, 1, new PlayFilterSummary(1, 98.5m, 5.0m, 120, 100, 1, 100.0)));
+
+        sessionService.Setup(s => s.CompareSessionToBaselineAsync("test_session", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HeadToHeadComparison(98.0m, 96.0m, 2.0m, 5.5m, 5.0m, 0.5m, 90.0, 80.0, 10.0, 10, 30.0));
+
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.Is<PlayQueryFilter>(f => f.SessionId == "test_session"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<PlayRecord>(new List<PlayRecord> { samplePlay }, 1, 1, 500, new PlayFilterSummary(1, 98.5m, 5.0m, 120, 100, 1, 100.0)));
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SelectedTabIndex = 1;
+        await Task.Delay(200);
+
+        viewModel.SessionBaseline.Should().NotBeNull();
+        viewModel.SessionBaseline!.SessionPlays.Should().Be(10);
+        viewModel.SessionPlays.Should().HaveCount(1);
+        viewModel.SessionPlaysPerHour.Should().Be(20.0);
+    }
+
+    [AvaloniaFact]
+    public async Task Trends_PopulatesDailyTrendsLog()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        var dailyItems = new List<DailyTrendItem>
+        {
+            new("2026-09-04", 10, 8, 80.0, 98.5m, 5.2m, 25.0),
+            new("2026-09-03", 5, 4, 80.0, 97.0m, 5.0m, 15.0)
+        };
+
+        sessionService.Setup(s => s.GetDailyActivityLogAsync(14, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(dailyItems);
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["7D"] = new(7, 10, 0.5, 98m, 5m, 80, 180, 5, 0.5, true, "Sep 01 – Sep 04", 10),
+                ["30D"] = new(30, 20, 1.0, 97m, 5m, 75, 180, 5, 0.5, true, "Aug 24 – Sep 04", 11),
+                ["90D"] = new(90, 20, 1.0, 97m, 5m, 75, 180, 5, 0.5, false, "Aug 24 – Sep 04", 11)
+            });
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        viewModel.SelectedTabIndex = 2;
+        await Task.Delay(200);
+
+        viewModel.DailyTrends.Should().HaveCount(2);
+        viewModel.DailyTrends[0].DateString.Should().Be("2026-09-04");
+        viewModel.DailyTrends[0].Passes.Should().Be(8);
+        viewModel.DailyTrends[0].PassRatePercent.Should().Be(80.0);
+    }
 }

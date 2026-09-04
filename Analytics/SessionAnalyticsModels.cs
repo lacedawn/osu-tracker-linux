@@ -27,4 +27,14 @@ namespace Circle_Tracker.Analytics
         double SessionPassRate, double Baseline30DPassRate, double DeltaPassRate,
         int SessionPlays, double SessionActiveMinutes
     );
+
+    public record DailyTrendItem(
+        string DateString,
+        int TotalAttempts,
+        int Passes,
+        double PassRatePercent,
+        decimal AvgAccuracy,
+        decimal AvgStars,
+        double ActiveMinutes
+    );
 }

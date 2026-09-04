@@ -158,80 +158,86 @@
                 <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}">
                   <ContentControl.ContentTemplate>
                     <DataTemplate>
-                      <Grid Margin="20" ColumnDefinitions="1.2*,1*">
-                        <!-- Column 0: Session vs Baseline Card -->
-                        <Border Grid.Column="0" Margin="0,0,10,0" Classes="hud-card">
+                      <Grid Margin="20" RowDefinitions="Auto,*" ColumnDefinitions="*">
+                        <Border Grid.Row="0" Classes="hud-card" Margin="0,0,0,16">
                           <StackPanel Spacing="16">
-                            <TextBlock Text="SESSION vs 30-DAY BASELINE COMPARISON" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
+                            <TextBlock Text="CURRENT SESSION vs 30-DAY BASELINE OVERVIEW" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
                             
-                            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto" Margin="0,8,0,0">
-                              <!-- Accuracy -->
+                            <Grid ColumnDefinitions="*,*,*,*,*" Margin="0,4,0,0">
                               <StackPanel Grid.Column="0" Spacing="4">
                                 <TextBlock Text="ACCURACY" Classes="stat-label"/>
-                                <TextBlock Text="{Binding SessionBaseline.SessionAcc, StringFormat={}{0:F2}%}" Classes="hero-number" FontSize="20"/>
+                                <TextBlock Text="{Binding SessionBaseline.SessionAcc, StringFormat={}{0:F2}%}" Classes="hero-number" FontSize="22"/>
                                 <TextBlock Text="{Binding SessionBaseline.Baseline30DAcc, StringFormat={}30D: {0:F2}%}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
                                 <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Margin="0,4,0,0"
                                         Background="{Binding SessionBaseline.DeltaAcc, Converter={StaticResource DeltaToColorConverter}}">
                                   <TextBlock Text="{Binding SessionBaseline.DeltaAcc, StringFormat={}{0:+0.00;-0.00}%}" Foreground="White" FontSize="11" FontWeight="Bold"/>
                                 </Border>
                               </StackPanel>
-                              <!-- Star Rating -->
                               <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Text="DIFFICULTY" Classes="stat-label"/>
-                                <TextBlock Text="{Binding SessionBaseline.SessionStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
+                                <TextBlock Text="{Binding SessionBaseline.SessionStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="22"/>
                                 <TextBlock Text="{Binding SessionBaseline.Baseline30DStars, StringFormat={}30D: {0:F2}★}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
                                 <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Margin="0,4,0,0"
                                         Background="{Binding SessionBaseline.DeltaStars, Converter={StaticResource DeltaToColorConverter}}">
                                   <TextBlock Text="{Binding SessionBaseline.DeltaStars, StringFormat={}{0:+0.00;-0.00}★}" Foreground="White" FontSize="11" FontWeight="Bold"/>
                                 </Border>
                               </StackPanel>
-                              <!-- Pass Rate -->
                               <StackPanel Grid.Column="2" Spacing="4">
                                 <TextBlock Text="PASS RATE" Classes="stat-label"/>
-                                <TextBlock Text="{Binding SessionBaseline.SessionPassRate, StringFormat={}{0:F1}%}" Classes="hero-number" FontSize="20"/>
+                                <TextBlock Text="{Binding SessionBaseline.SessionPassRate, StringFormat={}{0:F1}%}" Classes="hero-number" FontSize="22"/>
                                 <TextBlock Text="{Binding SessionBaseline.Baseline30DPassRate, StringFormat={}30D: {0:F1}%}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
                                 <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Margin="0,4,0,0"
                                         Background="{Binding SessionBaseline.DeltaPassRate, Converter={StaticResource DeltaToColorConverter}}">
                                   <TextBlock Text="{Binding SessionBaseline.DeltaPassRate, StringFormat={}{0:+0.0;-0.0}%}" Foreground="White" FontSize="11" FontWeight="Bold"/>
                                 </Border>
                               </StackPanel>
-                            </Grid>
-                            <Separator Background="#2e2744" Height="1" Margin="0,8"/>
-                            <Grid ColumnDefinitions="*,*">
-                              <StackPanel Grid.Column="0">
-                                <TextBlock Text="Total Session Plays" Foreground="{StaticResource TextMuted}" FontSize="11"/>
-                                <TextBlock Text="{Binding SessionBaseline.SessionPlays, StringFormat={}{0} maps}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="14"/>
+                              <StackPanel Grid.Column="3" Spacing="4">
+                                <TextBlock Text="MAPS PLAYED" Classes="stat-label"/>
+                                <TextBlock Text="{Binding SessionBaseline.SessionPlays}" Classes="hero-number" FontSize="22"/>
+                                <TextBlock Text="{Binding SessionPlaysPerHour, StringFormat={}{0:F0} maps/hr pace}" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="SemiBold"/>
                               </StackPanel>
-                              <StackPanel Grid.Column="1">
-                                <TextBlock Text="Active Play Time" Foreground="{StaticResource TextMuted}" FontSize="11"/>
-                                <TextBlock Text="{Binding SessionBaseline.SessionActiveMinutes, StringFormat={}{0:F1} min}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="14"/>
+                              <StackPanel Grid.Column="4" Spacing="4">
+                                <TextBlock Text="ACTIVE PLAY TIME" Classes="stat-label"/>
+                                <TextBlock Text="{Binding SessionBaseline.SessionActiveMinutes, StringFormat={}{0:F1}m}" Classes="hero-number" FontSize="22"/>
+                                <TextBlock Text="Excludes menus &amp; pauses" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                               </StackPanel>
                             </Grid>
                           </StackPanel>
                         </Border>
-                        <!-- Column 1: Microcopy / Metric Guide Card -->
-                        <Border Grid.Column="1" Margin="10,0,0,0" Classes="hud-card">
+                        <Border Grid.Row="1" Classes="hud-card">
                           <StackPanel Spacing="12">
-                            <TextBlock Text="METRIC EXPLANATIONS &amp; GUIDE" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
-                            
-                            <Border Background="#252038" CornerRadius="6" Padding="10">
-                              <StackPanel Spacing="3">
-                                <TextBlock Text="Baseline Deltas (Δ)" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
-                                <TextBlock Text="Direct comparison between your current session and your historical 30-day average. Green indicates performance above your standard baseline." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                              </StackPanel>
-                            </Border>
-                            <Border Background="#252038" CornerRadius="6" Padding="10">
-                              <StackPanel Spacing="3">
-                                <TextBlock Text="Star Difficulty (★)" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
-                                <TextBlock Text="Reflects the mechanical density and spacing of beatmaps played. An upward delta indicates limit-pushing, while a negative delta indicates speed/consistency farming." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                              </StackPanel>
-                            </Border>
-                            <Border Background="#252038" CornerRadius="6" Padding="10">
-                              <StackPanel Spacing="3">
-                                <TextBlock Text="Pass Rate (%)" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
-                                <TextBlock Text="Ratio of completed beatmaps to total attempts. Lower pass rates indicate aggressive restart habits or difficult choke-hazard maps." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                              </StackPanel>
-                            </Border>
+                            <Grid ColumnDefinitions="Auto,*">
+                              <TextBlock Grid.Column="0" Text="MAPS PLAYED THIS SESSION" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="13"/>
+                              <TextBlock Grid.Column="1" Text="{Binding SessionPlays.Count, StringFormat={}({0} logged attempts)}" Foreground="{StaticResource TextMuted}" FontSize="11" Margin="8,2,0,0"/>
+                            </Grid>
+                            <ScrollViewer MaxHeight="450" VerticalScrollBarVisibility="Auto">
+                              <ItemsControl ItemsSource="{Binding SessionPlays}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Border Background="#252038" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
+                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                        <Border Grid.Column="0" CornerRadius="4" Padding="6,2" Margin="0,0,10,0" VerticalAlignment="Center"
+                                                Background="{Binding IsComplete, Converter={StaticResource PassFailBackgroundConverter}}">
+                                          <TextBlock Text="{Binding IsComplete, Converter={StaticResource PassFailTextConverter}}"
+                                                     Foreground="{Binding IsComplete, Converter={StaticResource PassFailForegroundConverter}}"
+                                                     FontSize="9" FontWeight="Bold"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                          <TextBlock Text="{Binding BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                          <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding ModsString}" Foreground="{StaticResource AccentPink}" FontSize="9" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding Stars, StringFormat={}★ {0:F2}}" Foreground="{StaticResource AccentGold}" FontSize="9" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding TotalHits, StringFormat={}{0} hits}" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+                                          </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Accuracy, StringFormat={}{0:F2}%}" Foreground="{StaticResource AccentCyan}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding TimestampUtc, StringFormat={}{0:t}}" Foreground="{StaticResource TextMuted}" FontSize="10" VerticalAlignment="Center"/>
+                                      </Grid>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </ScrollViewer>
                           </StackPanel>
                         </Border>
                       </Grid>
@@ -242,115 +248,153 @@
                 <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}">
                   <ContentControl.ContentTemplate>
                     <DataTemplate>
-                      <Grid Margin="20" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*,*">
-                        <Border Grid.Row="0" Grid.Column="0" Margin="0,0,8,8" Classes="hud-card">
-                          <StackPanel Spacing="8">
-                            <TextBlock Text="7-DAY ROLLING" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="12"/>
-                            <TextBlock Text="{Binding Rolling7Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
+                      <Grid Margin="20" RowDefinitions="Auto,*" ColumnDefinitions="*">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,*,*" Margin="0,0,0,16">
+                          <Border Grid.Column="0" Margin="0,0,8,0" Classes="hud-card">
+                            <StackPanel Spacing="8">
+                              <TextBlock Text="7-DAY ROLLING" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="12"/>
+                              <TextBlock Text="{Binding Rolling7Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                              
+                              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars (Passes)</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="18"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="18" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Attempts/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="0">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                                  <TextBlock Text="{Binding Rolling7Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                              </Grid>
                             </StackPanel>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                          </Border>
+                          <Border Grid.Column="1" Margin="4,0,4,0" Classes="hud-card">
+                            <StackPanel Spacing="8">
+                              <TextBlock Text="30-DAY ROLLING" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
+                              <TextBlock Text="{Binding Rolling30Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                              <StackPanel IsVisible="{Binding !Rolling30Day.HasSufficientData}" Spacing="6" Margin="0,12,0,0">
+                                <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
+                                <TextBlock Text="Requires at least 30 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Rolling30Day.HistoryDaysAvailable, StringFormat={}Current database covers {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                              </StackPanel>
+                              <Grid IsVisible="{Binding Rolling30Day.HasSufficientData}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars (Passes)</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="18"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="18" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Attempts/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="0">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                                  <TextBlock Text="{Binding Rolling30Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                              </Grid>
                             </StackPanel>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
+                          </Border>
+                          <Border Grid.Column="2" Margin="8,0,0,0" Classes="hud-card">
+                            <StackPanel Spacing="8">
+                              <TextBlock Text="90-DAY ROLLING" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
+                              <TextBlock Text="{Binding Rolling90Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                              <StackPanel IsVisible="{Binding !Rolling90Day.HasSufficientData}" Spacing="6" Margin="0,12,0,0">
+                                <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
+                                <TextBlock Text="Requires at least 90 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Rolling90Day.HistoryDaysAvailable, StringFormat={}Current database covers {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                              </StackPanel>
+                              <Grid IsVisible="{Binding Rolling90Day.HasSufficientData}" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars (Passes)</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="18"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="18" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Attempts/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="0">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                  <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
+                                  <TextBlock Text="{Binding Rolling90Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="13" FontWeight="SemiBold"/>
+                                </StackPanel>
+                              </Grid>
                             </StackPanel>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
+                          </Border>
+                        </Grid>
+                        <Border Grid.Row="1" Classes="hud-card">
+                          <StackPanel Spacing="10">
+                            <StackPanel Spacing="2">
+                              <TextBlock Text="DAILY ACTIVITY &amp; PERFORMANCE LOG (LAST 14 DAYS)" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
+                              <TextBlock Text="Day-by-day progression: accuracy and stars are computed strictly on completed passes" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                             </StackPanel>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
-                            </StackPanel>
-                            <StackPanel Spacing="4">
-                              <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
-                              <TextBlock Text="{Binding Rolling7Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
-                            </StackPanel>
-                          </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="0" Grid.Column="1" Margin="8,0,8,8" Classes="hud-card">
-                          <StackPanel Spacing="8">
-                            <TextBlock Text="30-DAY ROLLING" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="12"/>
-                            <TextBlock Text="{Binding Rolling30Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-
-                            <StackPanel IsVisible="{Binding Rolling30Day.HasSufficientData}" Spacing="8">
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
-                                <TextBlock Text="{Binding Rolling30Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                            </StackPanel>
-
-                            <StackPanel IsVisible="{Binding !Rolling30Day.HasSufficientData}" Spacing="6" Margin="0,16,0,0">
-                              <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
-                              <TextBlock Text="Requires at least 30 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Rolling30Day.HistoryDaysAvailable, StringFormat={}Current database spans: {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
-                            </StackPanel>
-                          </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="0" Grid.Column="2" Margin="8,0,0,8" Classes="hud-card">
-                          <StackPanel Spacing="8">
-                            <TextBlock Text="90-DAY ROLLING" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="12"/>
-                            <TextBlock Text="{Binding Rolling90Day.DateRangeText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
-
-                            <StackPanel IsVisible="{Binding Rolling90Day.HasSufficientData}" Spacing="8">
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg Stars</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.AvgStars, StringFormat={}{0:F2}★}" Classes="hero-number" FontSize="20"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Weighted Acc</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.WeightedAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Plays/Day</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.DailyPlayCount, StringFormat={}{0:F1}}" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="Bold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Pass Rate</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Hrs/Day</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.DailyActiveHours, StringFormat={}{0:F2}h}" Foreground="{StaticResource TextPrimary}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                              <StackPanel Spacing="4">
-                                <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10">Avg BPM</TextBlock>
-                                <TextBlock Text="{Binding Rolling90Day.AvgBpm, StringFormat={}{0:F0}}" Foreground="{StaticResource AccentPink}" FontSize="14" FontWeight="SemiBold"/>
-                              </StackPanel>
-                            </StackPanel>
-
-                            <StackPanel IsVisible="{Binding !Rolling90Day.HasSufficientData}" Spacing="6" Margin="0,16,0,0">
-                              <TextBlock Text="⚠ Insufficient History" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="12"/>
-                              <TextBlock Text="Requires at least 90 days of recorded play history." Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Rolling90Day.HistoryDaysAvailable, StringFormat={}Current database spans: {0} days}" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
-                            </StackPanel>
+                            <Grid ColumnDefinitions="100,120,90,120,100,*" Margin="0,6,0,2">
+                              <TextBlock Grid.Column="0" Text="DATE" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                              <TextBlock Grid.Column="1" Text="PASSES / ATTEMPTS" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                              <TextBlock Grid.Column="2" Text="PASS RATE" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                              <TextBlock Grid.Column="3" Text="AVG ACC (PASSES)" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                              <TextBlock Grid.Column="4" Text="AVG STARS" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                              <TextBlock Grid.Column="5" Text="ACTIVE TIME" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" TextAlignment="Right"/>
+                            </Grid>
+                            <Separator Background="#2e2744" Height="1" Margin="0,0,0,6"/>
+                            <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                              <ItemsControl ItemsSource="{Binding DailyTrends}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Border Background="#252038" CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                      <Grid ColumnDefinitions="100,120,90,120,100,*">
+                                        <TextBlock Grid.Column="0" Text="{Binding DateString}" Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Foreground="{StaticResource TextSecondary}" FontSize="11" VerticalAlignment="Center">
+                                          <Run Text="{Binding Passes}" FontWeight="Bold" Foreground="{StaticResource AccentGreen}"/>
+                                          <Run Text=" / " Foreground="{StaticResource TextMuted}"/>
+                                          <Run Text="{Binding TotalAttempts}"/>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="2" Text="{Binding PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding AvgAccuracy, StringFormat={}{0:F2}%}" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding AvgStars, StringFormat={}{0:F2}★}" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding ActiveMinutes, StringFormat={}{0:F0} min}" Foreground="{StaticResource TextMuted}" FontSize="11" TextAlignment="Right" VerticalAlignment="Center"/>
+                                      </Grid>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </ScrollViewer>
                           </StackPanel>
                         </Border>
                       </Grid>

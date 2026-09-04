@@ -73,5 +73,10 @@ namespace Circle_Tracker.Analytics
         {
             return GetOrCreateAsync($"session:h2h:{sessionId}", () => _sessionService.CompareSessionToBaselineAsync(sessionId, ct));
         }
+
+        public Task<IReadOnlyList<DailyTrendItem>> GetDailyActivityLogAsync(int days = 14, CancellationToken ct = default)
+        {
+            return GetOrCreateAsync($"session:daily_log:{days}", () => _sessionService.GetDailyActivityLogAsync(days, ct));
+        }
     }
 }

@@ -126,10 +126,10 @@ namespace CircleTracker.Tests.AnalyticsTests
 
             var r90 = rolling["90D"];
             r90.TotalPlays.Should().Be(3);
-            r90.MeanAccuracy.Should().BeApproximately(97.0m, 0.01m);
-            r90.MeanStars.Should().Be(6.0m);
+            r90.MeanAccuracy.Should().Be(98.0m);
+            r90.MeanStars.Should().Be(5.5m);
             r90.PassRatePercent.Should().BeApproximately(66.67, 0.01);
-            r90.MeanBpm.Should().Be(200.0);
+            r90.MeanBpm.Should().Be(190.0);
         }
 
         [Fact]
@@ -212,8 +212,8 @@ namespace CircleTracker.Tests.AnalyticsTests
             h2h.SessionPassRate.Should().Be(100.0);
             h2h.SessionActiveMinutes.Should().Be(3.0);
 
-            h2h.Baseline30DAcc.Should().BeApproximately(96.33m, 0.01m);
-            h2h.DeltaAcc.Should().BeApproximately(2.67m, 0.01m);
+            h2h.Baseline30DAcc.Should().Be(97.50m);
+            h2h.DeltaAcc.Should().Be(1.50m);
         }
 
         [Fact]
@@ -245,6 +245,38 @@ namespace CircleTracker.Tests.AnalyticsTests
             var thirdCallFresh = await analytics.GetStarMasteryCurveAsync();
             var b5Third = thirdCallFresh.Single(b => b.MinStars == 5.0 && b.MaxStars == 5.5);
             b5Third.TotalAttempts.Should().Be(2);
+        }
+
+        [Fact]
+        public async Task DailyActivityLog_AggregatesDaysCorrectly()
+        {
+            var (db, _, analytics, _) = await CreateTestEnvironmentAsync();
+            DateTime now = DateTime.UtcNow;
+
+            await using (var conn = await db.CreateConnectionAsync())
+            {
+                await conn.ExecuteAsync(@"
+                    INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_string, beatmap_title, beatmap_artist, beatmap_version, mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp, total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable, is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
+                    VALUES (NULL, @t1, 1, 1, 'Song 1', 'Title', 'Artist', 'Diff', 0, '', 180, 5.0, 2.5, 2.5, 4.0, 9.0, 8.0, 6.0, 100, 98, 2, 0, 0, 98.0, 1, 1, 120, 1, 0, 0, 'osu!stable');
+
+                    INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_string, beatmap_title, beatmap_artist, beatmap_version, mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp, total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable, is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
+                    VALUES (NULL, @t2, 2, 2, 'Song 2', 'Title', 'Artist', 'Diff', 0, '', 180, 6.0, 3.0, 3.0, 4.0, 9.0, 8.0, 6.0, 100, 90, 10, 0, 0, 90.0, 1, 0, 60, 1, 0, 0, 'osu!stable');",
+                    new
+                    {
+                        t1 = now.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                        t2 = now.AddDays(-1).AddMinutes(10).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                    });
+            }
+
+            var daily = await analytics.GetDailyActivityLogAsync(14);
+            daily.Should().HaveCount(1);
+            var day = daily[0];
+            day.TotalAttempts.Should().Be(2);
+            day.Passes.Should().Be(1);
+            day.PassRatePercent.Should().Be(50.0);
+            day.AvgAccuracy.Should().Be(98.0m);
+            day.AvgStars.Should().Be(5.0m);
+            day.ActiveMinutes.Should().Be(3.0);
         }
     }
 }

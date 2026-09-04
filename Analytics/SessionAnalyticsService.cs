@@ -34,37 +34,52 @@ namespace Circle_Tracker.Analytics
             string d30 = now.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             string d90 = now.AddDays(-90).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
+            const string spanSql = "SELECT MIN(timestamp) FROM plays;";
+            var earliestStr = await conn.ExecuteScalarAsync<string?>(spanSql);
+            DateTime earliestDate = now;
+            double totalHistoryDays = 0;
+            if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var parsedEarliest))
+            {
+                earliestDate = parsedEarliest;
+                totalHistoryDays = Math.Max(0, (now - earliestDate).TotalDays);
+            }
+            else if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, out var earliestFallback))
+            {
+                earliestDate = earliestFallback;
+                totalHistoryDays = Math.Max(0, (now - earliestFallback).TotalDays);
+            }
+
             const string sql = @"
                 SELECT
-                    COUNT(CASE WHEN timestamp >= @d7 THEN 1 END) AS plays_7d,
-                    COUNT(DISTINCT CASE WHEN timestamp >= @d7 THEN DATE(timestamp) END) AS active_days_7d,
-                    SUM(CASE WHEN timestamp >= @d7 THEN play_time_seconds ELSE 0 END) AS time_7d,
-                    SUM(CASE WHEN timestamp >= @d7 THEN total_hits ELSE 0 END) AS hits_7d,
-                    SUM(CASE WHEN timestamp >= @d7 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_7d,
-                    AVG(CASE WHEN timestamp >= @d7 THEN accuracy END) AS avg_acc_7d,
-                    AVG(CASE WHEN timestamp >= @d7 THEN stars END) AS avg_stars_7d,
-                    SUM(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_7d,
-                    AVG(CASE WHEN timestamp >= @d7 THEN bpm END) AS avg_bpm_7d,
+                    COUNT(CASE WHEN timestamp >= @d7 THEN 1 END) AS Plays7,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d7 THEN DATE(timestamp) END) AS ActiveDays7,
+                    SUM(CASE WHEN timestamp >= @d7 THEN play_time_seconds ELSE 0 END) AS Time7,
+                    SUM(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN total_hits ELSE 0 END) AS Hits7,
+                    SUM(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN accuracy * total_hits ELSE 0.0 END) AS WAcc7,
+                    AVG(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN accuracy ELSE NULL END) AS AvgAcc7,
+                    AVG(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN stars ELSE NULL END) AS AvgStars7,
+                    SUM(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN 1 ELSE 0 END) AS Passes7,
+                    AVG(CASE WHEN timestamp >= @d7 AND is_complete = 1 THEN bpm ELSE NULL END) AS AvgBpm7,
 
-                    COUNT(CASE WHEN timestamp >= @d30 THEN 1 END) AS plays_30d,
-                    COUNT(DISTINCT CASE WHEN timestamp >= @d30 THEN DATE(timestamp) END) AS active_days_30d,
-                    SUM(CASE WHEN timestamp >= @d30 THEN play_time_seconds ELSE 0 END) AS time_30d,
-                    SUM(CASE WHEN timestamp >= @d30 THEN total_hits ELSE 0 END) AS hits_30d,
-                    SUM(CASE WHEN timestamp >= @d30 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_30d,
-                    AVG(CASE WHEN timestamp >= @d30 THEN accuracy END) AS avg_acc_30d,
-                    AVG(CASE WHEN timestamp >= @d30 THEN stars END) AS avg_stars_30d,
-                    SUM(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_30d,
-                    AVG(CASE WHEN timestamp >= @d30 THEN bpm END) AS avg_bpm_30d,
+                    COUNT(CASE WHEN timestamp >= @d30 THEN 1 END) AS Plays30,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d30 THEN DATE(timestamp) END) AS ActiveDays30,
+                    SUM(CASE WHEN timestamp >= @d30 THEN play_time_seconds ELSE 0 END) AS Time30,
+                    SUM(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN total_hits ELSE 0 END) AS Hits30,
+                    SUM(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN accuracy * total_hits ELSE 0.0 END) AS WAcc30,
+                    AVG(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN accuracy ELSE NULL END) AS AvgAcc30,
+                    AVG(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN stars ELSE NULL END) AS AvgStars30,
+                    SUM(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN 1 ELSE 0 END) AS Passes30,
+                    AVG(CASE WHEN timestamp >= @d30 AND is_complete = 1 THEN bpm ELSE NULL END) AS AvgBpm30,
 
-                    COUNT(CASE WHEN timestamp >= @d90 THEN 1 END) AS plays_90d,
-                    COUNT(DISTINCT CASE WHEN timestamp >= @d90 THEN DATE(timestamp) END) AS active_days_90d,
-                    SUM(CASE WHEN timestamp >= @d90 THEN play_time_seconds ELSE 0 END) AS time_90d,
-                    SUM(CASE WHEN timestamp >= @d90 THEN total_hits ELSE 0 END) AS hits_90d,
-                    SUM(CASE WHEN timestamp >= @d90 THEN accuracy * total_hits ELSE 0.0 END) AS w_acc_90d,
-                    AVG(CASE WHEN timestamp >= @d90 THEN accuracy END) AS avg_acc_90d,
-                    AVG(CASE WHEN timestamp >= @d90 THEN stars END) AS avg_stars_90d,
-                    SUM(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN 1 ELSE 0 END) AS passes_90d,
-                    AVG(CASE WHEN timestamp >= @d90 THEN bpm END) AS avg_bpm_90d
+                    COUNT(CASE WHEN timestamp >= @d90 THEN 1 END) AS Plays90,
+                    COUNT(DISTINCT CASE WHEN timestamp >= @d90 THEN DATE(timestamp) END) AS ActiveDays90,
+                    SUM(CASE WHEN timestamp >= @d90 THEN play_time_seconds ELSE 0 END) AS Time90,
+                    SUM(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN total_hits ELSE 0 END) AS Hits90,
+                    SUM(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN accuracy * total_hits ELSE 0.0 END) AS WAcc90,
+                    AVG(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN accuracy ELSE NULL END) AS AvgAcc90,
+                    AVG(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN stars ELSE NULL END) AS AvgStars90,
+                    SUM(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN 1 ELSE 0 END) AS Passes90,
+                    AVG(CASE WHEN timestamp >= @d90 AND is_complete = 1 THEN bpm ELSE NULL END) AS AvgBpm90
                 FROM plays
                 WHERE timestamp >= @d90;";
 
@@ -74,44 +89,25 @@ namespace Circle_Tracker.Analytics
                 int Plays90, int ActiveDays90, int Time90, long Hits90, double WAcc90, double? AvgAcc90, double? AvgStars90, int Passes90, double? AvgBpm90
             )>(sql, new { d7, d30, d90 });
 
-            const string spanSql = "SELECT MIN(timestamp) FROM plays;";
-            var earliestStr = await conn.ExecuteScalarAsync<string?>(spanSql);
-            double totalHistoryDays = 0;
-            if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var earliestDate))
-            {
-                totalHistoryDays = Math.Max(0, (now - earliestDate).TotalDays);
-            }
-            else if (!string.IsNullOrEmpty(earliestStr) && DateTime.TryParse(earliestStr, out var earliestFallback))
-            {
-                totalHistoryDays = Math.Max(0, (now - earliestFallback).TotalDays);
-            }
-
             var result = new Dictionary<string, RollingPeriodStats>();
 
             RollingPeriodStats ComputeStats(int days, int totalPlays, int activeDays, int playTimeSec, long totalHits, double weightedAccSum, double? avgAcc, double? avgStars, int passes, double? avgBpm)
             {
-                DateTime startDate = now.AddDays(-days);
-                string dateRangeStr = $"{startDate:MMM dd, yyyy} – {now:MMM dd, yyyy}";
+                DateTime windowStart = now.AddDays(-days);
                 bool sufficient = days == 7 ? totalPlays > 0 : totalHistoryDays >= days;
+                DateTime displayStart = (windowStart < earliestDate) ? earliestDate : windowStart;
+                string dateRangeStr = $"{displayStart:MMM dd, yyyy} – {now:MMM dd, yyyy}";
                 double totalActiveHours = playTimeSec / 3600.0;
                 decimal meanAcc = 0.0m;
                 if (totalHits > 0)
-                {
                     meanAcc = (decimal)(weightedAccSum / totalHits);
-                }
-                else if (totalPlays > 0 && avgAcc.HasValue)
-                {
+                else if (passes > 0 && avgAcc.HasValue)
                     meanAcc = (decimal)avgAcc.Value;
-                }
-
-                decimal meanStars = (totalPlays > 0 && avgStars.HasValue) ? (decimal)avgStars.Value : 0.0m;
+                decimal meanStars = (passes > 0 && avgStars.HasValue) ? (decimal)avgStars.Value : 0.0m;
                 double passRate = totalPlays > 0 ? (100.0 * passes / totalPlays) : 0.0;
-                double meanBpm = (totalPlays > 0 && avgBpm.HasValue) ? avgBpm.Value : 0.0;
-                
-                // Calculate per-day averages based on actual active days, not window size
+                double meanBpm = (passes > 0 && avgBpm.HasValue) ? avgBpm.Value : 0.0;
                 double playsPerDay = activeDays > 0 ? (double)totalPlays / activeDays : 0.0;
                 double hoursPerDay = activeDays > 0 ? totalActiveHours / activeDays : 0.0;
-
                 return new RollingPeriodStats(
                     PeriodDays: days,
                     TotalPlays: totalPlays,
@@ -135,10 +131,37 @@ namespace Circle_Tracker.Analytics
             return result;
         }
 
+        public async Task<IReadOnlyList<DailyTrendItem>> GetDailyActivityLogAsync(int days = 14, CancellationToken ct = default)
+        {
+            await using var conn = await _dbManager.CreateConnectionAsync(ct);
+            string cutoff = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            const string sql = @"
+                SELECT 
+                    DATE(timestamp) AS DateString,
+                    COUNT(*) AS TotalAttempts,
+                    SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END) AS Passes,
+                    AVG(CASE WHEN is_complete = 1 THEN accuracy ELSE NULL END) AS AvgAccuracy,
+                    AVG(CASE WHEN is_complete = 1 THEN stars ELSE NULL END) AS AvgStars,
+                    SUM(play_time_seconds) / 60.0 AS ActiveMinutes
+                FROM plays
+                WHERE timestamp >= @cutoff
+                GROUP BY DATE(timestamp)
+                ORDER BY DateString DESC;";
+            var rows = await conn.QueryAsync<(string DateString, int TotalAttempts, int Passes, double? AvgAccuracy, double? AvgStars, double ActiveMinutes)>(sql, new { cutoff });
+            return rows.Select(r => new DailyTrendItem(
+                DateString: r.DateString ?? "",
+                TotalAttempts: r.TotalAttempts,
+                Passes: r.Passes,
+                PassRatePercent: r.TotalAttempts > 0 ? Math.Round(100.0 * r.Passes / r.TotalAttempts, 1) : 0.0,
+                AvgAccuracy: Math.Round((decimal)(r.AvgAccuracy ?? 0.0), 2),
+                AvgStars: Math.Round((decimal)(r.AvgStars ?? 0.0), 2),
+                ActiveMinutes: Math.Round(r.ActiveMinutes, 1)
+            )).ToList().AsReadOnly();
+        }
+
         public async Task<IReadOnlyList<ChokeMapRecord>> GetTopChokeMapsAsync(int limit = 10, CancellationToken ct = default)
         {
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
-            // Push grouping, filtering, and aggregation entirely into SQLite
             const string sql = @"
                 SELECT
                     beatmap_id,
@@ -181,14 +204,14 @@ namespace Circle_Tracker.Analytics
             const string sql = @"
                 SELECT
                     COUNT(CASE WHEN session_id = @sessionId THEN 1 END) AS SessionPlays,
-                    AVG(CASE WHEN session_id = @sessionId THEN accuracy END) AS SessionAcc,
-                    AVG(CASE WHEN session_id = @sessionId THEN stars END) AS SessionStars,
+                    AVG(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN accuracy END) AS SessionAcc,
+                    AVG(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN stars END) AS SessionStars,
                     SUM(CASE WHEN session_id = @sessionId AND is_complete = 1 THEN 1 ELSE 0 END) AS SessionPasses,
                     SUM(CASE WHEN session_id = @sessionId THEN play_time_seconds ELSE 0 END) AS SessionSeconds,
 
                     COUNT(CASE WHEN timestamp >= @cutoff THEN 1 END) AS BaselinePlays,
-                    AVG(CASE WHEN timestamp >= @cutoff THEN accuracy END) AS BaselineAcc,
-                    AVG(CASE WHEN timestamp >= @cutoff THEN stars END) AS BaselineStars,
+                    AVG(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN accuracy END) AS BaselineAcc,
+                    AVG(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN stars END) AS BaselineStars,
                     SUM(CASE WHEN timestamp >= @cutoff AND is_complete = 1 THEN 1 ELSE 0 END) AS BaselinePasses
                 FROM plays
                 WHERE session_id = @sessionId OR timestamp >= @cutoff;";
@@ -199,15 +222,17 @@ namespace Circle_Tracker.Analytics
             )>(sql, new { sessionId, cutoff });
 
             int sCount = row.SessionPlays;
-            decimal sAcc = sCount > 0 ? (decimal)(row.SessionAcc ?? 0.0) : 0.0m;
-            decimal sStars = sCount > 0 ? (decimal)(row.SessionStars ?? 0.0) : 0.0m;
-            double sPassRate = sCount > 0 ? (100.0 * row.SessionPasses / sCount) : 0.0;
+            int sPasses = row.SessionPasses;
+            decimal sAcc = sPasses > 0 ? (decimal)(row.SessionAcc ?? 0.0) : 0.0m;
+            decimal sStars = sPasses > 0 ? (decimal)(row.SessionStars ?? 0.0) : 0.0m;
+            double sPassRate = sCount > 0 ? (100.0 * sPasses / sCount) : 0.0;
             double sMinutes = row.SessionSeconds / 60.0;
 
             int bCount = row.BaselinePlays;
-            decimal bAcc = bCount > 0 ? (decimal)(row.BaselineAcc ?? 0.0) : 0.0m;
-            decimal bStars = bCount > 0 ? (decimal)(row.BaselineStars ?? 0.0) : 0.0m;
-            double bPassRate = bCount > 0 ? (100.0 * row.BaselinePasses / bCount) : 0.0;
+            int bPasses = row.BaselinePasses;
+            decimal bAcc = bPasses > 0 ? (decimal)(row.BaselineAcc ?? 0.0) : 0.0m;
+            decimal bStars = bPasses > 0 ? (decimal)(row.BaselineStars ?? 0.0) : 0.0m;
+            double bPassRate = bCount > 0 ? (100.0 * bPasses / bCount) : 0.0;
 
             return new HeadToHeadComparison(
                 SessionAcc: Math.Round(sAcc, 2),

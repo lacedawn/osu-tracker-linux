@@ -47,6 +47,18 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private RollingPeriodMetrics? _rolling30Day;
     private RollingPeriodMetrics? _rolling90Day;
     
+    private ObservableCollection<PlayRecord> _sessionPlays = new();
+    public ObservableCollection<PlayRecord> SessionPlays => _sessionPlays;
+    private double _sessionPlaysPerHour;
+    public double SessionPlaysPerHour
+    {
+        get => _sessionPlaysPerHour;
+        set { _sessionPlaysPerHour = value; OnPropertyChanged(); }
+    }
+
+    private ObservableCollection<DailyTrendItem> _dailyTrends = new();
+    public ObservableCollection<DailyTrendItem> DailyTrends => _dailyTrends;
+
     private ObservableCollection<ChokeCard> _topChokes = new();
     private ObservableCollection<GrindCard> _mostGrinded = new();
     
@@ -390,24 +402,52 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             if (!string.IsNullOrEmpty(latestSession))
             {
                 var comparison = await Task.Run(() => _sessionService.CompareSessionToBaselineAsync(latestSession, ct), ct);
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                var sessionPlaysResult = await Task.Run(() => _queryEngine.QueryPlaysAsync(new PlayQueryFilter 
+                { 
+                    SessionId = latestSession, 
+                    PageSize = 500 
+                }, ct), ct);
+
+                double activeHours = comparison.SessionActiveMinutes / 60.0;
+                double playsPerHour = activeHours > 0.05 ? Math.Round(comparison.SessionPlays / activeHours, 1) : 0.0;
+
+                await InvokeOnUIThread(() =>
                 {
                     SessionBaseline = comparison;
-                }, DispatcherPriority.Background);
+                    SessionPlaysPerHour = playsPerHour;
+                    _sessionPlays.Clear();
+                    if (sessionPlaysResult?.Items != null)
+                    {
+                        foreach (var play in sessionPlaysResult.Items)
+                        {
+                            _sessionPlays.Add(play);
+                        }
+                    }
+                });
+            }
+            else
+            {
+                await InvokeOnUIThread(() =>
+                {
+                    SessionBaseline = null;
+                    SessionPlaysPerHour = 0.0;
+                    _sessionPlays.Clear();
+                });
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Failed to load session dynamics baseline comparison");
+            _log.LogError(ex, "Failed to load session dynamics");
         }
     }
 
     private async Task LoadTrendsAsync(CancellationToken ct)
     {
         var allMetrics = await Task.Run(() => _sessionService.GetRollingAveragesAsync(ct), ct);
+        var dailyItems = await Task.Run(() => _sessionService.GetDailyActivityLogAsync(14, ct), ct);
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await InvokeOnUIThread(() =>
         {
             if (allMetrics.TryGetValue("7D", out var metrics7))
             {
@@ -459,7 +499,16 @@ public class AnalyticsViewModel : INotifyPropertyChanged
                     HistoryDaysAvailable = metrics90.HistoryDaysAvailable
                 };
             }
-        }, DispatcherPriority.Background);
+
+            _dailyTrends.Clear();
+            if (dailyItems != null)
+            {
+                foreach (var item in dailyItems)
+                {
+                    _dailyTrends.Add(item);
+                }
+            }
+        });
     }
 
     private async Task LoadChokesAsync(CancellationToken ct)
