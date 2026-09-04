@@ -96,6 +96,138 @@ public class LiveSessionTrackerTests
         metrics.BaselineDeltaStars.Should().BeApproximately(0.3m, 0.1m);
     }
 
+    [Fact]
+    public async Task GetCurrentMetrics_AveragesOnlyCompletedPlays_ExcludesRetries()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 300,
+            TotalActiveHours: 25.0,
+            MeanAccuracy: 95.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var context = new PlayContext(
+            SessionId: Guid.NewGuid().ToString(),
+            IsReplay: false,
+            RawMods: 0,
+            CurrentGameMode: 0,
+            DetectedClient: "lazer",
+            SoundFilePath: null,
+            SubmitSoundEnabled: false
+        );
+
+        // Incomplete play (retry)
+        var retryPlay = new PlayEntryData(
+            BeatmapString: "Retry Map",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 220,
+            BeatmapAim: 3.5m,
+            BeatmapSpeed: 3.5m,
+            BeatmapStars: 7.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.5m,
+            BeatmapOd: 9.0m,
+            TotalBeatmapHits: 400,
+            Accuracy: 50.0m,
+            Play300c: 20,
+            Play100c: 5,
+            Play50c: 2,
+            PlayMissc: 10,
+            Complete: false,
+            PlayTimeSeconds: 20,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Retry",
+            BeatmapArtist: "Artist",
+            BeatmapVersion: "Expert",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.OnPlayLoggedAsync(retryPlay, context);
+
+        var retryMetrics = tracker.GetCurrentMetrics();
+        retryMetrics.SessionPlayCount.Should().Be(1);
+        retryMetrics.SessionPassCount.Should().Be(0);
+        retryMetrics.SessionAverageAccuracy.Should().Be(0m);
+        retryMetrics.SessionAverageStars.Should().Be(0m);
+        retryMetrics.SessionAverageBpm.Should().Be(0.0);
+        retryMetrics.BaselineDeltaAccuracy.Should().Be(0m);
+        retryMetrics.BaselineDeltaStars.Should().Be(0m);
+        retryMetrics.BaselineDeltaBpm.Should().Be(0.0);
+
+        // Passed play
+        var passedPlay = new PlayEntryData(
+            BeatmapString: "Passed Map",
+            BeatmapSetID: 2,
+            BeatmapID: 2,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 200,
+            BeatmapAim: 3.0m,
+            BeatmapSpeed: 3.0m,
+            BeatmapStars: 6.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 400,
+            Accuracy: 98.0m,
+            Play300c: 390,
+            Play100c: 10,
+            Play50c: 0,
+            PlayMissc: 0,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Passed",
+            BeatmapArtist: "Artist",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.OnPlayLoggedAsync(passedPlay, context);
+
+        var finalMetrics = tracker.GetCurrentMetrics();
+        finalMetrics.SessionPlayCount.Should().Be(2);
+        finalMetrics.SessionPassCount.Should().Be(1);
+        finalMetrics.SessionAverageAccuracy.Should().Be(98.0m);
+        finalMetrics.SessionAverageStars.Should().Be(6.0m);
+        finalMetrics.SessionAverageBpm.Should().Be(200.0);
+        finalMetrics.BaselineDeltaAccuracy.Should().Be(3.0m);
+        finalMetrics.BaselineDeltaStars.Should().Be(1.0m);
+        finalMetrics.BaselineDeltaBpm.Should().Be(20.0);
+    }
+
+
 
     [Fact]
     public async Task StarPassPRAchievement_WhenNewRecordSet_TriggersEvent()

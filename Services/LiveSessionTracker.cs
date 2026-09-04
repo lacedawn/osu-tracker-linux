@@ -87,7 +87,6 @@ public class LiveSessionTracker : ILiveSessionTracker
     {
         List<PlayEntryData> snapshot;
         lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
-
         if (snapshot.Count == 0)
         {
             return new LiveSessionMetrics(
@@ -102,27 +101,37 @@ public class LiveSessionTracker : ILiveSessionTracker
                 BaselineDeltaBpm: 0
             );
         }
-
-        var passCount = snapshot.Count(p => p.Complete);
         var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
-        var avgAccuracy = snapshot.Average(p => p.Accuracy);
-        var avgStars = snapshot.Average(p => p.BeatmapStars);
-        var avgBpm = snapshot.Average(p => p.BeatmapBpm);
-
-        var deltaAcc = _baseline30Day != null ? avgAccuracy - _baseline30Day.MeanAccuracy : 0m;
-        var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
-        var deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
-
+        var passedPlays = snapshot.Where(p => p.Complete).ToList();
+        var passCount = passedPlays.Count;
+        decimal avgAccuracy = 0m;
+        decimal avgStars = 0m;
+        double avgBpm = 0.0;
+        decimal deltaAcc = 0m;
+        decimal deltaStars = 0m;
+        double deltaBpm = 0.0;
+        if (passCount > 0)
+        {
+            avgAccuracy = (decimal)passedPlays.Average(p => p.Accuracy);
+            avgStars = (decimal)passedPlays.Average(p => p.BeatmapStars);
+            avgBpm = passedPlays.Average(p => p.BeatmapBpm);
+            if (_baseline30Day != null)
+            {
+                deltaAcc = avgAccuracy - _baseline30Day.MeanAccuracy;
+                deltaStars = avgStars - _baseline30Day.MeanStars;
+                deltaBpm = avgBpm - _baseline30Day.MeanBpm;
+            }
+        }
         return new LiveSessionMetrics(
             SessionPlayCount: snapshot.Count,
             SessionPassCount: passCount,
-            ActivePlayMinutes: totalPlayTime / 60.0,
-            SessionAverageAccuracy: avgAccuracy,
-            BaselineDeltaAccuracy: deltaAcc,
-            SessionAverageStars: avgStars,
-            BaselineDeltaStars: deltaStars,
-            SessionAverageBpm: avgBpm,
-            BaselineDeltaBpm: deltaBpm
+            ActivePlayMinutes: Math.Round(totalPlayTime / 60.0, 1),
+            SessionAverageAccuracy: Math.Round(avgAccuracy, 2),
+            BaselineDeltaAccuracy: Math.Round(deltaAcc, 2),
+            SessionAverageStars: Math.Round(avgStars, 2),
+            BaselineDeltaStars: Math.Round(deltaStars, 2),
+            SessionAverageBpm: Math.Round(avgBpm, 1),
+            BaselineDeltaBpm: Math.Round(deltaBpm, 1)
         );
     }
 

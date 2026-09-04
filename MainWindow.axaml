@@ -218,7 +218,12 @@
                   </StackPanel>
                 </Grid>
 
-                <Button x:Name="ImportSheetsButton" Classes="secondary-flat" Content="Import Historical Data from Sheets" Click="ImportSheetsButton_Click" 
+                <Button x:Name="ImportSheetsButton" 
+                        Classes="osu-action-blue" 
+                        Content="📥 IMPORT HISTORICAL DATA FROM SHEETS" 
+                        Click="ImportSheetsButton_Click" 
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6,0,0"
                         ToolTip.Tip="Import all existing plays from your Google Sheets into local database for analytics"/>
 
                 <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
