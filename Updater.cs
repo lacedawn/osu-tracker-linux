@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -15,12 +15,19 @@ namespace Circle_Tracker
         [JsonProperty("body")] public string? Body { get; set; }
     }
 
-    class Updater
+    public class Updater
     {
         private static readonly ILogger<Updater> _log = AppLogger.For<Updater>();
 
-        static readonly string CurrentReleaseTag = "v16";
-        static readonly HttpClient client;
+        public const string DefaultRepository = "lacedawn/osu-tracker-linux";
+        private static readonly HttpClient client;
+
+        public static Version CurrentVersion =>
+            Assembly.GetEntryAssembly()?.GetName().Version ??
+            Assembly.GetExecutingAssembly().GetName().Version ??
+            new Version(1, 0, 0);
+
+        public static string CurrentReleaseTag => $"v{CurrentVersion.Major}.{CurrentVersion.Minor}.{Math.Max(0, CurrentVersion.Build)}";
 
         static Updater()
         {
@@ -30,12 +37,81 @@ namespace Circle_Tracker
             client.DefaultRequestHeaders.Add("User-Agent", "Circle-Tracker");
         }
 
-        public static async Task CheckForUpdates()
+        public static Version? ParseSemanticVersion(string? versionStr)
+        {
+            if (string.IsNullOrWhiteSpace(versionStr))
+                return null;
+
+            string cleaned = versionStr.Trim();
+            if (cleaned.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[1..].Trim();
+            }
+
+            int separatorIdx = cleaned.IndexOfAny(new[] { '-', '+' });
+            if (separatorIdx >= 0)
+            {
+                cleaned = cleaned[..separatorIdx].Trim();
+            }
+
+            var parts = cleaned.Split('.');
+            int major = 0;
+            int minor = 0;
+            int patch = 0;
+
+            if (parts.Length >= 1 && int.TryParse(parts[0], out int parsedMajor))
+            {
+                major = parsedMajor;
+            }
+            else
+            {
+                return null;
+            }
+
+            if (parts.Length >= 2 && int.TryParse(parts[1], out int parsedMinor))
+            {
+                minor = parsedMinor;
+            }
+
+            if (parts.Length >= 3 && int.TryParse(parts[2], out int parsedPatch))
+            {
+                patch = parsedPatch;
+            }
+
+            return new Version(major, minor, patch);
+        }
+
+        public static bool IsUpdateAvailable(string? currentVersion, string? remoteVersion)
+        {
+            if (string.IsNullOrWhiteSpace(remoteVersion))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(currentVersion))
+                return true;
+
+            var cur = ParseSemanticVersion(currentVersion);
+            var rem = ParseSemanticVersion(remoteVersion);
+
+            if (cur == null || rem == null)
+                return false;
+
+            return rem > cur;
+        }
+
+        public static bool IsUpdateAvailable(string? remoteVersion)
+        {
+            return IsUpdateAvailable(CurrentVersion.ToString(), remoteVersion);
+        }
+
+        public static async Task<bool> CheckForUpdates(string? repository = null, HttpClient? httpClient = null)
         {
             Release? latestRelease = null;
+            string repo = repository ?? DefaultRepository;
+            var http = httpClient ?? client;
+
             try
             {
-                var response = await client.GetAsync("/repos/FunOrange/circle-tracker/releases/latest");
+                var response = await http.GetAsync($"/repos/{repo}/releases/latest");
                 if (response.IsSuccessStatusCode)
                 {
                     string responseJson = await response.Content.ReadAsStringAsync();
@@ -44,16 +120,21 @@ namespace Circle_Tracker
             }
             catch (Exception e)
             {
-                _log.LogError(e, "Update check failed. You have version {CurrentReleaseTag}", CurrentReleaseTag);
-                return;
+                _log.LogError(e, "Update check failed for repository {Repository}. Current version: {CurrentVersion}", repo, CurrentVersion);
+                return false;
             }
 
-            if (latestRelease == null) return;
-            if (latestRelease.TagName == CurrentReleaseTag) return;
+            if (string.IsNullOrEmpty(latestRelease?.TagName))
+                return false;
 
-            _log.LogInformation("Update available: {TagName}\nRelease notes: {Body}\nDownload: {HtmlUrl}",
-                latestRelease.TagName, latestRelease.Body, latestRelease.HtmlUrl);
+            if (IsUpdateAvailable(CurrentVersion.ToString(), latestRelease.TagName))
+            {
+                _log.LogInformation("Update available: {TagName}\nRelease notes: {Body}\nDownload: {HtmlUrl}",
+                    latestRelease.TagName, latestRelease.Body, latestRelease.HtmlUrl);
+                return true;
+            }
+
+            return false;
         }
     }
 }
-

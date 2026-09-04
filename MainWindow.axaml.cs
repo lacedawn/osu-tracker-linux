@@ -88,6 +88,9 @@ namespace Circle_Tracker
             TosuHostTextBox.Text = _tracker.TosuHost;
             TosuPortTextBox.Text = _tracker.TosuPort.ToString();
 
+            BackgroundTriangles.DisableBackgroundAnimationsWhenUnfocused = _tracker.DisableBackgroundAnimationsWhenUnfocused;
+            BannerTriangles.DisableBackgroundAnimationsWhenUnfocused = _tracker.DisableBackgroundAnimationsWhenUnfocused;
+
             _ = _tosuClient.ConnectAsync();
 
             _tosuClient.ConnectionStateChanged += (s, connected) =>

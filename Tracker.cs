@@ -136,6 +136,7 @@ namespace Circle_Tracker
 
         public string TosuHost { get; set; } = "127.0.0.1";
         public int TosuPort { get; set; } = 24050;
+        public bool DisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
         public string DetectedClient { get; private set; } = "Unknown";
 
         private string _currentBeatmapChecksum = "";
@@ -335,7 +336,8 @@ namespace Circle_Tracker
                     UseAltFuncSeparator = UseAltFuncSeparator,
                     Username = Username,
                     TosuHost = TosuHost,
-                    TosuPort = TosuPort
+                    TosuPort = TosuPort,
+                    DisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused
                 };
                 string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
                 File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
@@ -386,6 +388,8 @@ namespace Circle_Tracker
                     Username = settings.Username;
                     TosuHost = !string.IsNullOrWhiteSpace(settings.TosuHost) ? settings.TosuHost : "127.0.0.1";
                     TosuPort = settings.TosuPort > 0 ? settings.TosuPort : 24050;
+                    DisableBackgroundAnimationsWhenUnfocused = settings.DisableBackgroundAnimationsWhenUnfocused;
+                    UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused;
                 }
             }
             catch (Exception ex)

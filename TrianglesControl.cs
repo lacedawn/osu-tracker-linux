@@ -29,6 +29,11 @@ namespace Circle_Tracker
                 nameof(IsAnimated),
                 true);
 
+        public static readonly StyledProperty<bool> DisableBackgroundAnimationsWhenUnfocusedProperty =
+            AvaloniaProperty.Register<TrianglesControl, bool>(
+                nameof(DisableBackgroundAnimationsWhenUnfocused),
+                false);
+
         public IBrush TriangleBrush
         {
             get => GetValue(TriangleBrushProperty);
@@ -53,6 +58,15 @@ namespace Circle_Tracker
             set => SetValue(IsAnimatedProperty, value);
         }
 
+        public bool DisableBackgroundAnimationsWhenUnfocused
+        {
+            get => GetValue(DisableBackgroundAnimationsWhenUnfocusedProperty);
+            set => SetValue(DisableBackgroundAnimationsWhenUnfocusedProperty, value);
+        }
+
+        public bool IsTimerRunning => _timer != null && _timer.IsEnabled;
+        public TimeSpan TimerInterval => _timer?.Interval ?? TimeSpan.Zero;
+
         private struct Particle
         {
             public float X;
@@ -69,6 +83,15 @@ namespace Circle_Tracker
         private readonly Stopwatch _stopwatch = new();
         private double _lastElapsedSeconds = 0;
         private bool _initialized = false;
+
+        private Window? _window;
+        private IDisposable? _windowStateSubscription;
+        private bool _isWindowMinimized = false;
+        private bool _isWindowDeactivated = false;
+
+        private bool ShouldPauseWhenUnfocused =>
+            DisableBackgroundAnimationsWhenUnfocused ||
+            UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused;
 
         static TrianglesControl()
         {
@@ -90,13 +113,95 @@ namespace Circle_Tracker
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
+            AttachWindow(e.Root as Window ?? TopLevel.GetTopLevel(this) as Window);
             StartAnimation();
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
+            DetachWindow();
             StopAnimation();
+        }
+
+        private void AttachWindow(Window? window)
+        {
+            DetachWindow();
+
+            _window = window;
+            if (_window == null) return;
+
+            _isWindowMinimized = _window.WindowState == WindowState.Minimized;
+            _windowStateSubscription = _window.GetObservable(Window.WindowStateProperty).Subscribe(OnWindowStateChanged);
+            _window.Activated += OnWindowActivated;
+            _window.Deactivated += OnWindowDeactivated;
+        }
+
+        private void DetachWindow()
+        {
+            _windowStateSubscription?.Dispose();
+            _windowStateSubscription = null;
+
+            if (_window != null)
+            {
+                _window.Activated -= OnWindowActivated;
+                _window.Deactivated -= OnWindowDeactivated;
+                _window = null;
+            }
+        }
+
+        private void OnWindowStateChanged(WindowState state)
+        {
+            if (state == WindowState.Minimized)
+            {
+                _isWindowMinimized = true;
+                StopAnimation();
+            }
+            else
+            {
+                _isWindowMinimized = false;
+                if (IsVisible && IsAnimated && (!_isWindowDeactivated || !ShouldPauseWhenUnfocused))
+                {
+                    StartAnimation();
+                }
+            }
+        }
+
+        internal void HandleWindowActivated()
+        {
+            OnWindowActivated(this, EventArgs.Empty);
+        }
+
+        internal void HandleWindowDeactivated()
+        {
+            OnWindowDeactivated(this, EventArgs.Empty);
+        }
+
+        private void OnWindowActivated(object? sender, EventArgs e)
+        {
+            _isWindowDeactivated = false;
+            if (_timer != null)
+            {
+                _timer.Interval = TimeSpan.FromMilliseconds(16);
+            }
+
+            if (!_isWindowMinimized && IsVisible && IsAnimated)
+            {
+                StartAnimation();
+            }
+        }
+
+        private void OnWindowDeactivated(object? sender, EventArgs e)
+        {
+            _isWindowDeactivated = true;
+            if (ShouldPauseWhenUnfocused)
+            {
+                StopAnimation();
+            }
+            else if (_timer != null)
+            {
+                _timer.Interval = TimeSpan.FromMilliseconds(100);
+            }
         }
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -105,10 +210,20 @@ namespace Circle_Tracker
 
             if (change.Property == IsVisibleProperty || change.Property == IsAnimatedProperty)
             {
-                if (IsVisible && IsAnimated)
+                if (IsVisible && IsAnimated && !_isWindowMinimized && (!_isWindowDeactivated || !ShouldPauseWhenUnfocused))
                     StartAnimation();
                 else
                     StopAnimation();
+            }
+            else if (change.Property == DisableBackgroundAnimationsWhenUnfocusedProperty)
+            {
+                if (_isWindowDeactivated)
+                {
+                    if (ShouldPauseWhenUnfocused)
+                        StopAnimation();
+                    else if (IsVisible && IsAnimated && !_isWindowMinimized)
+                        StartAnimation();
+                }
             }
             else if (change.Property == TriangleCountProperty)
             {
@@ -118,13 +233,31 @@ namespace Circle_Tracker
 
         private void StartAnimation()
         {
+            if (_isWindowMinimized)
+            {
+                return;
+            }
+
+            if (_isWindowDeactivated && ShouldPauseWhenUnfocused)
+            {
+                return;
+            }
+
+            TimeSpan interval = _isWindowDeactivated
+                ? TimeSpan.FromMilliseconds(100)
+                : TimeSpan.FromMilliseconds(16);
+
             if (_timer == null)
             {
                 _timer = new DispatcherTimer(DispatcherPriority.Render)
                 {
-                    Interval = TimeSpan.FromMilliseconds(16)
+                    Interval = interval
                 };
                 _timer.Tick += OnTick;
+            }
+            else
+            {
+                _timer.Interval = interval;
             }
 
             if (!_timer.IsEnabled && IsVisible && IsAnimated)
@@ -186,7 +319,7 @@ namespace Circle_Tracker
             double delta = elapsed - _lastElapsedSeconds;
             _lastElapsedSeconds = elapsed;
 
-            if (delta <= 0 || delta > 0.1) delta = 0.016;
+            if (delta <= 0 || delta > 0.25) delta = 0.016;
 
             double width = Bounds.Width;
             double height = Bounds.Height;

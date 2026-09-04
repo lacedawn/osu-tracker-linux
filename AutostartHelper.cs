@@ -26,6 +26,53 @@ namespace Circle_Tracker
             return !string.IsNullOrEmpty(path) && File.Exists(path);
         }
 
+        public static string FormatExec(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath))
+            {
+                return AppName;
+            }
+
+            if (exePath.StartsWith("flatpak run ", StringComparison.OrdinalIgnoreCase))
+            {
+                return exePath;
+            }
+
+            if (exePath.Contains(' ') && !exePath.StartsWith('"'))
+            {
+                return $"\"{exePath}\"";
+            }
+
+            return exePath;
+        }
+
+        public static string GetExecutablePath()
+        {
+            string? flatpakId = Environment.GetEnvironmentVariable("FLATPAK_ID");
+            if (!string.IsNullOrEmpty(flatpakId))
+            {
+                return $"flatpak run {flatpakId}";
+            }
+
+            string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? AppName;
+            return FormatExec(exePath);
+        }
+
+        public static string GenerateDesktopEntry(string? exec = null)
+        {
+            string exe = exec != null ? FormatExec(exec) : GetExecutablePath();
+            return $"""
+[Desktop Entry]
+Type=Application
+Name=Circle Tracker
+Comment=osu! training session tracker
+Exec={exe}
+Icon={AppName}
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+""";
+        }
+
         public static void CreateAutostart()
         {
             if (!OperatingSystem.IsLinux()) return;
@@ -35,19 +82,7 @@ namespace Circle_Tracker
             if (dir != null)
                 Directory.CreateDirectory(dir);
 
-            string exe = Process.GetCurrentProcess().MainModule?.FileName ?? AppName;
-
-            File.WriteAllText(path,
-                $"""
-                [Desktop Entry]
-                Type=Application
-                Name=Circle Tracker
-                Comment=osu! training session tracker
-                Exec={exe}
-                Icon={AppName}
-                X-GNOME-Autostart-enabled=true
-                X-KDE-autostart-after=panel
-                """);
+            File.WriteAllText(path, GenerateDesktopEntry());
         }
 
         public static void DeleteAutostart()
