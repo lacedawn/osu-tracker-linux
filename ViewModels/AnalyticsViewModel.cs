@@ -40,7 +40,6 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _loadCts;
     
     private ObservableCollection<StarMasteryBracket> _starMasteryBrackets = new();
-    private AimSpeedBias? _aimSpeedBias;
     private ObservableCollection<OdPrecisionTier> _odPrecisionTiers = new();
     private ObservableCollection<BpmSpeedBracket> _bpmSpeedBrackets = new();
     
@@ -105,7 +104,6 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     }
 
     public ObservableCollection<StarMasteryBracket> StarMasteryBrackets => _starMasteryBrackets;
-    public AimSpeedBias? AimSpeedBias => _aimSpeedBias;
     public ObservableCollection<OdPrecisionTier> OdPrecisionTiers => _odPrecisionTiers;
     public ObservableCollection<BpmSpeedBracket> BpmSpeedBrackets => _bpmSpeedBrackets;
 
@@ -309,7 +307,6 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private async Task LoadSkillAnalyticsAsync(CancellationToken ct)
     {
         var starMastery = await Task.Run(() => _skillService.GetStarMasteryCurveAsync(ct), ct);
-        var aimSpeed = await Task.Run(() => _skillService.GetAimSpeedProfileAsync(ct), ct);
         var odPrecision = await Task.Run(() => _skillService.GetOdAccuracyCurveAsync(ct), ct);
         var bpmSpeed = await Task.Run(() => _skillService.GetBpmSpeedCeilingsAsync(ct), ct);
 
@@ -320,8 +317,17 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             {
                 string label = bracket.MaxStars >= 99.0 
                     ? $"{bracket.MinStars:F1}+★" 
-                    : $"{bracket.MinStars:F1}-{bracket.MaxStars:F1}★";
-                    
+                    : $"{bracket.MinStars:F1}–{bracket.MinStars + 0.4:F1}★";
+                string subtext = bracket.TotalAttempts > 0 
+                    ? $"{bracket.Passes}/{bracket.TotalAttempts} passed ({bracket.PassRatePercent:F0}%)" 
+                    : "No plays";
+                string zoneColor = bracket.SkillZone switch
+                {
+                    "Comfort" => "#4ade80",
+                    "Push" => "#fb923c",
+                    "Pass-Only" => "#f87171",
+                    _ => "#94a3b8"
+                };
                 _starMasteryBrackets.Add(new StarMasteryBracket
                 {
                     Label = label,
@@ -329,21 +335,14 @@ public class AnalyticsViewModel : INotifyPropertyChanged
                     MaxStar = bracket.MaxStars,
                     PassCount = bracket.Passes,
                     AttemptCount = bracket.TotalAttempts,
-                    P90Accuracy = (double)bracket.P90Accuracy,
-                    ProgressPercent = (double)bracket.P90Accuracy,
-                    ZoneColor = bracket.P90Accuracy >= 95 ? "#4ade80" : (bracket.P90Accuracy >= 90 ? "#fb923c" : "#f87171"),
-                    ZoneLabel = bracket.P90Accuracy >= 95 ? "Comfort" : (bracket.P90Accuracy >= 90 ? "Push" : "Pass-Only")
+                    MeanAccuracy = (double)bracket.MeanAccuracy,
+                    PassRatePercent = bracket.PassRatePercent,
+                    ProgressPercent = bracket.Passes > 0 ? (double)bracket.MeanAccuracy : 0.0,
+                    ZoneColor = zoneColor,
+                    ZoneLabel = bracket.SkillZone,
+                    Subtext = subtext
                 });
             }
-
-            _aimSpeedBias = new AimSpeedBias
-            {
-                AimPercentage = aimSpeed.AimBiasPercent,
-                SpeedPercentage = aimSpeed.SpeedBiasPercent,
-                AimAvgAccuracy = (double)aimSpeed.AimAvgAcc,
-                SpeedAvgAccuracy = (double)aimSpeed.SpeedAvgAcc
-            };
-            OnPropertyChanged(nameof(AimSpeedBias));
 
             _odPrecisionTiers.Clear();
             foreach (var tier in odPrecision)
@@ -590,18 +589,12 @@ public class StarMasteryBracket
     public double MaxStar { get; set; }
     public int PassCount { get; set; }
     public int AttemptCount { get; set; }
-    public double P90Accuracy { get; set; }
+    public double MeanAccuracy { get; set; }
+    public double PassRatePercent { get; set; }
     public double ProgressPercent { get; set; }
     public string ZoneColor { get; set; } = "";
     public string ZoneLabel { get; set; } = "";
-}
-
-public class AimSpeedBias
-{
-    public double AimPercentage { get; set; }
-    public double SpeedPercentage { get; set; }
-    public double AimAvgAccuracy { get; set; }
-    public double SpeedAvgAccuracy { get; set; }
+    public string Subtext { get; set; } = "";
 }
 
 public class OdPrecisionTier

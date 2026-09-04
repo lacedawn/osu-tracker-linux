@@ -36,8 +36,6 @@ public class AnalyticsViewModelTests
 
         skillService.Setup(s => s.GetStarMasteryCurveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<Circle_Tracker.Analytics.StarMasteryBracket>)new List<Circle_Tracker.Analytics.StarMasteryBracket>());
-        skillService.Setup(s => s.GetAimSpeedProfileAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AimSpeedProfile(0, 0m, 0, 0, 0m, 0, 0, 0m, 0, 0, 0));
         skillService.Setup(s => s.GetOdAccuracyCurveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<OdAccuracyTier>)new List<OdAccuracyTier>());
         skillService.Setup(s => s.GetBpmSpeedCeilingsAsync(It.IsAny<CancellationToken>()))

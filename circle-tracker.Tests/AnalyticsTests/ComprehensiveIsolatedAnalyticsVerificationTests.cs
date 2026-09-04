@@ -133,53 +133,20 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
             bracket.TotalAttempts.Should().Be(expectedAttempts, $"Attempt count mismatch in bracket {bracket.MinStars}-{bracket.MaxStars}");
             bracket.Passes.Should().Be(expectedPasses, $"Pass count mismatch in bracket {bracket.MinStars}-{bracket.MaxStars}");
 
-            if (matchingPlays.Count > 0)
+            if (passedPlays.Count > 0)
             {
-                var sortedAccs = matchingPlays.Select(p => p.accuracy).OrderBy(a => a).ToList();
-                int idx = (int)((sortedAccs.Count - 1) * 0.90);
-                idx = Math.Clamp(idx, 0, sortedAccs.Count - 1);
-                double expectedP90 = Math.Round(sortedAccs[idx], 1);
-                Math.Abs((double)bracket.P90Accuracy - expectedP90).Should().BeLessThanOrEqualTo(0.5,
-                    $"P90 accuracy mismatch in bracket {bracket.MinStars}-{bracket.MaxStars}. Expected: {expectedP90}, Actual: {bracket.P90Accuracy}");
+                decimal expectedMean = Math.Round((decimal)passedPlays.Average(p => p.accuracy), 2);
+                Math.Abs((double)bracket.MeanAccuracy - (double)expectedMean).Should().BeLessThanOrEqualTo(0.5,
+                    $"Mean accuracy mismatch in bracket {bracket.MinStars}-{bracket.MaxStars}. Expected: {expectedMean}, Actual: {bracket.MeanAccuracy}");
+            }
+            else
+            {
+                bracket.MeanAccuracy.Should().Be(0.0m);
             }
         }
     }
 
-    [Fact]
-    public async Task AimSpeedBias_MatchesIndependentMathematicalGroundTruth()
-    {
-        var bias = await _skillService.GetAimSpeedProfileAsync();
-        bias.Should().NotBeNull();
 
-        var validPlays = _rawPlays.Where(p => p.aim > 0 && p.speed > 0).ToList();
-        if (validPlays.Count == 0) return;
-
-        var aimPlays = validPlays.Where(p => p.aim >= 1.20 * p.speed).ToList();
-        var speedPlays = validPlays.Where(p => p.speed >= 1.20 * p.aim && !(p.aim >= 1.20 * p.speed)).ToList();
-        var balancedPlays = validPlays.Where(p => !(p.aim >= 1.20 * p.speed) && !(p.speed >= 1.20 * p.aim)).ToList();
-
-        bias.AimDominantPlays.Should().Be(aimPlays.Count);
-        bias.SpeedDominantPlays.Should().Be(speedPlays.Count);
-        bias.BalancedPlays.Should().Be(balancedPlays.Count);
-
-        int totalBiased = aimPlays.Count + speedPlays.Count;
-        double expectedAimPct = totalBiased > 0 ? Math.Round(100.0 * aimPlays.Count / totalBiased, 1) : 50.0;
-        double expectedSpeedPct = totalBiased > 0 ? Math.Round(100.0 * speedPlays.Count / totalBiased, 1) : 50.0;
-
-        Math.Abs(bias.AimBiasPercent - expectedAimPct).Should().BeLessThanOrEqualTo(1.0, "Aim percentage ratio mismatch");
-        Math.Abs(bias.SpeedBiasPercent - expectedSpeedPct).Should().BeLessThanOrEqualTo(1.0, "Speed percentage ratio mismatch");
-
-        if (aimPlays.Count > 0)
-        {
-            double expectedAimAcc = Math.Round(aimPlays.Average(p => p.accuracy), 1);
-            Math.Abs((double)bias.AimAvgAcc - expectedAimAcc).Should().BeLessThanOrEqualTo(0.5, "Aim average accuracy mismatch");
-        }
-        if (speedPlays.Count > 0)
-        {
-            double expectedSpeedAcc = Math.Round(speedPlays.Average(p => p.accuracy), 1);
-            Math.Abs((double)bias.SpeedAvgAcc - expectedSpeedAcc).Should().BeLessThanOrEqualTo(0.5, "Speed average accuracy mismatch");
-        }
-    }
 
     [Fact]
     public async Task OdPrecisionTiers_MatchesIndependentHitWindowFormulas()
@@ -223,13 +190,17 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
 
             if (matchingPlays.Count > 0)
             {
-                decimal expectedAcc = Math.Round((decimal)matchingPlays.Average(p => p.accuracy), 1);
-                Math.Abs((double)bracket.MeanAccuracy - (double)expectedAcc).Should().BeLessThanOrEqualTo(0.5, $"Accuracy mismatch for BPM {bracket.Label}");
+                var passedMatching = matchingPlays.Where(p => p.is_complete == 1).ToList();
+                if (passedMatching.Count > 0)
+                {
+                    decimal expectedAcc = Math.Round((decimal)passedMatching.Average(p => p.accuracy), 1);
+                    Math.Abs((double)bracket.MeanAccuracy - (double)expectedAcc).Should().BeLessThanOrEqualTo(0.5, $"Accuracy mismatch for BPM {bracket.Label}");
 
-                long totalMisses = matchingPlays.Sum(p => (long)p.hit_miss);
-                long totalHits = matchingPlays.Sum(p => (long)p.total_hits);
-                double expectedMissRate = totalHits > 0 ? Math.Round(100.0 * totalMisses / totalHits, 2) : 0.0;
-                Math.Abs(bracket.MissesPerHundredHits - expectedMissRate).Should().BeLessThanOrEqualTo(0.5, $"Miss density mismatch for BPM {bracket.Label}");
+                    long totalMisses = passedMatching.Sum(p => (long)p.hit_miss);
+                    long totalHits = passedMatching.Sum(p => (long)p.total_hits);
+                    double expectedMissRate = totalHits > 0 ? Math.Round(100.0 * totalMisses / totalHits, 2) : 0.0;
+                    Math.Abs(bracket.MissesPerHundredHits - expectedMissRate).Should().BeLessThanOrEqualTo(0.5, $"Miss density mismatch for BPM {bracket.Label}");
+                }
             }
         }
     }
@@ -374,9 +345,6 @@ public class ComprehensiveIsolatedAnalyticsVerificationTests : IAsyncLifetime
         var cachedCurve = await _cachedAnalytics.GetStarMasteryCurveAsync();
         cachedCurve.Should().BeEquivalentTo(directCurve);
 
-        var directProfile = await _skillService.GetAimSpeedProfileAsync();
-        var cachedProfile = await _cachedAnalytics.GetAimSpeedProfileAsync();
-        cachedProfile.Should().BeEquivalentTo(directProfile);
 
         var directRolling = await _sessionService.GetRollingAveragesAsync();
         var cachedRolling = await _cachedAnalytics.GetRollingAveragesAsync();

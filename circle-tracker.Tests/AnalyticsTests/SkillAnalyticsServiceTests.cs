@@ -100,15 +100,15 @@ namespace CircleTracker.Tests.AnalyticsTests
             bracket6.TotalAttempts.Should().Be(2);
             bracket6.Passes.Should().Be(1);
             bracket6.PassRatePercent.Should().Be(50.0);
-            bracket6.MeanAccuracy.Should().Be(92.5m);
+            bracket6.MeanAccuracy.Should().Be(92.0m);
             bracket6.SkillZone.Should().Be("Push");
 
             var bracket7 = brackets.Single(b => b.MinStars == 7.0 && b.MaxStars == 7.5);
             bracket7.TotalAttempts.Should().Be(1);
             bracket7.Passes.Should().Be(0);
             bracket7.PassRatePercent.Should().Be(0.0);
-            bracket7.MeanAccuracy.Should().Be(85.0m);
-            bracket7.SkillZone.Should().Be("Pass-Only");
+            bracket7.MeanAccuracy.Should().Be(0.0m);
+            bracket7.SkillZone.Should().Be("Unpassed");
         }
 
         [Fact]
@@ -132,42 +132,9 @@ namespace CircleTracker.Tests.AnalyticsTests
             b8.Passes.Should().Be(10);
             b8.PassRatePercent.Should().Be(100.0);
             b8.MeanAccuracy.Should().Be(94.2m);
-            b8.MedianAccuracy.Should().Be(94.5m);
-            b8.P90Accuracy.Should().Be(98.0m);
             b8.SkillZone.Should().Be("Push");
         }
 
-        [Fact]
-        public async Task AimVsSpeed_RatioThresholds_CalculatesCorrectDistributionAndBias()
-        {
-            var (db, sink, session) = await CreateTestEnvironmentAsync();
-            var service = new SkillAnalyticsService(db);
-            var context = new PlayContext(session.SessionId, false, 0, 0, "osu!stable", "", false);
-
-            await sink.TryLogPlayAsync(CreatePlay(aim: 6.5, speed: 4.0, accuracy: 98.0m, complete: true), context);
-            await sink.TryLogPlayAsync(CreatePlay(aim: 6.0, speed: 4.0, accuracy: 96.0m, complete: true), context);
-
-            await sink.TryLogPlayAsync(CreatePlay(aim: 4.0, speed: 6.5, accuracy: 94.0m, complete: true), context);
-
-            await sink.TryLogPlayAsync(CreatePlay(aim: 5.0, speed: 5.0, accuracy: 99.0m, complete: true), context);
-
-            var profile = await service.GetAimSpeedProfileAsync();
-
-            profile.AimDominantPlays.Should().Be(2);
-            profile.AimAvgAcc.Should().Be(97.0m);
-            profile.AimPassRate.Should().Be(100.0);
-
-            profile.SpeedDominantPlays.Should().Be(1);
-            profile.SpeedAvgAcc.Should().Be(94.0m);
-            profile.SpeedPassRate.Should().Be(100.0);
-
-            profile.BalancedPlays.Should().Be(1);
-            profile.BalancedAvgAcc.Should().Be(99.0m);
-            profile.BalancedPassRate.Should().Be(100.0);
-
-            profile.AimBiasPercent.Should().BeApproximately(66.67, 0.01);
-            profile.SpeedBiasPercent.Should().BeApproximately(33.33, 0.01);
-        }
 
         [Fact]
         public async Task OdPrecision_CalculatesHitWindowAnd100sRatioCorrectly()
@@ -254,12 +221,6 @@ namespace CircleTracker.Tests.AnalyticsTests
             mastery.Should().HaveCount(9);
             mastery.All(m => m.TotalAttempts == 0 && m.PassRatePercent == 0.0 && m.MeanAccuracy == 0.0m).Should().BeTrue();
 
-            var profile = await service.GetAimSpeedProfileAsync();
-            profile.AimDominantPlays.Should().Be(0);
-            profile.SpeedDominantPlays.Should().Be(0);
-            profile.BalancedPlays.Should().Be(0);
-            profile.AimBiasPercent.Should().Be(50.0);
-            profile.SpeedBiasPercent.Should().Be(50.0);
 
             var od = await service.GetOdAccuracyCurveAsync();
             od.Should().HaveCount(5);

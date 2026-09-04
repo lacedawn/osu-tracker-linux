@@ -49,11 +49,6 @@ namespace Circle_Tracker.Analytics
             return GetOrCreateAsync("skill:star_mastery", () => _skillService.GetStarMasteryCurveAsync(ct));
         }
 
-        public Task<AimSpeedProfile> GetAimSpeedProfileAsync(CancellationToken ct = default)
-        {
-            return GetOrCreateAsync("skill:aim_speed", () => _skillService.GetAimSpeedProfileAsync(ct));
-        }
-
         public Task<IReadOnlyList<OdAccuracyTier>> GetOdAccuracyCurveAsync(CancellationToken ct = default)
         {
             return GetOrCreateAsync("skill:od_curve", () => _skillService.GetOdAccuracyCurveAsync(ct));

@@ -7,12 +7,6 @@ namespace Circle_Tracker.Analytics
         string SkillZone
     );
 
-    public record AimSpeedProfile(
-        int AimDominantPlays, decimal AimAvgAcc, double AimPassRate,
-        int SpeedDominantPlays, decimal SpeedAvgAcc, double SpeedPassRate,
-        int BalancedPlays, decimal BalancedAvgAcc, double BalancedPassRate,
-        double AimBiasPercent, double SpeedBiasPercent
-    );
 
     public record OdAccuracyTier(
         string TierName, double MinOd, double MaxOd, double HitWindow300Ms,

@@ -35,43 +35,21 @@ namespace Circle_Tracker.Analytics
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
 
             const string sql = @"
-                WITH BracketPlays AS (
-                    SELECT
-                        CASE 
-                            WHEN stars >= 8.0 THEN 8.0 
-                            ELSE CAST(stars * 2 AS INTEGER) / 2.0 
-                        END AS bracket,
-                        accuracy,
-                        is_complete,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY CASE WHEN stars >= 8.0 THEN 8.0 ELSE CAST(stars * 2 AS INTEGER) / 2.0 END 
-                            ORDER BY accuracy ASC
-                        ) - 1 AS row_idx,
-                        COUNT(*) OVER (
-                            PARTITION BY CASE WHEN stars >= 8.0 THEN 8.0 ELSE CAST(stars * 2 AS INTEGER) / 2.0 END
-                        ) AS total_count
-                    FROM plays
-                    WHERE stars >= 4.0
-                )
                 SELECT 
-                    bracket AS Bracket,
-                    total_count AS TotalCount,
+                    CASE 
+                        WHEN stars >= 8.0 THEN 8.0 
+                        ELSE CAST(stars * 2 AS INTEGER) / 2.0 
+                    END AS Bracket,
+                    COUNT(*) AS TotalCount,
                     SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END) AS Passes,
-                    AVG(accuracy) AS MeanAcc,
-                    AVG(CASE 
-                        WHEN total_count % 2 = 1 AND row_idx = total_count / 2 THEN accuracy
-                        WHEN total_count % 2 = 0 AND (row_idx = (total_count / 2) - 1 OR row_idx = total_count / 2) THEN accuracy
-                        ELSE NULL 
-                    END) AS MedianAcc,
-                    MAX(CASE 
-                        WHEN row_idx = CAST((total_count - 1) * 0.90 AS INTEGER) THEN accuracy 
-                        ELSE NULL 
-                    END) AS P90Acc
-                FROM BracketPlays
-                GROUP BY bracket, total_count;";
+                    AVG(CASE WHEN is_complete = 1 THEN accuracy ELSE NULL END) AS MeanPassedAcc,
+                    AVG(accuracy) AS AllPlaysAcc
+                FROM plays
+                WHERE stars >= 4.0
+                GROUP BY Bracket;";
 
             var rows = (await conn.QueryAsync<(
-                double Bracket, int TotalCount, int Passes, double MeanAcc, double? MedianAcc, double? P90Acc
+                double Bracket, int TotalCount, int Passes, double? MeanPassedAcc, double? AllPlaysAcc
             )>(sql)).ToDictionary(r => r.Bracket);
 
             var result = new List<StarMasteryBracket>();
@@ -82,17 +60,18 @@ namespace Circle_Tracker.Analytics
                 {
                     int total = row.TotalCount;
                     int passes = row.Passes;
-                    double passRate = (100.0 * passes / total);
-                    decimal meanAcc = (decimal)row.MeanAcc;
-                    decimal medianAcc = (decimal)(row.MedianAcc ?? row.MeanAcc);
-                    decimal p90Acc = (decimal)(row.P90Acc ?? row.MeanAcc);
-
+                    double passRate = total > 0 ? (100.0 * passes / total) : 0.0;
+                    decimal meanAcc = row.Passes > 0 ? (decimal)(row.MeanPassedAcc ?? 0.0) : 0m;
                     string skillZone;
-                    if (meanAcc >= 95.00m)
+                    if (passes == 0)
+                    {
+                        skillZone = "Unpassed";
+                    }
+                    else if (meanAcc >= 95.0m && passRate >= 50.0)
                     {
                         skillZone = "Comfort";
                     }
-                    else if (meanAcc > 90.00m)
+                    else if (meanAcc >= 90.0m || passRate >= 25.0)
                     {
                         skillZone = "Push";
                     }
@@ -108,8 +87,8 @@ namespace Circle_Tracker.Analytics
                         Passes: passes,
                         PassRatePercent: Math.Round(passRate, 2),
                         MeanAccuracy: Math.Round(meanAcc, 2),
-                        MedianAccuracy: Math.Round(medianAcc, 2),
-                        P90Accuracy: Math.Round(p90Acc, 2),
+                        MedianAccuracy: Math.Round(meanAcc, 2),
+                        P90Accuracy: Math.Round(meanAcc, 2),
                         SkillZone: skillZone
                     ));
                 }
@@ -124,69 +103,12 @@ namespace Circle_Tracker.Analytics
                         MeanAccuracy: 0.0m,
                         MedianAccuracy: 0.0m,
                         P90Accuracy: 0.0m,
-                        SkillZone: "Comfort"
+                        SkillZone: "Unpassed"
                     ));
                 }
             }
 
             return result.AsReadOnly();
-        }
-
-        public async Task<AimSpeedProfile> GetAimSpeedProfileAsync(CancellationToken ct = default)
-        {
-            await using var conn = await _dbManager.CreateConnectionAsync(ct);
-
-            const string sql = @"
-                SELECT
-                    COUNT(CASE WHEN aim >= 1.20 * speed THEN 1 END) AS AimCount,
-                    AVG(CASE WHEN aim >= 1.20 * speed THEN accuracy END) AS AimAvgAcc,
-                    SUM(CASE WHEN aim >= 1.20 * speed AND is_complete = 1 THEN 1 ELSE 0 END) AS AimPasses,
-
-                    COUNT(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) THEN 1 END) AS SpeedCount,
-                    AVG(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) THEN accuracy END) AS SpeedAvgAcc,
-                    SUM(CASE WHEN speed >= 1.20 * aim AND NOT (aim >= 1.20 * speed) AND is_complete = 1 THEN 1 ELSE 0 END) AS SpeedPasses,
-
-                    COUNT(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) THEN 1 END) AS BalancedCount,
-                    AVG(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) THEN accuracy END) AS BalancedAvgAcc,
-                    SUM(CASE WHEN NOT (aim >= 1.20 * speed) AND NOT (speed >= 1.20 * aim) AND is_complete = 1 THEN 1 ELSE 0 END) AS BalancedPasses
-                FROM plays;";
-
-            var row = await conn.QueryFirstOrDefaultAsync<(
-                int AimCount, double? AimAvgAcc, int AimPasses,
-                int SpeedCount, double? SpeedAvgAcc, int SpeedPasses,
-                int BalancedCount, double? BalancedAvgAcc, int BalancedPasses
-            )>(sql);
-
-            int aimCount = row.AimCount;
-            int speedCount = row.SpeedCount;
-            int balancedCount = row.BalancedCount;
-
-            decimal aimAvgAcc = (aimCount > 0 && row.AimAvgAcc.HasValue) ? (decimal)row.AimAvgAcc.Value : 0.0m;
-            double aimPassRate = aimCount > 0 ? (100.0 * row.AimPasses / aimCount) : 0.0;
-
-            decimal speedAvgAcc = (speedCount > 0 && row.SpeedAvgAcc.HasValue) ? (decimal)row.SpeedAvgAcc.Value : 0.0m;
-            double speedPassRate = speedCount > 0 ? (100.0 * row.SpeedPasses / speedCount) : 0.0;
-
-            decimal balancedAvgAcc = (balancedCount > 0 && row.BalancedAvgAcc.HasValue) ? (decimal)row.BalancedAvgAcc.Value : 0.0m;
-            double balancedPassRate = balancedCount > 0 ? (100.0 * row.BalancedPasses / balancedCount) : 0.0;
-
-            int totalBiased = aimCount + speedCount;
-            double aimBiasPercent = totalBiased > 0 ? (100.0 * aimCount / totalBiased) : 50.0;
-            double speedBiasPercent = totalBiased > 0 ? (100.0 * speedCount / totalBiased) : 50.0;
-
-            return new AimSpeedProfile(
-                AimDominantPlays: aimCount,
-                AimAvgAcc: Math.Round(aimAvgAcc, 2),
-                AimPassRate: Math.Round(aimPassRate, 2),
-                SpeedDominantPlays: speedCount,
-                SpeedAvgAcc: Math.Round(speedAvgAcc, 2),
-                SpeedPassRate: Math.Round(speedPassRate, 2),
-                BalancedPlays: balancedCount,
-                BalancedAvgAcc: Math.Round(balancedAvgAcc, 2),
-                BalancedPassRate: Math.Round(balancedPassRate, 2),
-                AimBiasPercent: Math.Round(aimBiasPercent, 2),
-                SpeedBiasPercent: Math.Round(speedBiasPercent, 2)
-            );
         }
 
         public async Task<IReadOnlyList<OdAccuracyTier>> GetOdAccuracyCurveAsync(CancellationToken ct = default)
@@ -212,9 +134,9 @@ namespace Circle_Tracker.Analytics
                         ELSE 4
                     END AS tier_idx,
                     COUNT(*) AS total_plays,
-                    AVG(accuracy) AS mean_acc,
-                    SUM(hit_300) AS total_300,
-                    SUM(hit_100) AS total_100
+                    AVG(CASE WHEN is_complete = 1 THEN accuracy ELSE NULL END) AS mean_acc,
+                    SUM(CASE WHEN is_complete = 1 THEN hit_300 ELSE 0 END) AS total_300,
+                    SUM(CASE WHEN is_complete = 1 THEN hit_100 ELSE 0 END) AS total_100
                 FROM plays
                 GROUP BY tier_idx;";
 
@@ -287,9 +209,9 @@ namespace Circle_Tracker.Analytics
                         ELSE 5
                     END AS bracket_idx,
                     COUNT(*) AS play_count,
-                    AVG(accuracy) AS mean_acc,
-                    SUM(hit_miss) AS total_misses,
-                    SUM(total_hits) AS total_hits
+                    AVG(CASE WHEN is_complete = 1 THEN accuracy ELSE NULL END) AS mean_acc,
+                    SUM(CASE WHEN is_complete = 1 THEN hit_miss ELSE 0 END) AS total_misses,
+                    SUM(CASE WHEN is_complete = 1 THEN total_hits ELSE 0 END) AS total_hits
                 FROM plays
                 GROUP BY bracket_idx;";
 

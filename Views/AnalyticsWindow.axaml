@@ -66,106 +66,90 @@
                 <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}">
                   <ContentControl.ContentTemplate>
                     <DataTemplate>
-                      <Grid Margin="20" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
-                        <Border Grid.Row="0" Grid.Column="0" Margin="0,0,8,8" Classes="hud-card">
+                      <Grid Margin="20" ColumnDefinitions="1.1*,1*">
+                        <Border Grid.Column="0" Margin="0,0,10,0" Classes="hud-card">
                           <StackPanel Spacing="12">
-                            <TextBlock Text="STAR RATING MASTERY" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="13"/>
+                            <StackPanel Spacing="2">
+                              <TextBlock Text="STAR RATING MASTERY" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="13"/>
+                              <TextBlock Text="Tapping accuracy on passed beatmaps across star difficulty brackets" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                            </StackPanel>
+                            
                             <ItemsControl ItemsSource="{Binding StarMasteryBrackets}">
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                  <StackPanel Spacing="4" Margin="0,0,0,8">
+                                  <StackPanel Spacing="3" Margin="0,0,0,10">
                                     <Grid ColumnDefinitions="Auto,*,Auto">
-                                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{Binding Label}" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding Subtext}" Foreground="{StaticResource TextMuted}" FontSize="10" VerticalAlignment="Center"/>
+                                      </StackPanel>
                                       <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
-                                        <Run Text="{Binding P90Accuracy, StringFormat={}{0:F1}%}"/>
+                                        <Run Text="{Binding MeanAccuracy, StringFormat={}{0:F1}%}"/>
                                         <Run Text=" (" Foreground="{StaticResource TextMuted}"/>
                                         <Run Text="{Binding ZoneLabel}"/>
                                         <Run Text=")" Foreground="{StaticResource TextMuted}"/>
                                       </TextBlock>
                                     </Grid>
-                                    <Border Height="8" CornerRadius="4" Background="#252038">
-                                      <Border Width="{Binding ProgressPercent, Converter={StaticResource PercentToWidthConverter}}" HorizontalAlignment="Left" CornerRadius="4" Background="{Binding ZoneColor}"/>
-                                    </Border>
+                                    <ProgressBar Height="8" CornerRadius="4" Minimum="0" Maximum="100" 
+                                                 Value="{Binding ProgressPercent}" Foreground="{Binding ZoneColor}" Background="#252038"/>
                                   </StackPanel>
                                 </DataTemplate>
                               </ItemsControl.ItemTemplate>
                             </ItemsControl>
                           </StackPanel>
                         </Border>
-
-                        <Border Grid.Row="0" Grid.Column="1" Margin="8,0,0,8" Classes="hud-card">
-                          <StackPanel Spacing="12">
-                            <TextBlock Text="AIM vs SPEED SKILL BIAS" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
-                            <Grid ColumnDefinitions="*,Auto,*">
-                              <StackPanel Grid.Column="0" Margin="0,0,4,0">
-                                <TextBlock Text="{Binding AimSpeedBias.AimPercentage, StringFormat={}{0:F0}% Aim}" Foreground="{StaticResource AccentPink}" FontWeight="Bold" FontSize="16"/>
-                                <TextBlock Text="{Binding AimSpeedBias.AimAvgAccuracy, StringFormat={}Avg: {0:F1}%}" Foreground="{StaticResource TextMuted}" FontSize="11"/>
+                        <StackPanel Grid.Column="1" Margin="10,0,0,0" Spacing="16">
+                          <Border Classes="hud-card">
+                            <StackPanel Spacing="10">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="OD vs ACCURACY TIMING PRECISION" Foreground="{StaticResource AccentOrange}" FontWeight="Bold" FontSize="13"/>
+                                <TextBlock Text="Average accuracy &amp; ±ms 300-hit window across Overall Difficulty tiers" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                               </StackPanel>
-                              <TextBlock Grid.Column="1" Margin="4,0" Text="•" Foreground="{StaticResource TextMuted}" FontSize="20" VerticalAlignment="Center"/>
-                              <StackPanel Grid.Column="2" Margin="4,0,0,0" HorizontalAlignment="Right">
-                                <TextBlock Text="{Binding AimSpeedBias.SpeedPercentage, StringFormat={}{0:F0}% Speed}" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="16" HorizontalAlignment="Right"/>
-                                <TextBlock Text="{Binding AimSpeedBias.SpeedAvgAccuracy, StringFormat={}Avg: {0:F1}%}" Foreground="{StaticResource TextMuted}" FontSize="11" HorizontalAlignment="Right"/>
-                              </StackPanel>
-                            </Grid>
-                            
-                            <!-- Proportional Dual-Segment Bar -->
-                            <Border Height="14" CornerRadius="7" ClipToBounds="True" Background="#252038">
-                              <Grid>
-                                <Grid.ColumnDefinitions>
-                                  <ColumnDefinition Width="{Binding AimSpeedBias.AimPercentage, Converter={StaticResource DoubleToGridLengthConverter}}"/>
-                                  <ColumnDefinition Width="{Binding AimSpeedBias.SpeedPercentage, Converter={StaticResource DoubleToGridLengthConverter}}"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Background="{StaticResource AccentPink}" ToolTip.Tip="{Binding AimSpeedBias.AimPercentage, StringFormat={}{0:F1}% Aim Bias}"/>
-                                <Border Grid.Column="1" Background="{StaticResource AccentCyan}" ToolTip.Tip="{Binding AimSpeedBias.SpeedPercentage, StringFormat={}{0:F1}% Speed Bias}"/>
+                              <Grid ColumnDefinitions="Auto,*,Auto,80" Margin="0,4,0,2">
+                                <TextBlock Grid.Column="0" Text="OD BRACKET" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="AVG ACC" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" Margin="0,0,16,0"/>
+                                <TextBlock Grid.Column="3" Text="HIT WINDOW" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" TextAlignment="Right"/>
                               </Grid>
-                            </Border>
-                          </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="1" Grid.Column="0" Margin="0,8,8,0" Classes="hud-card">
-                          <StackPanel Spacing="12">
-                            <TextBlock Text="OD vs ACCURACY TIMING PRECISION" Foreground="{StaticResource AccentOrange}" FontWeight="Bold" FontSize="13"/>
-                            <ItemsControl ItemsSource="{Binding OdPrecisionTiers}">
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                  <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
-                                    <TextBlock Grid.Column="0" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold">
-                                      <Run Text="{Binding Label}"/>
-                                      <Run Text=":"/>
-                                    </TextBlock>
-                                    <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
-                                      <Run Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}"/>
-                                      <Run Text=" (±" Foreground="{StaticResource TextMuted}"/>
-                                      <Run Text="{Binding HitWindow300Ms, StringFormat={}{0:F0}ms}" Foreground="{StaticResource TextMuted}"/>
-                                      <Run Text=")" Foreground="{StaticResource TextMuted}"/>
-                                    </TextBlock>
-                                  </Grid>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                          </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Classes="hud-card">
-                          <StackPanel Spacing="12">
-                            <TextBlock Text="BPM SPEED CEILING" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
-                            <ItemsControl ItemsSource="{Binding BpmSpeedBrackets}">
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                  <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
-                                    <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
-                                    <TextBlock Grid.Column="2" Foreground="{StaticResource TextPrimary}" FontSize="11" FontWeight="Bold">
-                                      <Run Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}"/>
-                                      <Run Text=" (" Foreground="{StaticResource TextMuted}"/>
-                                      <Run Text="{Binding MissDensityPer100, StringFormat={}{0:F1}}"/>
-                                      <Run Text=" misses/100)" Foreground="{StaticResource TextMuted}"/>
-                                    </TextBlock>
-                                  </Grid>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                          </StackPanel>
-                        </Border>
+                              <Separator Background="#2e2744" Height="1" Margin="0,0,0,6"/>
+                              <ItemsControl ItemsSource="{Binding OdPrecisionTiers}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Grid ColumnDefinitions="Auto,*,Auto,80" Margin="0,0,0,6">
+                                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextSecondary}" FontSize="11" FontWeight="SemiBold"/>
+                                      <TextBlock Grid.Column="2" Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentCyan}" FontSize="11" FontWeight="Bold" Margin="0,0,16,0"/>
+                                      <TextBlock Grid.Column="3" Text="{Binding HitWindow300Ms, StringFormat={}±{0:F0}ms}" Foreground="{StaticResource TextMuted}" FontSize="11" TextAlignment="Right"/>
+                                    </Grid>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="hud-card">
+                            <StackPanel Spacing="10">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="BPM SPEED CEILING" Foreground="{StaticResource AccentGold}" FontWeight="Bold" FontSize="13"/>
+                                <TextBlock Text="Tapping consistency &amp; miss density across song tempo brackets" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+                              </StackPanel>
+                              <Grid ColumnDefinitions="Auto,*,Auto,90" Margin="0,4,0,2">
+                                <TextBlock Grid.Column="0" Text="TEMPO RANGE" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="AVG ACC" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" Margin="0,0,16,0"/>
+                                <TextBlock Grid.Column="3" Text="MISS RATE" Foreground="{StaticResource TextMuted}" FontSize="9" FontWeight="Bold" TextAlignment="Right"/>
+                              </Grid>
+                              <Separator Background="#2e2744" Height="1" Margin="0,0,0,6"/>
+                              <ItemsControl ItemsSource="{Binding BpmSpeedBrackets}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Grid ColumnDefinitions="Auto,*,Auto,90" Margin="0,0,0,6">
+                                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextSecondary}" FontSize="11" FontWeight="SemiBold"/>
+                                      <TextBlock Grid.Column="2" Text="{Binding AvgAccuracy, StringFormat={}{0:F1}%}" Foreground="{StaticResource AccentCyan}" FontSize="11" FontWeight="Bold" Margin="0,0,16,0"/>
+                                      <TextBlock Grid.Column="3" Text="{Binding MissDensityPer100, StringFormat={}{0:F1} / 100}" Foreground="{StaticResource AccentRed}" FontSize="11" FontWeight="SemiBold" TextAlignment="Right"/>
+                                    </Grid>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </StackPanel>
+                          </Border>
+                        </StackPanel>
                       </Grid>
                     </DataTemplate>
                   </ContentControl.ContentTemplate>
