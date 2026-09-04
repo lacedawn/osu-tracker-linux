@@ -6,7 +6,6 @@ namespace Circle_Tracker.Analytics
 {
     public interface ISessionAnalyticsService
     {
-        Task<IReadOnlyList<FatigueBucket>> GetSessionFatigueCurveAsync(CancellationToken ct = default);
         Task<Dictionary<string, RollingPeriodStats>> GetRollingAveragesAsync(CancellationToken ct = default);
         Task<IReadOnlyList<ChokeMapRecord>> GetTopChokeMapsAsync(int limit = 10, CancellationToken ct = default);
         Task<HeadToHeadComparison> CompareSessionToBaselineAsync(string sessionId, CancellationToken ct = default);

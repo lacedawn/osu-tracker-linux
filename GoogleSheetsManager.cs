@@ -487,7 +487,7 @@ namespace Circle_Tracker
             List<object> rowData = BuildRowData(data);
             AppendValuesResponse response = await SubmitRowAsync(rowData, ct);
             _log.LogInformation("Play successfully logged to Google Sheets!");
-            if (submitSoundEnabled)
+            if (submitSoundEnabled && !string.IsNullOrEmpty(soundFilePath))
                 SoundHelper.PlaySound(soundFilePath);
             await ExpandSheetIfNeededAsync(response, ct);
         }

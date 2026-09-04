@@ -212,11 +212,6 @@ namespace Circle_Tracker
                 : $"{metrics.BaselineDeltaBpm:F0} BPM";
             DeltaBpmBorder.Background = OrangeBrush;
 
-            StaminaPhaseText.Text = metrics.StaminaPhaseLabel;
-            StaminaPhaseBorder.Background = new SolidColorBrush(Color.Parse(metrics.StaminaPhaseColorHex));
-
-            FatigueWarningText.IsVisible = metrics.FatigueWarningActive;
-
             SessionStatsText.Text = $"{metrics.SessionPlayCount} plays • {metrics.SessionPassCount} passes • {metrics.ActivePlayMinutes:F1} min active";
             
             var wallClockMinutes = (DateTime.UtcNow - _sessionStartTime).TotalMinutes;

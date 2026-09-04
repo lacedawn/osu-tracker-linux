@@ -1,10 +1,5 @@
 namespace Circle_Tracker.Analytics
 {
-    public record FatigueBucket(
-        string TimeRangeLabel, int StartMinute, int EndMinute,
-        int SampleSize, decimal MeanAccuracy, decimal AccDeltaFromSessionAvg, double MissRatePerMinute
-    );
-
     public record RollingPeriodStats(
         int PeriodDays,
         int TotalPlays,

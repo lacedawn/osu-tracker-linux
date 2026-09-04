@@ -166,15 +166,6 @@
               </StackPanel>
             </Grid>
 
-            <StackPanel Spacing="4">
-              <Grid ColumnDefinitions="Auto,*">
-                <TextBlock Grid.Column="0" Text="Stamina:" Foreground="{StaticResource TextMuted}" FontSize="9" Margin="0,0,6,0"/>
-                <Border Grid.Column="1" x:Name="StaminaPhaseBorder" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Background="{StaticResource AccentCyan}">
-                  <TextBlock x:Name="StaminaPhaseText" Text="Warmup" Foreground="White" FontSize="9" FontWeight="Bold"/>
-                </Border>
-              </Grid>
-              <TextBlock x:Name="FatigueWarningText" Text="⚠ Performance fatigue detected" Foreground="{StaticResource AccentRed}" FontSize="9" FontWeight="Bold" IsVisible="False"/>
-            </StackPanel>
 
             <TextBlock x:Name="SessionStatsText" Text="0 plays • 0 passes • 0.0 min active" Foreground="{StaticResource TextMuted}" FontSize="9"/>
           </StackPanel>

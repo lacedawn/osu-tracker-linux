@@ -64,11 +64,6 @@ namespace Circle_Tracker.Analytics
             return GetOrCreateAsync("skill:bpm_speed", () => _skillService.GetBpmSpeedCeilingsAsync(ct));
         }
 
-        public Task<IReadOnlyList<FatigueBucket>> GetSessionFatigueCurveAsync(CancellationToken ct = default)
-        {
-            return GetOrCreateAsync("session:fatigue_curve", () => _sessionService.GetSessionFatigueCurveAsync(ct));
-        }
-
         public Task<Dictionary<string, RollingPeriodStats>> GetRollingAveragesAsync(CancellationToken ct = default)
         {
             return GetOrCreateAsync("session:rolling_averages", () => _sessionService.GetRollingAveragesAsync(ct));

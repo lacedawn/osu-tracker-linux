@@ -69,9 +69,6 @@ public class AnalyticsViewModelTests
                 return (IReadOnlyList<Circle_Tracker.Analytics.StarMasteryBracket>)new List<Circle_Tracker.Analytics.StarMasteryBracket>();
             });
 
-        sessionService.Setup(s => s.GetSessionFatigueCurveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<FatigueBucket>)new List<FatigueBucket>());
-
         var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
 
         viewModel.SelectedTabIndex = 0;
@@ -275,8 +272,6 @@ public class AnalyticsViewModelTests
 
         skillService.Setup(s => s.GetStarMasteryCurveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<Circle_Tracker.Analytics.StarMasteryBracket>)new List<Circle_Tracker.Analytics.StarMasteryBracket>());
-        sessionService.Setup(s => s.GetSessionFatigueCurveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<FatigueBucket>)new List<FatigueBucket>());
         sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
         queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))

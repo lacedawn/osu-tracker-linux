@@ -79,68 +79,6 @@ namespace CircleTracker.Tests.AnalyticsTests
             );
         }
 
-        [Fact]
-        public async Task ShortSessionGuard_ExcludesShortSessions_IncludesQualifyingSessions()
-        {
-            var (db, _, analytics, _) = await CreateTestEnvironmentAsync();
-
-            string shortSessionId = "short_session_1";
-            string longSessionId = "long_session_1";
-
-            DateTime baseTime = DateTime.UtcNow.AddHours(-10);
-
-            await using (var conn = await db.CreateConnectionAsync())
-            {
-                await conn.ExecuteAsync(@"
-                    INSERT INTO sessions (id, start_time, end_time, total_plays, playing_seconds, idle_seconds)
-                    VALUES (@s1, @s1Start, @s1End, 2, 200, 100);
-
-                    INSERT INTO sessions (id, start_time, end_time, total_plays, playing_seconds, idle_seconds)
-                    VALUES (@s2, @s2Start, @s2End, 25, 3000, 600);",
-                    new
-                    {
-                        s1 = shortSessionId,
-                        s1Start = baseTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        s1End = baseTime.AddMinutes(5).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        s2 = longSessionId,
-                        s2Start = baseTime.AddHours(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        s2End = baseTime.AddHours(3).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    });
-
-                await conn.ExecuteAsync(@"
-                    INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_string, beatmap_title, beatmap_artist, beatmap_version, mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp, total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable, is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
-                    VALUES (@s1, @p1Time, 1, 1, 'Short Song 1', 'Short Song 1', 'Artist', 'Diff', 0, '', 180, 5.0, 2.5, 2.5, 4.0, 9.0, 8.0, 6.0, 100, 95, 5, 0, 0, 98.0, 1, 1, 60, 1, 0, 0, 'osu!stable');
-
-                    INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_string, beatmap_title, beatmap_artist, beatmap_version, mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp, total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable, is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
-                    VALUES (@s2, @p2Time, 2, 2, 'Long Song 1', 'Long Song 1', 'Artist', 'Diff', 0, '', 180, 5.5, 2.7, 2.7, 4.0, 9.0, 8.0, 6.0, 200, 190, 10, 0, 1, 97.0, 1, 1, 120, 1, 0, 0, 'osu!stable');
-
-                    INSERT INTO plays (session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_string, beatmap_title, beatmap_artist, beatmap_version, mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp, total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable, is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client)
-                    VALUES (@s2, @p3Time, 3, 3, 'Long Song 2', 'Long Song 2', 'Artist', 'Diff', 0, '', 180, 5.5, 2.7, 2.7, 4.0, 9.0, 8.0, 6.0, 200, 180, 15, 0, 5, 93.0, 1, 0, 120, 2, 0, 0, 'osu!stable');",
-                    new
-                    {
-                        s1 = shortSessionId,
-                        p1Time = baseTime.AddMinutes(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        s2 = longSessionId,
-                        p2Time = baseTime.AddHours(2).AddMinutes(5).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                        p3Time = baseTime.AddHours(2).AddMinutes(35).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    });
-            }
-
-            var curve = await analytics.GetSessionFatigueCurveAsync();
-
-            curve.Should().HaveCount(7);
-
-            var warmup = curve.Single(b => b.StartMinute == 0 && b.EndMinute == 15);
-            warmup.SampleSize.Should().Be(1);
-            warmup.MeanAccuracy.Should().Be(97.0m);
-
-            var peak = curve.Single(b => b.StartMinute == 30 && b.EndMinute == 45);
-            peak.SampleSize.Should().Be(1);
-            peak.MeanAccuracy.Should().Be(93.0m);
-
-            var emptyBucket = curve.Single(b => b.StartMinute == 15 && b.EndMinute == 30);
-            emptyBucket.SampleSize.Should().Be(0);
-        }
 
         [Fact]
         public async Task RollingMovingAverages_PartitionsWindowsCorrectly()

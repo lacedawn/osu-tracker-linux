@@ -161,21 +161,9 @@
                     <DataTemplate>
                       <Grid Margin="20">
                         <Border Classes="hud-card" MaxWidth="900">
-                          <StackPanel Spacing="16">
-                            <TextBlock Text="15-MINUTE FATIGUE CURVE" Foreground="{StaticResource AccentGreen}" FontWeight="Bold" FontSize="13"/>
-                            <TextBlock Text="{Binding OptimalWindowText}" Foreground="{StaticResource TextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                            <ItemsControl ItemsSource="{Binding FatigueCurve}">
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                  <Grid ColumnDefinitions="120,*,Auto" Margin="0,0,0,8">
-                                    <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
-                                    <Border Grid.Column="2" CornerRadius="4" Padding="6,2" Background="{Binding AccuracyDelta, Converter={StaticResource DeltaToColorConverter}}">
-                                      <TextBlock Text="{Binding AccuracyDelta, StringFormat={}{0:+0.0;-0.0}%}" Foreground="White" FontSize="11" FontWeight="Bold"/>
-                                    </Border>
-                                  </Grid>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                          <StackPanel Spacing="8">
+                            <TextBlock Text="SESSION DYNAMICS" Foreground="{StaticResource AccentCyan}" FontWeight="Bold" FontSize="13"/>
+                            <TextBlock Text="Session dynamics tracking is currently disabled." Foreground="{StaticResource TextMuted}" FontSize="12"/>
                           </StackPanel>
                         </Border>
                       </Grid>

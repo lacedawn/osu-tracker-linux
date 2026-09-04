@@ -17,10 +17,7 @@ public record LiveSessionMetrics(
     decimal SessionAverageStars,
     decimal BaselineDeltaStars,
     double SessionAverageBpm,
-    double BaselineDeltaBpm,
-    string StaminaPhaseLabel,
-    string StaminaPhaseColorHex,
-    bool FatigueWarningActive
+    double BaselineDeltaBpm
 );
 
 public record PostPlayAchievement(
@@ -102,10 +99,7 @@ public class LiveSessionTracker : ILiveSessionTracker
                 SessionAverageStars: 0m,
                 BaselineDeltaStars: 0m,
                 SessionAverageBpm: 0,
-                BaselineDeltaBpm: 0,
-                StaminaPhaseLabel: "Warmup",
-                StaminaPhaseColorHex: "#7dd3fc",
-                FatigueWarningActive: false
+                BaselineDeltaBpm: 0
             );
         }
 
@@ -119,10 +113,6 @@ public class LiveSessionTracker : ILiveSessionTracker
         var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
         var deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
 
-        var elapsedMinutes = (DateTime.UtcNow - _sessionStartTime).TotalMinutes;
-        var (phaseLabel, phaseColor) = GetStaminaPhase(elapsedMinutes);
-        var fatigueWarning = DetectFatigueWarning(elapsedMinutes);
-
         return new LiveSessionMetrics(
             SessionPlayCount: snapshot.Count,
             SessionPassCount: passCount,
@@ -132,10 +122,7 @@ public class LiveSessionTracker : ILiveSessionTracker
             SessionAverageStars: avgStars,
             BaselineDeltaStars: deltaStars,
             SessionAverageBpm: avgBpm,
-            BaselineDeltaBpm: deltaBpm,
-            StaminaPhaseLabel: phaseLabel,
-            StaminaPhaseColorHex: phaseColor,
-            FatigueWarningActive: fatigueWarning
+            BaselineDeltaBpm: deltaBpm
         );
     }
 
@@ -294,38 +281,6 @@ public class LiveSessionTracker : ILiveSessionTracker
         await Task.CompletedTask;
     }
 
-    private (string Label, string ColorHex) GetStaminaPhase(double elapsedMinutes)
-    {
-        return elapsedMinutes switch
-        {
-            < 15 => ("Warmup", "#7dd3fc"),
-            < 55 => ("Peak Performance Window", "#4ade80"),
-            < 75 => ("Fatigue Warning", "#fb923c"),
-            _ => ("Extended Fatigue Decay", "#f87171")
-        };
-    }
-
-    private bool DetectFatigueWarning(double elapsedMinutes)
-    {
-        List<PlayEntryData> snapshot;
-        lock (_playsLock) { snapshot = _sessionPlays.ToList(); }
-
-        if (elapsedMinutes < 60 || snapshot.Count < 10)
-        {
-            return false;
-        }
-
-        var recentPlays = snapshot.TakeLast(5).ToList();
-        if (recentPlays.Count < 5)
-        {
-            return false;
-        }
-
-        var recentAvgAcc = recentPlays.Average(p => (decimal)p.Accuracy);
-        var dropFromPeak = _sessionPeakAccuracy - recentAvgAcc;
-
-        return dropFromPeak > 2.5m;
-    }
 
     private BestPlayCard? GetBestPlay()
     {

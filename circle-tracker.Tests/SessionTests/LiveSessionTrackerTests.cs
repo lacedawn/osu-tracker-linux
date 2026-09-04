@@ -27,7 +27,9 @@ public class LiveSessionTrackerTests
             MeanAccuracy: 96.0m,
             MeanStars: 5.5m,
             PassRatePercent: 70.0,
-            MeanBpm: 180.0
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
         );
         
         sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
@@ -94,66 +96,6 @@ public class LiveSessionTrackerTests
         metrics.BaselineDeltaStars.Should().BeApproximately(0.3m, 0.1m);
     }
 
-    [Fact]
-    public async Task StaminaPhaseTransition_AsTimeProgresses_TransitionsCorrectly()
-    {
-        var sessionService = new Mock<ISessionAnalyticsService>();
-        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
-
-        var tracker = new LiveSessionTracker(sessionService.Object);
-
-        var basePlay = new PlayEntryData(
-            BeatmapString: "Test",
-            BeatmapSetID: 1,
-            BeatmapID: 1,
-            Hidden: false,
-            Hardrock: false,
-            Doubletime: false,
-            EZ: false,
-            Halftime: false,
-            Flashlight: false,
-            BeatmapBpm: 180,
-            BeatmapAim: 2.75m,
-            BeatmapSpeed: 2.75m,
-            BeatmapStars: 5.5m,
-            BeatmapCs: 4.0m,
-            BeatmapAr: 9.0m,
-            BeatmapOd: 8.5m,
-            TotalBeatmapHits: 400,
-            Accuracy: 96.5m,
-            Play300c: 380,
-            Play100c: 15,
-            Play50c: 3,
-            PlayMissc: 2,
-            Complete: true,
-            PlayTimeSeconds: 120,
-            ModsString: "NM",
-            PlayCount: 1,
-            AccuracyReliable: true,
-            BeatmapTitle: "Test",
-            BeatmapArtist: "Test",
-            BeatmapVersion: "Hard",
-            BeatmapHp: 5.0m,
-            BeatmapChecksum: ""
-        );
-
-        var context = new PlayContext(
-            SessionId: Guid.NewGuid().ToString(),
-            IsReplay: false,
-            RawMods: 0,
-            CurrentGameMode: 0,
-            DetectedClient: "lazer",
-            SoundFilePath: null,
-            SubmitSoundEnabled: false
-        );
-
-        await tracker.OnPlayLoggedAsync(basePlay, context);
-
-        var initialMetrics = tracker.GetCurrentMetrics();
-        initialMetrics.StaminaPhaseLabel.Should().Be("Warmup");
-        initialMetrics.StaminaPhaseColorHex.Should().Be("#7dd3fc");
-    }
 
     [Fact]
     public async Task StarPassPRAchievement_WhenNewRecordSet_TriggersEvent()
@@ -282,7 +224,9 @@ public class LiveSessionTrackerTests
             MeanAccuracy: 95.5m,
             MeanStars: 5.3m,
             PassRatePercent: 70.0,
-            MeanBpm: 175.0
+            MeanBpm: 175.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
         );
         
         sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
@@ -369,7 +313,6 @@ public class LiveSessionTrackerTests
         metrics.SessionPlayCount.Should().Be(0);
         metrics.SessionPassCount.Should().Be(0);
         metrics.ActivePlayMinutes.Should().Be(0);
-        metrics.StaminaPhaseLabel.Should().Be("Warmup");
     }
 
     [Fact]

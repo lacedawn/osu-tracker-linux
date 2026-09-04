@@ -36,9 +36,6 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private ObservableCollection<OdPrecisionTier> _odPrecisionTiers = new();
     private ObservableCollection<BpmSpeedBracket> _bpmSpeedBrackets = new();
     
-    private ObservableCollection<FatigueCurvePoint> _fatigueCurve = new();
-    private string _optimalWindowText = "";
-    
     private RollingPeriodMetrics? _rolling7Day;
     private RollingPeriodMetrics? _rolling30Day;
     private RollingPeriodMetrics? _rolling90Day;
@@ -99,9 +96,6 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     public AimSpeedBias? AimSpeedBias => _aimSpeedBias;
     public ObservableCollection<OdPrecisionTier> OdPrecisionTiers => _odPrecisionTiers;
     public ObservableCollection<BpmSpeedBracket> BpmSpeedBrackets => _bpmSpeedBrackets;
-    
-    public ObservableCollection<FatigueCurvePoint> FatigueCurve => _fatigueCurve;
-    public string OptimalWindowText { get => _optimalWindowText; set { _optimalWindowText = value; OnPropertyChanged(); } }
     
     public RollingPeriodMetrics? Rolling7Day { get => _rolling7Day; set { _rolling7Day = value; OnPropertyChanged(); } }
     public RollingPeriodMetrics? Rolling30Day { get => _rolling30Day; set { _rolling30Day = value; OnPropertyChanged(); } }
@@ -255,25 +249,7 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
     private async Task LoadSessionDynamicsAsync(CancellationToken ct)
     {
-        var fatigue = await Task.Run(() => _sessionService.GetSessionFatigueCurveAsync(ct), ct);
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            _fatigueCurve.Clear();
-            foreach (var point in fatigue)
-            {
-                _fatigueCurve.Add(new FatigueCurvePoint
-                {
-                    TimeLabel = point.TimeRangeLabel,
-                    AccuracyDelta = (double)point.AccDeltaFromSessionAvg
-                });
-            }
-
-            var bestBucket = fatigue.OrderByDescending(p => p.MeanAccuracy).FirstOrDefault();
-            OptimalWindowText = bestBucket != null 
-                ? $"Peak Performance: {bestBucket.TimeRangeLabel}"
-                : "Insufficient data";
-        }, DispatcherPriority.Background);
+        await Task.CompletedTask;
     }
 
     private async Task LoadTrendsAsync(CancellationToken ct)
@@ -465,11 +441,6 @@ public class BpmSpeedBracket
     public double MissDensityPer100 { get; set; }
 }
 
-public class FatigueCurvePoint
-{
-    public string TimeLabel { get; set; } = "";
-    public double AccuracyDelta { get; set; }
-}
 
 public class RollingPeriodMetrics
 {
