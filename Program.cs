@@ -1,16 +1,22 @@
 using Avalonia;
+using Circle_Tracker.Analytics;
+using Circle_Tracker.Services;
+using Circle_Tracker.Storage;
+using Circle_Tracker.Storage.Querying;
+using Circle_Tracker.Sync;
+using Circle_Tracker.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
-using System.Threading;
 
 namespace Circle_Tracker
 {
     class Program
     {
         private static readonly ILogger<Program> _log = AppLogger.For<Program>();
-
         private static FileStream? _lockFile;
+        private static IServiceProvider? _serviceProvider;
 
         [STAThread]
         public static void Main(string[] args)
@@ -34,6 +40,7 @@ namespace Circle_Tracker
             try
             {
                 _log.LogInformation("Circle Tracker started");
+                _serviceProvider = ConfigureServices();
                 BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
             }
             finally
@@ -51,5 +58,36 @@ namespace Circle_Tracker
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace();
+
+        private static IServiceProvider ConfigureServices()
+        {
+            var services = new ServiceCollection();
+
+            services.AddSingleton<IDatabaseManager>(sp => new SqliteDatabaseManager(""));
+            services.AddSingleton<SessionManager>();
+            services.AddSingleton<ISessionManager>(sp => sp.GetRequiredService<SessionManager>());
+            services.AddSingleton<ITosuClient, TosuClient>();
+            services.AddSingleton<ITrackerService, TrackerService>();
+
+            services.AddSingleton<ISessionAnalyticsService>(sp =>
+                new SessionAnalyticsService(sp.GetRequiredService<IDatabaseManager>()));
+            services.AddSingleton<ISkillAnalyticsService>(sp =>
+                new SkillAnalyticsService(sp.GetRequiredService<IDatabaseManager>()));
+
+            services.AddSingleton<IPlayQueryEngine>(sp =>
+                new SqlitePlayQueryEngine(sp.GetRequiredService<IDatabaseManager>()));
+
+            services.AddSingleton<IDataExportService>(sp =>
+                new DataExportService(sp.GetRequiredService<IDatabaseManager>(), sp.GetRequiredService<IPlayQueryEngine>()));
+
+            services.AddSingleton<ILiveSessionTracker, LiveSessionTracker>();
+
+            services.AddSingleton<MainWindowViewModel>();
+            services.AddSingleton<AnalyticsViewModel>();
+
+            return services.BuildServiceProvider();
+        }
+
+        public static IServiceProvider? GetServiceProvider() => _serviceProvider;
     }
 }

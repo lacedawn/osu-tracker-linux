@@ -1,627 +1,97 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media;
-using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using Circle_Tracker.Services;
-using Circle_Tracker.Storage;
+using Circle_Tracker.ViewModels;
 using Circle_Tracker.Views;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Concurrent;
 using System.IO;
-using System.Net.Http;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
-    public partial class MainWindow : Window, IMainWindow
+    public partial class MainWindow : Window
     {
         private static readonly ILogger<MainWindow> _log = AppLogger.For<MainWindow>();
+        private readonly MainWindowViewModel? _viewModel;
+        private bool _isExplicitShutdownComplete;
 
-        private readonly TosuClient _tosuClient;
-        private readonly Tracker _tracker;
-        private LiveSessionTracker? _liveSessionTracker;
-        private DateTime _sessionStartTime = DateTime.UtcNow;
+        public MainWindow() : this(null!)
+        {
+        }
 
-        private DispatcherTimer? _gameTickTimer;
-        private DispatcherTimer? _uiUpdateTimer;
-        private DispatcherTimer? _secondsTimer;
-        private DispatcherTimer? _achievementBannerTimer;
-
-        private bool _suppressStartupCheckboxEvent = false;
-        private CancellationTokenSource? _reconnectDebounce;
-        private bool _isExplicitShutdownComplete = false;
-
-        private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0xde, 0x80));
-        private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xf8, 0x71, 0x71));
-        private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x7d, 0xd3, 0xfc));
-        private static readonly IBrush OrangeBrush = new SolidColorBrush(Color.FromRgb(0xfb, 0x92, 0x3c));
-        private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x8f, 0x87, 0xa3));
-        private static readonly IBrush WhiteBrush = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa));
-        private static readonly IBrush GoldBrush = new SolidColorBrush(Color.FromRgb(0xfa, 0xcc, 0x15));
-        private static readonly IBrush PinkBrush = new SolidColorBrush(Color.FromRgb(0xf4, 0x72, 0xb6));
-
-        private static readonly HttpClient _imageHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
-        private readonly ConcurrentDictionary<string, Bitmap> _coverCache = new();
-        private string _currentCoverUrl = "";
-        private CancellationTokenSource? _coverLoadCts;
-
-        public MainWindow()
+        public MainWindow(MainWindowViewModel viewModel)
         {
             string? exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (exeDir != null)
+            {
                 Directory.SetCurrentDirectory(exeDir);
+            }
 
             InitializeComponent();
 
-            _suppressStartupCheckboxEvent = true;
-            StartupCheckBox.IsChecked = AutostartHelper.AutostartExists();
-            _suppressStartupCheckboxEvent = false;
-            if (AutostartHelper.AutostartExists())
+            _viewModel = viewModel;
+            DataContext = _viewModel;
+
+            if (_viewModel != null)
             {
-                AutostartHelper.DeleteAutostart();
-                AutostartHelper.CreateAutostart();
+                _viewModel.OpenAnalyticsRequested += OpenAnalyticsWindow;
+                _viewModel.SessionSummaryRequested += ShowSessionSummaryDialogAsync;
             }
 
             _ = Task.Run(async () =>
             {
-                try { await Updater.CheckForUpdates(); }
-                catch (Exception ex) { _log.LogError(ex, "Update check failed"); }
-            });
-
-            _tosuClient = new TosuClient();
-            _tracker = new Tracker(this, _tosuClient);
-
-            EnableLocalLoggingCheckBox.IsChecked = _tracker.EnableLocalLogging;
-            EnableSheetsLoggingCheckBox.IsChecked = _tracker.EnableGoogleSheetsLogging;
-            LocalDbPathTextBox.Text = _tracker.LocalDatabasePath;
-
-            SheetNameTextBox.Text = _tracker.SheetName;
-            SpreadsheetIdTextBox.Text = _tracker.SpreadsheetId;
-            SoundEnabledCheckbox.IsChecked = _tracker.SubmitSoundEnabled;
-            AltSepCheckBox.IsChecked = _tracker.UseAltFuncSeparator;
-
-            TosuHostTextBox.Text = _tracker.TosuHost;
-            TosuPortTextBox.Text = _tracker.TosuPort.ToString();
-
-            BackgroundTriangles.DisableBackgroundAnimationsWhenUnfocused = _tracker.DisableBackgroundAnimationsWhenUnfocused;
-            BannerTriangles.DisableBackgroundAnimationsWhenUnfocused = _tracker.DisableBackgroundAnimationsWhenUnfocused;
-
-            _ = _tosuClient.ConnectAsync();
-
-            _tosuClient.ConnectionStateChanged += (s, connected) =>
-            {
-                Dispatcher.UIThread.Post(() => UpdateTosuStatus(connected));
-            };
-
-            SetCredentialsFound(File.Exists(Path.Combine(AppContext.BaseDirectory, "credentials.json")));
-
-            _ = Task.Run(async () =>
-            {
-                try { await _tracker.InitializeStorageAsync(silent: true); }
-                catch (Exception ex) { _log.LogError(ex, "Storage init failed"); }
-            });
-
-            SetupTimers();
-            
-            Closing += OnWindowClosing;
-        }
-
-        private void SetupTimers()
-        {
-            _gameTickTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            _gameTickTimer.Tick += async (s, e) =>
-            {
                 try
                 {
-                    await Task.Run(() => _tracker.TickWrapper());
-                }
-                catch (TaskCanceledException) { }
-                catch (Exception ex)
-                {
-                    _gameTickTimer?.Stop();
-                    string logPath = Path.Combine(AppContext.BaseDirectory, "errorlog.txt");
-                    await File.AppendAllTextAsync(logPath,
-                        $"-------------------\n{DateTime.Now}\n-------------------\n{ex}\n\n");
-                    ShowMessage(
-                        $"An exception occurred:\n\n{ex.Message}\n\nDetails written to errorlog.txt",
-                        "Error");
-                    _gameTickTimer?.Start();
-                }
-            };
-
-            _uiUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-            _uiUpdateTimer.Tick += (s, e) => UpdateControls();
-
-            _secondsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _secondsTimer.Tick += (s, e) => _tracker.TickEverySecond();
-
-            _gameTickTimer.Start();
-            _uiUpdateTimer.Start();
-            _secondsTimer.Start();
-            
-            SetupLiveSessionTracking();
-        }
-
-        private void SetupLiveSessionTracking()
-        {
-            try
-            {
-                var sessionService = _tracker.GetSessionAnalyticsService();
-                if (sessionService != null)
-                {
-                    _liveSessionTracker = new LiveSessionTracker(sessionService);
-                    _sessionStartTime = DateTime.UtcNow;
-                    
-                    _liveSessionTracker.MetricsUpdated += OnLiveSessionMetricsUpdated;
-                    _liveSessionTracker.AchievementUnlocked += OnAchievementUnlocked;
-                    
-                    _tracker.PlayLogged += async (sender, args) =>
-                    {
-                        if (_liveSessionTracker != null)
-                        {
-                            await _liveSessionTracker.OnPlayLoggedAsync(args.Data, args.Context);
-                        }
-                    };
-                    
-                    LiveSessionCard.IsVisible = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "Failed to initialize live session tracker");
-            }
-        }
-
-        private void OnLiveSessionMetricsUpdated(object? sender, LiveSessionMetrics metrics)
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                try
-                {
-                    UpdateLiveSessionCard(metrics);
+                    await Updater.CheckForUpdates();
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, "Failed to update live session card");
+                    _log.LogError(ex, "Update check failed");
                 }
             });
-        }
-
-        private void UpdateLiveSessionCard(LiveSessionMetrics metrics)
-        {
-            if (metrics.SessionPlayCount == 0)
-            {
-                LiveSessionCard.IsVisible = false;
-                return;
-            }
-
-            LiveSessionCard.IsVisible = true;
-
-            DeltaAccuracyText.Text = metrics.BaselineDeltaAccuracy >= 0 
-                ? $"+{metrics.BaselineDeltaAccuracy:F2}%" 
-                : $"{metrics.BaselineDeltaAccuracy:F2}%";
-            DeltaAccuracyBorder.Background = metrics.BaselineDeltaAccuracy >= 0 ? GreenBrush : RedBrush;
-
-            DeltaStarsText.Text = metrics.BaselineDeltaStars >= 0 
-                ? $"+{metrics.BaselineDeltaStars:F2}★" 
-                : $"{metrics.BaselineDeltaStars:F2}★";
-            DeltaStarsBorder.Background = metrics.BaselineDeltaStars >= 0 ? GoldBrush : new SolidColorBrush(Color.FromRgb(0xa8, 0x55, 0xf7));
-
-            DeltaBpmText.Text = metrics.BaselineDeltaBpm >= 0 
-                ? $"+{metrics.BaselineDeltaBpm:F0} BPM" 
-                : $"{metrics.BaselineDeltaBpm:F0} BPM";
-            DeltaBpmBorder.Background = OrangeBrush;
-
-            SessionStatsText.Text = $"{metrics.SessionPlayCount} plays • {metrics.SessionPassCount} passes • {metrics.ActivePlayMinutes:F1} min active";
-            
-            var wallClockMinutes = (DateTime.UtcNow - _sessionStartTime).TotalMinutes;
-            SessionElapsedText.Text = $"{wallClockMinutes:F0}m session";
-        }
-
-        private void OnAchievementUnlocked(object? sender, PostPlayAchievement achievement)
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                ShowAchievementBanner(achievement);
-            });
-        }
-
-        private void ShowAchievementBanner(PostPlayAchievement achievement)
-        {
-            AchievementTitleText.Text = achievement.Title;
-            AchievementDescText.Text = achievement.Description;
-            AchievementTitleText.Foreground = new SolidColorBrush(Color.Parse(achievement.AccentColorHex));
-            AchievementBanner.BorderBrush = new SolidColorBrush(Color.Parse(achievement.AccentColorHex));
-            AchievementBanner.IsVisible = true;
-
-            _achievementBannerTimer?.Stop();
-            _achievementBannerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-            _achievementBannerTimer.Tick += (s, e) =>
-            {
-                AchievementBanner.IsVisible = false;
-                _achievementBannerTimer?.Stop();
-            };
-            _achievementBannerTimer.Start();
-        }
-
-        private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
-        {
-            if (_liveSessionTracker == null)
-                return;
-
-            var metrics = _liveSessionTracker.GetCurrentMetrics();
-            if (metrics.SessionPlayCount == 0)
-                return;
-
-            e.Cancel = true;
-
-            try
-            {
-                var summary = await _liveSessionTracker.GenerateSessionSummaryAsync();
-                var dialog = new SessionSummaryDialog(summary);
-
-                await dialog.ShowDialog(this);
-
-                if (dialog.ShouldOpenAnalytics)
-                {
-                    OpenAnalyticsWindow();
-                }
-
-                Closing -= OnWindowClosing;
-                Close();
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to show session summary");
-                Closing -= OnWindowClosing;
-                Close();
-            }
         }
 
         private void OpenAnalyticsWindow()
         {
             try
             {
-                var dbManager = _tracker.SessionManager.GetDatabaseManager();
-                var skillService = new Circle_Tracker.Analytics.SkillAnalyticsService(dbManager);
-                var sessionService = new Circle_Tracker.Analytics.SessionAnalyticsService(dbManager);
-                var queryEngine = new Circle_Tracker.Storage.Querying.SqlitePlayQueryEngine(dbManager);
-                var exportService = new Circle_Tracker.Sync.DataExportService(dbManager, queryEngine);
+                var serviceProvider = Program.GetServiceProvider();
+                var analyticsVm = serviceProvider?.GetService<AnalyticsViewModel>()
+                    ?? _viewModel?.CreateAnalyticsViewModel();
 
-                var viewModel = new Circle_Tracker.ViewModels.AnalyticsViewModel(skillService, sessionService, queryEngine, exportService);
-                var analyticsWindow = new Circle_Tracker.Views.AnalyticsWindow(viewModel);
-
-                analyticsWindow.Show();
+                if (analyticsVm != null)
+                {
+                    var analyticsWindow = new AnalyticsWindow(analyticsVm);
+                    analyticsWindow.Show();
+                }
             }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Failed to open analytics window");
-                ShowMessage($"Failed to open analytics: {ex.Message}", "Error");
             }
         }
 
-        private void UpdateTosuStatus(bool connected)
+        private async Task<bool> ShowSessionSummaryDialogAsync()
         {
-            TosuStatusDot.Fill = connected ? GreenBrush : RedBrush;
-            TosuStatusText.Text = connected ? "tosu: Connected" : "tosu: Connecting...";
-        }
-
-        public void SetCredentialsFound(bool found)
-        {
-            Dispatcher.UIThread.Post(() =>
+            if (_viewModel == null) return false;
+            try
             {
-                if (CredentialsLabel != null)
+                var summary = await _viewModel.GenerateSessionSummaryAsync();
+                var dialog = new SessionSummaryDialog(summary);
+                await dialog.ShowDialog(this);
+                if (dialog.ShouldOpenAnalytics)
                 {
-                    CredentialsLabel.Text = found ? "Found" : "Missing";
-                    CredentialsLabel.Foreground = found ? GreenBrush : RedBrush;
+                    OpenAnalyticsWindow();
                 }
-            });
-        }
-
-        public void SetSheetsApiReady(bool val)
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                SheetsStatusDot.Fill = val ? GreenBrush : RedBrush;
-                SheetsStatusText.Text = val ? "Sheets: Connected" : "Sheets: Not connected";
-            });
-        }
-
-        public void UpdateTime()
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                var s = _tracker.GetSnapshot();
-                int playing = s.PlayingSeconds;
-                int idle = s.IdleSeconds;
-                float total = playing + idle;
-                float eff = total > 0 ? 100f * playing / total : 0f;
-                int playingMin = playing / 60;
-                int idleMin = idle / 60;
-                if (SessionTimeText != null)
-                    SessionTimeText.Text = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
-            });
-        }
-
-        public void StopUpdateTimer()
-        {
-            Dispatcher.UIThread.Post(() => _gameTickTimer?.Stop());
-        }
-
-        public void ShowMessage(string message, string title = "Info")
-        {
-            Dispatcher.UIThread.Post(async () =>
-            {
-                try
-                {
-                    var panel = new StackPanel
-                    {
-                        Spacing = 16
-                    };
-
-                    panel.Children.Add(new TextBlock
-                    {
-                        Text = message,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa)),
-                        FontSize = 13
-                    });
-
-                    var okBtn = new Button
-                    {
-                        Content = "OK",
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        Classes = { "osu-action-pink" },
-                        MinWidth = 80
-                    };
-
-                    panel.Children.Add(okBtn);
-
-                    var border = new Border
-                    {
-                        Classes = { "hud-card" },
-                        Margin = new Thickness(12),
-                        Padding = new Thickness(16),
-                        Child = panel
-                    };
-
-                    var dlg = new Window
-                    {
-                        Title = title,
-                        Width = 440,
-                        Height = 200,
-                        CanResize = false,
-                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x12, 0x1d)),
-                        Content = border
-                    };
-
-                    okBtn.Click += (_, _) => dlg.Close();
-
-                    if (this.IsLoaded && this.IsVisible)
-                        await dlg.ShowDialog(this);
-                    else
-                        dlg.Show();
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Failed to display message: {Message}", message);
-                }
-            });
-        }
-
-        public async Task<bool> ShowYesNoDialog(string message, string title = "Confirm")
-        {
-            var tcs = new TaskCompletionSource<bool>();
-            await Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                try
-                {
-                    bool result = false;
-                    var panel = new StackPanel
-                    {
-                        Spacing = 16
-                    };
-
-                    panel.Children.Add(new TextBlock
-                    {
-                        Text = message,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa)),
-                        FontSize = 13
-                    });
-
-                    var btnRow = new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        Spacing = 8
-                    };
-
-                    var yesBtn = new Button
-                    {
-                        Content = "Yes",
-                        Classes = { "osu-action-pink" },
-                        MinWidth = 80
-                    };
-
-                    var noBtn = new Button
-                    {
-                        Content = "No",
-                        Classes = { "secondary-flat" },
-                        MinWidth = 80
-                    };
-
-                    btnRow.Children.Add(yesBtn);
-                    btnRow.Children.Add(noBtn);
-                    panel.Children.Add(btnRow);
-
-                    var border = new Border
-                    {
-                        Classes = { "hud-card" },
-                        Margin = new Thickness(12),
-                        Padding = new Thickness(16),
-                        Child = panel
-                    };
-
-                    Window dlg = null!;
-                    dlg = new Window
-                    {
-                        Title = title,
-                        Width = 440,
-                        Height = 200,
-                        CanResize = false,
-                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x12, 0x1d)),
-                        Content = border
-                    };
-
-                    yesBtn.Click += (_, _) => { result = true; dlg.Close(); };
-                    noBtn.Click += (_, _) => { result = false; dlg.Close(); };
-
-                    if (this.IsLoaded && this.IsVisible)
-                        await dlg.ShowDialog(this);
-                    else
-                        dlg.Show();
-
-                    tcs.SetResult(result);
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Failed to display confirm dialog: {Message}", message);
-                    tcs.SetResult(false);
-                }
-            });
-            return await tcs.Task;
-        }
-
-        private void LoadCoverImage(string coverUrl)
-        {
-            if (_currentCoverUrl == coverUrl)
-                return;
-
-            _currentCoverUrl = coverUrl;
-            _coverLoadCts?.Cancel();
-
-            if (string.IsNullOrEmpty(coverUrl))
-            {
-                CoverImage.Source = null;
-                return;
+                return true;
             }
-
-            if (_coverCache.TryGetValue(coverUrl, out var cached))
+            catch (Exception ex)
             {
-                CoverImage.Source = cached;
-                return;
+                _log.LogError(ex, "Failed to show session summary dialog");
+                return false;
             }
-
-            _coverLoadCts = new CancellationTokenSource();
-            var token = _coverLoadCts.Token;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    byte[] data = await _imageHttpClient.GetByteArrayAsync(coverUrl, token);
-                    if (token.IsCancellationRequested) return;
-
-                    using var ms = new MemoryStream(data);
-                    var bitmap = new Bitmap(ms);
-                    _coverCache[coverUrl] = bitmap;
-
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (_currentCoverUrl == coverUrl)
-                            CoverImage.Source = bitmap;
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _log.LogDebug("Failed to load cover image: {Error}", ex.Message);
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (_currentCoverUrl == coverUrl)
-                            CoverImage.Source = null;
-                    });
-                }
-            }, token);
-        }
-
-        private void UpdateControls()
-        {
-            var s = _tracker.GetSnapshot();
-
-            TosuStatusDot.Fill = _tosuClient.IsConnected ? GreenBrush : RedBrush;
-            TosuStatusText.Text = _tosuClient.IsConnected ? $"tosu: {s.DetectedClient}" : "tosu: Connecting...";
-
-            DbStatusDot.Fill = s.DatabaseReady ? GreenBrush : RedBrush;
-            DbStatusText.Text = s.DatabaseReady ? $"DB: {s.LocalPlayCount} plays" : "DB: Error";
-
-            GameStateBadge.Text = s.GameStateLabel;
-            GameStateBadge.Foreground = s.GameStateLabel switch
-            {
-                "PLAYING" => GreenBrush,
-                "RESULTS" => CyanBrush,
-                "REPLAY" => OrangeBrush,
-                _ => MutedBrush
-            };
-
-            BeatmapTitleText.Text = !string.IsNullOrEmpty(s.BeatmapTitle) ? s.BeatmapTitle : (!string.IsNullOrEmpty(s.BeatmapString) ? s.BeatmapString : "No beatmap detected");
-            BeatmapArtistText.Text = !string.IsNullOrEmpty(s.BeatmapArtist) ? s.BeatmapArtist : "-";
-            BeatmapVersionText.Text = !string.IsNullOrEmpty(s.BeatmapVersion) ? s.BeatmapVersion : "-";
-            BeatmapStarsBadge.Text = $"★ {s.BeatmapStars:0.00}";
-
-            ToolTip.SetTip(BeatmapTitleText, BeatmapTitleText.Text);
-            bool hasBeatmap = !string.IsNullOrEmpty(s.BeatmapTitle) || !string.IsNullOrEmpty(s.BeatmapString);
-            BannerTriangles.IsVisible = !hasBeatmap;
-
-            LoadCoverImage(s.CoverUrl);
-
-            StatCsText.Text = s.BeatmapCs.ToString("0.0");
-            StatCsText.Foreground = WhiteBrush;
-
-            StatArText.Text = s.BeatmapAr.ToString("0.0");
-            StatArText.Foreground = s.BeatmapAr >= 10.0m ? GreenBrush : WhiteBrush;
-
-            StatOdText.Text = s.BeatmapOd.ToString("0.0");
-            StatOdText.Foreground = s.BeatmapOd >= 10.0m ? GreenBrush : WhiteBrush;
-
-            StatHpText.Text = s.BeatmapHp.ToString("0.0");
-            StatHpText.Foreground = WhiteBrush;
-
-            StatBpmText.Text = s.BeatmapBpm.ToString();
-            StatBpmText.Foreground = s.BeatmapBpm >= 200 ? OrangeBrush : WhiteBrush;
-
-            StatModsText.Text = !string.IsNullOrEmpty(s.ModsString) ? $"+{s.ModsString}" : "None";
-            StatModsText.Foreground = !string.IsNullOrEmpty(s.ModsString) ? PinkBrush : MutedBrush;
-
-            Hits300Text.Text = s.Play300c.ToString();
-            Hits100Text.Text = s.Play100c.ToString();
-            Hits50Text.Text = s.Play50c.ToString();
-            HitsMissText.Text = s.PlayMissc.ToString();
-            TotalObjectsText.Text = $"Total: {s.TotalBeatmapHits}";
-
-            AccuracyText.Text = $"{s.Accuracy:0.00}%";
-            if (s.Accuracy >= 100.0m)
-                AccuracyText.Foreground = GoldBrush;
-            else if (s.Accuracy > 95.0m)
-                AccuracyText.Foreground = GreenBrush;
-            else
-                AccuracyText.Foreground = WhiteBrush;
-            PlayCountBadge.Text = $"Play #{s.PlayCount}";
-
-            int playing = s.PlayingSeconds;
-            int idle = s.IdleSeconds;
-            float total = playing + idle;
-            float eff = total > 0 ? 100f * playing / total : 0f;
-            int playingMin = playing / 60;
-            int idleMin = idle / 60;
-            SessionTimeText.Text = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
         }
 
         protected override async void OnClosing(WindowClosingEventArgs e)
@@ -637,7 +107,15 @@ namespace Circle_Tracker
             try
             {
                 IsEnabled = false;
-                await PerformShutdownAsync();
+                if (_viewModel != null && _viewModel.LiveSessionCardVisible)
+                {
+                    await ShowSessionSummaryDialogAsync();
+                }
+
+                if (_viewModel != null)
+                {
+                    await _viewModel.ShutdownAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -650,290 +128,18 @@ namespace Circle_Tracker
             }
         }
 
-        private async Task PerformShutdownAsync()
-        {
-            _gameTickTimer?.Stop();
-            _uiUpdateTimer?.Stop();
-            _secondsTimer?.Stop();
-            _achievementBannerTimer?.Stop();
-
-            _coverLoadCts?.Cancel();
-            _coverLoadCts?.Dispose();
-
-            try
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                await _tracker.SessionManager.EndSessionAsync(cts.Token);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to end session cleanly during shutdown");
-            }
-
-            if (_tracker.PlaySink is CompositePlaySink composite)
-            {
-                foreach (var reg in composite.Registrations)
-                {
-                    if (reg.Sink is IAsyncDisposable asyncRegSink)
-                    {
-                        try { await asyncRegSink.DisposeAsync(); } catch { }
-                    }
-                    else if (reg.Sink is IDisposable dispRegSink)
-                    {
-                        try { dispRegSink.Dispose(); } catch { }
-                    }
-                }
-            }
-            else if (_tracker.PlaySink is IAsyncDisposable asyncSink)
-            {
-                try { await asyncSink.DisposeAsync(); } catch { }
-            }
-            else if (_tracker.PlaySink is IDisposable dispSink)
-            {
-                try { dispSink.Dispose(); } catch { }
-            }
-
-            try
-            {
-                _tosuClient.Dispose();
-            }
-            catch { }
-
-            try
-            {
-                _tracker.SaveSettings();
-            }
-            catch { }
-        }
-
-        private void EnableLocalLoggingCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
-        {
-            _tracker.EnableLocalLogging = EnableLocalLoggingCheckBox.IsChecked == true;
-        }
-
-        private void EnableSheetsLoggingCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
-        {
-            _tracker.EnableGoogleSheetsLogging = EnableSheetsLoggingCheckBox.IsChecked == true;
-        }
-
-        private void LocalDbPathTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-        {
-            _tracker.LocalDatabasePath = LocalDbPathTextBox.Text?.Trim() ?? "";
-        }
-
-        private void SpreadsheetIdTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-        {
-            _tracker.SpreadsheetId = SpreadsheetIdTextBox.Text ?? "";
-        }
-
-        private void SheetNameTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-        {
-            _tracker.SheetName = SheetNameTextBox.Text ?? "";
-        }
-
-        private void SoundEnabledCheckbox_IsCheckedChanged(object? sender, RoutedEventArgs e)
-        {
-            _tracker.SubmitSoundEnabled = SoundEnabledCheckbox.IsChecked == true;
-        }
-
-        private void AltSepCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
-        {
-            _tracker.UseAltFuncSeparator = AltSepCheckBox.IsChecked == true;
-        }
-
-        private void ConnectApiButton_Click(object? sender, RoutedEventArgs e)
-        {
-            _ = Task.Run(async () =>
-            {
-                try { await _tracker.InitGoogleAPIAsync(); }
-                catch (Exception ex) { _log.LogError(ex, "Google API init failed"); }
-            });
-        }
-
-        private void ImportSheetsButton_Click(object? sender, RoutedEventArgs e)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        ShowMessage(
-                            "Starting import from Google Sheets...\n\n" +
-                            "This may take several minutes for large spreadsheets.\n" +
-                            "The app will notify you when complete.",
-                            "Import Started");
-                    });
-
-                    if (!_tracker.SheetsApiReady)
-                    {
-                        await _tracker.InitGoogleAPIAsync();
-                        await Task.Delay(1000);
-                    }
-
-                    if (!_tracker.SheetsApiReady)
-                    {
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            ShowMessage(
-                                "Please connect to Google Sheets API first.\n\n" +
-                                "Click 'Connect Sheets API' and authorize the application.",
-                                "Not Connected");
-                        });
-                        return;
-                    }
-
-                    string spreadsheetId = _tracker.SpreadsheetId;
-                    string sheetName = _tracker.SheetName;
-
-                    if (string.IsNullOrWhiteSpace(spreadsheetId))
-                    {
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            ShowMessage(
-                                "Please enter your Spreadsheet ID in the settings above.",
-                                "Missing Spreadsheet ID");
-                        });
-                        return;
-                    }
-
-                    var dbManager = _tracker.SessionManager.GetDatabaseManager();
-                    var sheetsService = GoogleSheetsManager.CreateSheetsService();
-                    
-                    if (sheetsService == null)
-                    {
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            ShowMessage("Failed to create Google Sheets service", "Error");
-                        });
-                        return;
-                    }
-
-                    var importer = new Circle_Tracker.Sync.GoogleSheetsHistoricalImporter(sheetsService, dbManager);
-
-                    var progress = new Progress<Circle_Tracker.Sync.MigrationProgress>(p =>
-                    {
-                        _log.LogInformation(
-                            "Import progress: {Processed}/{Total} rows ({Percent:F1}%) - {Imported} imported, {Skipped} skipped - Current: {Beatmap}",
-                            p.ProcessedRows, p.TotalRows, p.ProgressPercent, p.ImportedCount, p.SkippedDuplicates, p.CurrentBeatmapString);
-                    });
-
-                    var result = await importer.ImportFromSpreadsheetAsync(
-                        spreadsheetId,
-                        sheetName,
-                        progress,
-                        CancellationToken.None);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (result.Success)
-                        {
-                            ShowMessage(
-                                $"Import complete!\n\n" +
-                                $"✓ Imported: {result.SyncedCount} plays\n" +
-                                $"⊘ Skipped (duplicates): {result.FailedCount}\n\n" +
-                                $"Your historical data is now available in the Analytics Dashboard!",
-                                "Import Successful");
-                        }
-                        else
-                        {
-                            ShowMessage(
-                                $"Import failed:\n\n{result.ErrorMessage}\n\n" +
-                                $"Check errorlog.txt for details.",
-                                "Import Failed");
-                        }
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Import from Google Sheets failed");
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        ShowMessage(
-                            $"An error occurred during import:\n\n{ex.Message}\n\n" +
-                            $"Check errorlog.txt for details.",
-                            "Import Error");
-                    });
-                }
-            });
-        }
-
-        private void AnalyticsButton_Click(object? sender, RoutedEventArgs e)
-        {
-            OpenAnalyticsWindow();
-        }
-
         private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)
         {
             SettingsPanel.IsVisible = !SettingsPanel.IsVisible;
             if (SettingsPanel.IsVisible)
             {
                 SettingsToggleText.Text = "▼ Less";
-                if (Height < 560)
-                    Height = 560;
+                if (Height < 560) Height = 560;
             }
             else
             {
                 SettingsToggleText.Text = "► More!";
                 Height = 400;
-            }
-        }
-
-        private void StartupCheckBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
-        {
-            if (_suppressStartupCheckboxEvent) return;
-            if (StartupCheckBox.IsChecked == true)
-                AutostartHelper.CreateAutostart();
-            else
-                AutostartHelper.DeleteAutostart();
-        }
-
-        private void DebounceReconnect()
-        {
-            _reconnectDebounce?.Cancel();
-            _reconnectDebounce = new CancellationTokenSource();
-            var token = _reconnectDebounce.Token;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(1000, token);
-                    if (!token.IsCancellationRequested)
-                        await _tosuClient.ReconnectAsync();
-                }
-                catch (OperationCanceledException) { }
-            });
-        }
-
-        private void TosuHostTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-        {
-            string host = TosuHostTextBox.Text?.Trim() ?? "";
-            if (!string.IsNullOrEmpty(host) && !host.Contains(' '))
-            {
-                _tracker.TosuHost = host;
-                _tosuClient.Host = host;
-                TosuHostTextBox.Classes.Remove("bad-value");
-                DebounceReconnect();
-            }
-            else if (!string.IsNullOrEmpty(TosuHostTextBox.Text))
-            {
-                TosuHostTextBox.Classes.Add("bad-value");
-            }
-        }
-
-        private void TosuPortTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-        {
-            string text = TosuPortTextBox.Text?.Trim() ?? "";
-            if (int.TryParse(text, out int port) && port >= 1 && port <= 65535)
-            {
-                _tracker.TosuPort = port;
-                _tosuClient.Port = port;
-                TosuPortTextBox.Classes.Remove("bad-value");
-                DebounceReconnect();
-            }
-            else if (!string.IsNullOrEmpty(text))
-            {
-                TosuPortTextBox.Classes.Add("bad-value");
             }
         }
     }

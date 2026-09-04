@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Circle_Tracker.Storage
 {
-    public class SessionManager : IDisposable, IAsyncDisposable
+    public class SessionManager : ISessionManager, IDisposable, IAsyncDisposable
     {
         private static readonly ILogger<SessionManager> _log = AppLogger.For<SessionManager>();
 

@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:Circle_Tracker"
+        xmlns:vm="using:Circle_Tracker.ViewModels"
         x:Class="Circle_Tracker.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
         Title="Circle Tracker"
         Width="600"
         MinWidth="560"
@@ -19,29 +21,29 @@
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Ellipse x:Name="TosuStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
-              <TextBlock x:Name="TosuStatusText" Text="tosu: Connecting..." Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <Ellipse Width="6" Height="6" Fill="{Binding TosuStatusBrush}" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding TosuStatusText}" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Ellipse x:Name="DbStatusDot" Width="6" Height="6" Fill="#4ade80" VerticalAlignment="Center"/>
-              <TextBlock x:Name="DbStatusText" Text="DB: Ready" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <Ellipse Width="6" Height="6" Fill="{Binding DbStatusBrush}" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding DbStatusText}" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
           </StackPanel>
 
-          <TextBlock Grid.Column="1" x:Name="GameStateBadge" Text="IDLE" Foreground="#8f87a3" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Text="{Binding GameState}" Foreground="{Binding GameStateBrush}" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-          <Button Grid.Column="2" Classes="ghost-btn" Click="ConnectApiButton_Click" Padding="4,2" Cursor="Hand" VerticalAlignment="Center">
+          <Button Grid.Column="2" Classes="ghost-btn" Command="{Binding ConnectSheetsCommand}" Padding="4,2" Cursor="Hand" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Ellipse x:Name="SheetsStatusDot" Width="6" Height="6" Fill="#f87171" VerticalAlignment="Center"/>
-              <TextBlock x:Name="SheetsStatusText" Text="Sheets: Not connected" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <Ellipse Width="6" Height="6" Fill="{Binding SheetsStatusBrush}" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding SheetsStatusText}" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
         </Grid>
 
         <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,14" Background="#221c34">
           <Grid>
-            <Image x:Name="CoverImage" Stretch="UniformToFill"/>
-            <local:TrianglesControl x:Name="BannerTriangles" Velocity="8" TriangleCount="14" TriangleBrush="#25ffffff" IsHitTestVisible="False"/>
+            <Image Source="{Binding CoverImage}" Stretch="UniformToFill"/>
+            <local:TrianglesControl x:Name="BannerTriangles" IsVisible="{Binding BannerTrianglesVisible}" Velocity="8" TriangleCount="14" TriangleBrush="#25ffffff" IsHitTestVisible="False"/>
             <Border>
               <Border.Background>
                 <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
@@ -53,15 +55,15 @@
             </Border>
             <Grid ColumnDefinitions="*,Auto" Margin="14,10">
               <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
-                <TextBlock x:Name="BeatmapTitleText" Classes="banner-title" Text="No beatmap detected" TextTrimming="CharacterEllipsis"/>
-                <TextBlock x:Name="BeatmapArtistText" Classes="banner-artist" Text="-" Foreground="#f1f0f7" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Classes="banner-title" Text="{Binding BeatmapTitle}" ToolTip.Tip="{Binding BeatmapTitle}" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Classes="banner-artist" Text="{Binding BeatmapArtist}" Foreground="#f1f0f7" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
               <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="6">
-                <Border x:Name="BeatmapVersionBorder" CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
-                  <TextBlock x:Name="BeatmapVersionText" Text="-" FontSize="12" FontWeight="Bold" Foreground="#f5f4fa"/>
+                <Border CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
+                  <TextBlock Text="{Binding BeatmapVersion}" FontSize="12" FontWeight="Bold" Foreground="#f5f4fa"/>
                 </Border>
-                <Border x:Name="BeatmapStarsBorder" CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
-                  <TextBlock x:Name="BeatmapStarsBadge" Text="★ 0.00" FontSize="13" FontWeight="Bold" Foreground="#facc15"/>
+                <Border CornerRadius="8" Background="#88000000" BorderThickness="0" Padding="8,4" HorizontalAlignment="Right">
+                  <TextBlock Text="{Binding BeatmapStars}" FontSize="13" FontWeight="Bold" Foreground="#facc15"/>
                 </Border>
               </StackPanel>
             </Grid>
@@ -72,30 +74,30 @@
           <Grid Grid.Column="0" ColumnDefinitions="*,*,*,*" Margin="4,0,24,0" VerticalAlignment="Center">
             <StackPanel Grid.Column="0" HorizontalAlignment="Left">
               <TextBlock Classes="stat-label" Text="CS"/>
-              <TextBlock x:Name="StatCsText" Classes="hero-stat-value" Text="0.0"/>
+              <TextBlock Classes="hero-stat-value" Text="{Binding StatCs}"/>
             </StackPanel>
             <StackPanel Grid.Column="1" HorizontalAlignment="Left">
               <TextBlock Classes="stat-label" Text="AR"/>
-              <TextBlock x:Name="StatArText" Classes="hero-stat-value" Text="0.0"/>
+              <TextBlock Classes="hero-stat-value" Text="{Binding StatAr}" Foreground="{Binding StatArBrush}"/>
             </StackPanel>
             <StackPanel Grid.Column="2" HorizontalAlignment="Left">
               <TextBlock Classes="stat-label" Text="OD"/>
-              <TextBlock x:Name="StatOdText" Classes="hero-stat-value" Text="0.0"/>
+              <TextBlock Classes="hero-stat-value" Text="{Binding StatOd}" Foreground="{Binding StatOdBrush}"/>
             </StackPanel>
             <StackPanel Grid.Column="3" HorizontalAlignment="Left">
               <TextBlock Classes="stat-label" Text="HP"/>
-              <TextBlock x:Name="StatHpText" Classes="hero-stat-value" Text="0.0"/>
+              <TextBlock Classes="hero-stat-value" Text="{Binding StatHp}"/>
             </StackPanel>
           </Grid>
 
           <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="2">
             <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-              <TextBlock Grid.Column="0" x:Name="AccuracyText" Classes="hero-number" Text="100.00%" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              <TextBlock Grid.Column="0" Classes="hero-number" Text="{Binding AccuracyText}" Foreground="{Binding AccuracyBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
               <Border Grid.Column="1" CornerRadius="8" Background="#88000000" Padding="8,3" VerticalAlignment="Center">
-                <TextBlock x:Name="PlayCountBadge" Text="Play #0" FontSize="11" FontWeight="Bold" Foreground="#facc15"/>
+                <TextBlock Text="{Binding PlayCountBadge}" FontSize="11" FontWeight="Bold" Foreground="#facc15"/>
               </Border>
             </Grid>
-            <TextBlock x:Name="SessionTimeText" Classes="stat-label" Text="Play: 0m  •  Idle: 0m  •  Efficiency: 0%" HorizontalAlignment="Right"/>
+            <TextBlock Classes="stat-label" Text="{Binding SessionTimeText}" HorizontalAlignment="Right"/>
           </StackPanel>
         </Grid>
 
@@ -106,81 +108,80 @@
             <Grid ColumnDefinitions="*,*,*,*" Margin="4,0,24,0">
               <StackPanel Grid.Column="0" HorizontalAlignment="Left">
                 <TextBlock Classes="stat-label" Text="300"/>
-                <TextBlock x:Name="Hits300Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#7dd3fc"/>
+                <TextBlock Text="{Binding Hits300}" FontSize="16" FontWeight="Bold" Foreground="#7dd3fc"/>
               </StackPanel>
               <StackPanel Grid.Column="1" HorizontalAlignment="Left">
                 <TextBlock Classes="stat-label" Text="100"/>
-                <TextBlock x:Name="Hits100Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#4ade80"/>
+                <TextBlock Text="{Binding Hits100}" FontSize="16" FontWeight="Bold" Foreground="#4ade80"/>
               </StackPanel>
               <StackPanel Grid.Column="2" HorizontalAlignment="Left">
                 <TextBlock Classes="stat-label" Text="50"/>
-                <TextBlock x:Name="Hits50Text" Text="0" FontSize="16" FontWeight="Bold" Foreground="#fb923c"/>
+                <TextBlock Text="{Binding Hits50}" FontSize="16" FontWeight="Bold" Foreground="#fb923c"/>
               </StackPanel>
               <StackPanel Grid.Column="3" HorizontalAlignment="Left">
                 <TextBlock Classes="stat-label" Text="MISS"/>
-                <TextBlock x:Name="HitsMissText" Text="0" FontSize="16" FontWeight="Bold" Foreground="#f87171"/>
+                <TextBlock Text="{Binding HitsMiss}" FontSize="16" FontWeight="Bold" Foreground="#f87171"/>
               </StackPanel>
             </Grid>
-            <TextBlock x:Name="TotalObjectsText" Classes="stat-label" Text="Total: 0" Margin="4,0,0,0"/>
+            <TextBlock Classes="stat-label" Text="{Binding TotalObjectsText}" Margin="4,0,0,0"/>
           </StackPanel>
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" HorizontalAlignment="Right" VerticalAlignment="Center">
             <StackPanel HorizontalAlignment="Right">
               <TextBlock Classes="stat-label" Text="BPM" HorizontalAlignment="Right"/>
-              <TextBlock x:Name="StatBpmText" FontSize="16" FontWeight="Bold" Foreground="#f5f4fa" Text="0" HorizontalAlignment="Right"/>
+              <TextBlock FontSize="16" FontWeight="Bold" Foreground="{Binding StatBpmBrush}" Text="{Binding StatBpm}" HorizontalAlignment="Right"/>
             </StackPanel>
             <StackPanel HorizontalAlignment="Right">
               <TextBlock Classes="stat-label" Text="MODS" HorizontalAlignment="Right"/>
-              <TextBlock x:Name="StatModsText" FontSize="16" FontWeight="Bold" Foreground="#f472b6" Text="None" HorizontalAlignment="Right"/>
+              <TextBlock FontSize="16" FontWeight="Bold" Foreground="{Binding StatModsBrush}" Text="{Binding StatMods}" HorizontalAlignment="Right"/>
             </StackPanel>
           </StackPanel>
         </Grid>
 
-        <Border Grid.Row="5" x:Name="LiveSessionCard" Classes="hud-card" Margin="0,0,0,10" IsVisible="False">
+        <Border Grid.Row="5" Classes="hud-card" Margin="0,0,0,10" IsVisible="{Binding LiveSessionCardVisible}">
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Text="LIVE SESSION INSIGHTS" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="11"/>
-              <TextBlock Grid.Column="1" x:Name="SessionElapsedText" Text="0m elapsed" Foreground="{StaticResource TextMuted}" FontSize="10"/>
+              <TextBlock Grid.Column="1" Text="{Binding SessionElapsedText}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
             </Grid>
 
             <Grid ColumnDefinitions="*,*,*">
               <StackPanel Grid.Column="0" Spacing="2">
                 <TextBlock Text="Accuracy Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
-                <Border x:Name="DeltaAccuracyBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGreen}">
-                  <TextBlock x:Name="DeltaAccuracyText" Text="+0.00%" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGreen}">
+                  <TextBlock Text="{Binding DeltaAccuracyText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                 </Border>
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="2">
                 <TextBlock Text="Stars Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
-                <Border x:Name="DeltaStarsBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGold}">
-                  <TextBlock x:Name="DeltaStarsText" Text="+0.00★" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentGold}">
+                  <TextBlock Text="{Binding DeltaStarsText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                 </Border>
               </StackPanel>
 
               <StackPanel Grid.Column="2" Spacing="2">
                 <TextBlock Text="BPM Δ" Foreground="{StaticResource TextMuted}" FontSize="9"/>
-                <Border x:Name="DeltaBpmBorder" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentOrange}">
-                  <TextBlock x:Name="DeltaBpmText" Text="+0 BPM" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Background="{StaticResource AccentOrange}">
+                  <TextBlock Text="{Binding DeltaBpmText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                 </Border>
               </StackPanel>
             </Grid>
 
-
-            <TextBlock x:Name="SessionStatsText" Text="0 plays • 0 passes • 0.0 min active" Foreground="{StaticResource TextMuted}" FontSize="9"/>
+            <TextBlock Text="{Binding SessionStatsText}" Foreground="{StaticResource TextMuted}" FontSize="9"/>
           </StackPanel>
         </Border>
 
-        <Border x:Name="AchievementBanner" Classes="hud-card" Margin="0,0,0,10" IsVisible="False" Background="#cc1d192b" BorderBrush="#facc15" BorderThickness="2">
+        <Border Classes="hud-card" Margin="0,0,0,10" IsVisible="{Binding AchievementBannerVisible}" Background="#cc1d192b" BorderBrush="{Binding AchievementAccentColor}" BorderThickness="2">
           <StackPanel Spacing="6">
-            <TextBlock x:Name="AchievementTitleText" Text="Achievement Unlocked!" FontWeight="Bold" FontSize="12"/>
-            <TextBlock x:Name="AchievementDescText" Text="" FontSize="10" Foreground="{StaticResource TextMuted}"/>
+            <TextBlock Text="{Binding AchievementTitle}" FontWeight="Bold" FontSize="12"/>
+            <TextBlock Text="{Binding AchievementDescription}" FontSize="10" Foreground="{StaticResource TextMuted}"/>
           </StackPanel>
         </Border>
 
         <StackPanel Grid.Row="6" Spacing="8">
-          <Button Classes="osu-action-blue" Content="📊 ANALYTICS DASHBOARD" HorizontalAlignment="Center" Click="AnalyticsButton_Click" Margin="0,0,0,4"/>
-          
+          <Button Classes="osu-action-blue" Content="📊 ANALYTICS DASHBOARD" HorizontalAlignment="Center" Command="{Binding OpenAnalyticsCommand}" Margin="0,0,0,4"/>
+
           <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">
             <TextBlock x:Name="SettingsToggleText" Text="► More Settings" Foreground="#8f87a3" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
           </Button>
@@ -189,38 +190,37 @@
             <Grid ColumnDefinitions="*,*" Margin="4">
               <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,10,0">
                 <TextBlock Classes="stat-label" Text="DATA PERSISTENCE &amp; STORAGE" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
-                <CheckBox x:Name="EnableLocalLoggingCheckBox" Classes="osu-check" Content="Enable Local SQLite Logging" IsCheckedChanged="EnableLocalLoggingCheckBox_IsCheckedChanged"/>
-                <TextBox x:Name="LocalDbPathTextBox" Classes="osu-input" Watermark="Database path (default: circle_tracker.db)" TextChanged="LocalDbPathTextBox_TextChanged"
+                <CheckBox Classes="osu-check" Content="Enable Local SQLite Logging" IsChecked="{Binding EnableLocalLogging}"/>
+                <TextBox Classes="osu-input" Watermark="Database path (default: circle_tracker.db)" Text="{Binding LocalDatabasePath}"
                          ToolTip.Tip="Custom path for the SQLite database file"/>
-                <CheckBox x:Name="SoundEnabledCheckbox" Classes="osu-check" Content="Play sound on play submission" IsCheckedChanged="SoundEnabledCheckbox_IsCheckedChanged"/>
+                <CheckBox Classes="osu-check" Content="Play sound on play submission" IsChecked="{Binding SubmitSoundEnabled}"/>
 
                 <TextBlock Classes="stat-label" Text="TOSU CLIENT &amp; APP" FontSize="10" FontWeight="Bold" Foreground="#8f87a3" Margin="0,8,0,0"/>
                 <Grid ColumnDefinitions="*,8,80">
-                  <TextBox Grid.Column="0" x:Name="TosuHostTextBox" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="127.0.0.1" TextChanged="TosuHostTextBox_TextChanged"/>
-                  <TextBox Grid.Column="2" x:Name="TosuPortTextBox" Classes="osu-input" Watermark="Port (24050)" Text="24050" TextChanged="TosuPortTextBox_TextChanged"/>
+                  <TextBox Grid.Column="0" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="{Binding TosuHost}"/>
+                  <TextBox Grid.Column="2" Classes="osu-input" Watermark="Port (24050)" Text="{Binding TosuPortText}"/>
                 </Grid>
-                <CheckBox x:Name="StartupCheckBox" Classes="osu-check" Content="Launch on system startup" IsCheckedChanged="StartupCheckBox_IsCheckedChanged"/>
+                <CheckBox Classes="osu-check" Content="Launch on system startup" IsChecked="{Binding StartupLaunch}"/>
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="8" Margin="10,0,0,0">
                 <TextBlock Classes="stat-label" Text="GOOGLE SHEETS (OPTIONAL)" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>
-                <CheckBox x:Name="EnableSheetsLoggingCheckBox" Classes="osu-check" Content="Enable Google Sheets Logging" IsCheckedChanged="EnableSheetsLoggingCheckBox_IsCheckedChanged"/>
-                <TextBox x:Name="SpreadsheetIdTextBox" Classes="osu-input" Watermark="Spreadsheet ID" TextChanged="SpreadsheetIdTextBox_TextChanged"
+                <CheckBox Classes="osu-check" Content="Enable Google Sheets Logging" IsChecked="{Binding EnableSheetsLogging}"/>
+                <TextBox Classes="osu-input" Watermark="Spreadsheet ID" Text="{Binding SpreadsheetId}"
                          ToolTip.Tip="The ID from your Google Sheets URL"/>
-                <TextBox x:Name="SheetNameTextBox" Classes="osu-input" Watermark="Sheet Name" TextChanged="SheetNameTextBox_TextChanged"
+                <TextBox Classes="osu-input" Watermark="Sheet Name" Text="{Binding SheetName}"
                          ToolTip.Tip="The sheet/tab name (default: Raw Data)"/>
 
                 <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                  <Button Grid.Column="0" x:Name="ConnectApiButton" Classes="osu-action-pink" Content="Connect Sheets API" Click="ConnectApiButton_Click" VerticalAlignment="Center"/>
+                  <Button Grid.Column="0" Classes="osu-action-pink" Content="Connect Sheets API" Command="{Binding ConnectSheetsCommand}" VerticalAlignment="Center"/>
                   <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Classes="stat-label" Text="credentials.json:" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="CredentialsLabel" Text="Missing" FontSize="11" FontWeight="SemiBold" Foreground="#f87171" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding CredentialsStatusText}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding CredentialsStatusBrush}" VerticalAlignment="Center"/>
                   </StackPanel>
                 </Grid>
 
-                <Button x:Name="ImportSheetsButton" 
-                        Classes="osu-action-blue" 
-                        Click="ImportSheetsButton_Click" 
+                <Button Classes="osu-action-blue"
+                        Command="{Binding ImportSheetsCommand}"
                         HorizontalAlignment="Stretch"
                         Padding="10,6"
                         Margin="0,6,0,0"
@@ -228,7 +228,7 @@
                   <TextBlock Text="📥 IMPORT SHEETS DATA" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Button>
 
-                <CheckBox x:Name="AltSepCheckBox" Classes="osu-check" Content="Use ';' formula separator" IsCheckedChanged="AltSepCheckBox_IsCheckedChanged"/>
+                <CheckBox Classes="osu-check" Content="Use ';' formula separator" IsChecked="{Binding UseAltFuncSeparator}"/>
               </StackPanel>
             </Grid>
           </Border>

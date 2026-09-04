@@ -64,6 +64,7 @@ public interface ILiveSessionTracker
     Task OnPlayLoggedAsync(PlayEntryData play, PlayContext context);
     Task ProcessPlay(PlayEntryData play, PlayContext? context = null);
     event EventHandler<LiveSessionMetrics>? MetricsUpdated;
+    event EventHandler<LiveSessionMetrics>? PlayProcessed;
     event EventHandler<PostPlayAchievement>? AchievementUnlocked;
     Task<SessionSummaryReport> GenerateSessionSummaryAsync(CancellationToken ct = default);
     void ResetSession();
@@ -86,6 +87,7 @@ public class LiveSessionTracker : ILiveSessionTracker
     public decimal BaselineDeltaAccuracy { get; private set; } = 0m;
 
     public event EventHandler<LiveSessionMetrics>? MetricsUpdated;
+    public event EventHandler<LiveSessionMetrics>? PlayProcessed;
     public event EventHandler<PostPlayAchievement>? AchievementUnlocked;
 
     public LiveSessionTracker(ISessionAnalyticsService sessionService)
@@ -190,7 +192,9 @@ public class LiveSessionTracker : ILiveSessionTracker
 
         await CheckAchievementsAsync(play, context);
 
-        MetricsUpdated?.Invoke(this, GetCurrentMetrics());
+        var currentMetrics = GetCurrentMetrics();
+        MetricsUpdated?.Invoke(this, currentMetrics);
+        PlayProcessed?.Invoke(this, currentMetrics);
     }
 
     public async Task<SessionSummaryReport> GenerateSessionSummaryAsync(CancellationToken ct = default)
