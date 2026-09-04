@@ -286,8 +286,9 @@ namespace Circle_Tracker
                 var skillService = new Circle_Tracker.Analytics.SkillAnalyticsService(dbManager);
                 var sessionService = new Circle_Tracker.Analytics.SessionAnalyticsService(dbManager);
                 var queryEngine = new Circle_Tracker.Storage.Querying.SqlitePlayQueryEngine(dbManager);
+                var exportService = new Circle_Tracker.Sync.DataExportService(dbManager, queryEngine);
 
-                var viewModel = new Circle_Tracker.ViewModels.AnalyticsViewModel(skillService, sessionService, queryEngine);
+                var viewModel = new Circle_Tracker.ViewModels.AnalyticsViewModel(skillService, sessionService, queryEngine, exportService);
                 var analyticsWindow = new Circle_Tracker.Views.AnalyticsWindow(viewModel);
 
                 analyticsWindow.Show();

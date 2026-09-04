@@ -295,4 +295,150 @@ public class AnalyticsViewModelTests
 
         viewModel.IsLoading.Should().BeFalse();
     }
+
+    [Fact]
+    public void PassFailConverters_ReturnCorrectValues()
+    {
+        var textConv = new Circle_Tracker.Converters.PassFailTextConverter();
+        textConv.Convert(true, typeof(string), null, System.Globalization.CultureInfo.InvariantCulture).Should().Be("PASS");
+        textConv.Convert(false, typeof(string), null, System.Globalization.CultureInfo.InvariantCulture).Should().Be("RETRY");
+        textConv.Convert(null, typeof(string), null, System.Globalization.CultureInfo.InvariantCulture).Should().Be("RETRY");
+
+        var bgConv = new Circle_Tracker.Converters.PassFailBackgroundConverter();
+        bgConv.Convert(true, typeof(Avalonia.Media.IBrush), null, System.Globalization.CultureInfo.InvariantCulture).Should().NotBeNull();
+        bgConv.Convert(false, typeof(Avalonia.Media.IBrush), null, System.Globalization.CultureInfo.InvariantCulture).Should().NotBeNull();
+
+        var fgConv = new Circle_Tracker.Converters.PassFailForegroundConverter();
+        fgConv.Convert(true, typeof(Avalonia.Media.IBrush), null, System.Globalization.CultureInfo.InvariantCulture).Should().NotBeNull();
+        fgConv.Convert(false, typeof(Avalonia.Media.IBrush), null, System.Globalization.CultureInfo.InvariantCulture).Should().NotBeNull();
+    }
+
+    [AvaloniaFact]
+    public async Task SearchFilterReset_ClearingSearchText_ClearsQuery()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        PlayQueryFilter? lastFilter = null;
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .Callback<PlayQueryFilter, CancellationToken>((f, _) => lastFilter = f)
+            .ReturnsAsync(new PagedResult<PlayRecord>(new List<PlayRecord>(), 0, 1, 50, new PlayFilterSummary(0, 0, 0, 0, 0, 0, 0)));
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+        viewModel.SelectedTabIndex = 4;
+        await Task.Delay(50);
+
+        viewModel.SearchText = "freedom dive";
+        await Task.Delay(50);
+        lastFilter.Should().NotBeNull();
+        lastFilter!.SearchQuery.Should().Be("freedom dive");
+
+        viewModel.SearchText = "";
+        await Task.Delay(50);
+        lastFilter.Should().NotBeNull();
+        lastFilter!.SearchQuery.Should().BeNull();
+    }
+
+    [AvaloniaFact]
+    public async Task ModFilters_MutexAndBitfieldBehavior()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        PlayQueryFilter? lastFilter = null;
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .Callback<PlayQueryFilter, CancellationToken>((f, _) => lastFilter = f)
+            .ReturnsAsync(new PagedResult<PlayRecord>(new List<PlayRecord>(), 0, 1, 50, new PlayFilterSummary(0, 0, 0, 0, 0, 0, 0)));
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+        viewModel.SelectedTabIndex = 4;
+        await Task.Delay(50);
+
+        // Turn on NM
+        viewModel.IsFilterNm = true;
+        await Task.Delay(50);
+        lastFilter!.ModMode.Should().Be(ModFilterMode.NoModOnly);
+
+        // Turn on HD and DT -> NM should automatically be unchecked
+        viewModel.IsFilterHd = true;
+        viewModel.IsFilterNm.Should().BeFalse();
+        viewModel.IsFilterDt = true;
+        await Task.Delay(50);
+
+        lastFilter!.ModMode.Should().Be(ModFilterMode.ContainsAll);
+        // HD (1 << 3 = 8) | DT (1 << 6 = 64) = 72
+        lastFilter.RequiredModsBitfield.Should().Be((1 << 3) | (1 << 6));
+
+        // Turn NM back on -> HD and DT should be unchecked
+        viewModel.IsFilterNm = true;
+        viewModel.IsFilterHd.Should().BeFalse();
+        viewModel.IsFilterDt.Should().BeFalse();
+        await Task.Delay(50);
+        lastFilter!.ModMode.Should().Be(ModFilterMode.NoModOnly);
+    }
+
+    [AvaloniaFact]
+    public async Task PaginationCommands_CanExecute_UpdatesOnPageCountChanges()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<PlayRecord>(
+                new List<PlayRecord>(),
+                150,
+                1,
+                50,
+                new PlayFilterSummary(150, 95.0m, 5.0m, 18000, 45000, 140, 93.3)
+            ));
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+
+        // Before loading plays, TotalPages is 0, CurrentPage is 1
+        viewModel.NextPageCommand.CanExecute(null).Should().BeFalse();
+        viewModel.PreviousPageCommand.CanExecute(null).Should().BeFalse();
+
+        // Switch to tab 4 to load play history
+        viewModel.SelectedTabIndex = 4;
+        await Task.Delay(100);
+
+        // Now TotalPages is 3, CurrentPage is 1
+        viewModel.NextPageCommand.CanExecute(null).Should().BeTrue();
+        viewModel.PreviousPageCommand.CanExecute(null).Should().BeFalse();
+
+        viewModel.CurrentPage = 2;
+        viewModel.NextPageCommand.CanExecute(null).Should().BeTrue();
+        viewModel.PreviousPageCommand.CanExecute(null).Should().BeTrue();
+
+        viewModel.CurrentPage = 3;
+        viewModel.NextPageCommand.CanExecute(null).Should().BeFalse();
+        viewModel.PreviousPageCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public async Task ExportCsvCommand_CallsDataExportService()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+        var exportService = new Mock<Circle_Tracker.Sync.IDataExportService>();
+
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<PlayRecord>(new List<PlayRecord>(), 0, 1, 50, new PlayFilterSummary(0, 0, 0, 0, 0, 0, 0)));
+
+        var viewModel = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object, exportService.Object);
+        viewModel.RequestSaveFilePathAsync = () => Task.FromResult<string?>("/tmp/test_export.csv");
+
+        viewModel.ExportCsvCommand.Execute(null);
+        await Task.Delay(100);
+
+        exportService.Verify(e => e.ExportPlaysAsync(
+            "/tmp/test_export.csv",
+            Circle_Tracker.Sync.ExportFormat.Csv,
+            It.IsAny<PlayQueryFilter>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

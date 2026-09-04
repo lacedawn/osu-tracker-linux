@@ -10,6 +10,7 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using Circle_Tracker.Analytics;
 using Circle_Tracker.Storage.Querying;
+using Circle_Tracker.Sync;
 using Microsoft.Extensions.Logging;
 
 namespace Circle_Tracker.ViewModels;
@@ -21,6 +22,9 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     private readonly ISkillAnalyticsService _skillService;
     private readonly ISessionAnalyticsService _sessionService;
     private readonly IPlayQueryEngine _queryEngine;
+    private readonly IDataExportService? _exportService;
+
+    public Func<Task<string?>>? RequestSaveFilePathAsync { get; set; }
     
     private int _selectedTabIndex = -1;
     private HeadToHeadComparison? _sessionBaseline;
@@ -64,11 +68,15 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     public AnalyticsViewModel(
         ISkillAnalyticsService skillService,
         ISessionAnalyticsService sessionService,
-        IPlayQueryEngine queryEngine)
+        IPlayQueryEngine queryEngine,
+        IDataExportService? exportService = null)
     {
         _skillService = skillService;
         _sessionService = sessionService;
         _queryEngine = queryEngine;
+        _exportService = exportService ?? ((queryEngine as SqlitePlayQueryEngine)?.DbManager is { } db
+            ? new DataExportService(db, queryEngine)
+            : null);
         _currentFilter = new PlayQueryFilter { Page = 1, PageSize = _pageSize };
         
         NextPageCommand = new RelayCommand(async () => await NextPageAsync(), () => CurrentPage < TotalPages);
@@ -115,13 +123,130 @@ public class AnalyticsViewModel : INotifyPropertyChanged
     public ObservableCollection<GrindCard> MostGrinded => _mostGrinded;
     
     public ObservableCollection<PlayRecord> PlayHistory => _playHistory;
-    public int CurrentPage { get => _currentPage; set { _currentPage = value; OnPropertyChanged(); } }
+    public int CurrentPage
+    {
+        get => _currentPage;
+        set
+        {
+            if (_currentPage != value)
+            {
+                _currentPage = value;
+                OnPropertyChanged();
+                UpdatePaginationCanExecute();
+            }
+        }
+    }
     public int PageSize { get => _pageSize; set { _pageSize = value; OnPropertyChanged(); } }
-    public int TotalPages { get => _totalPages; set { _totalPages = value; OnPropertyChanged(); } }
+    public int TotalPages
+    {
+        get => _totalPages;
+        set
+        {
+            if (_totalPages != value)
+            {
+                _totalPages = value;
+                OnPropertyChanged();
+                UpdatePaginationCanExecute();
+            }
+        }
+    }
     public int TotalMatches { get => _totalMatches; set { _totalMatches = value; OnPropertyChanged(); } }
     public double SubsetAvgAccuracy { get => _subsetAvgAccuracy; set { _subsetAvgAccuracy = value; OnPropertyChanged(); } }
     public double SubsetAvgStars { get => _subsetAvgStars; set { _subsetAvgStars = value; OnPropertyChanged(); } }
     public int SubsetTotalPlaytime { get => _subsetTotalPlaytime; set { _subsetTotalPlaytime = value; OnPropertyChanged(); } }
+
+    private void UpdatePaginationCanExecute()
+    {
+        (NextPageCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (PreviousPageCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private bool _filterNm;
+    private bool _filterHd;
+    private bool _filterHr;
+    private bool _filterDt;
+    private bool _filterFl;
+    private bool _filterEz;
+    private bool _filterHt;
+
+    public bool IsFilterNm
+    {
+        get => _filterNm;
+        set
+        {
+            if (_filterNm != value)
+            {
+                _filterNm = value;
+                if (value)
+                {
+                    _filterHd = _filterHr = _filterDt = _filterFl = _filterEz = _filterHt = false;
+                    RaiseModPropertiesChanged();
+                }
+                OnPropertyChanged();
+                _ = ApplyModFiltersAsync();
+            }
+        }
+    }
+
+    public bool IsFilterHd { get => _filterHd; set => SetMod(ref _filterHd, value); }
+    public bool IsFilterHr { get => _filterHr; set => SetMod(ref _filterHr, value); }
+    public bool IsFilterDt { get => _filterDt; set => SetMod(ref _filterDt, value); }
+    public bool IsFilterFl { get => _filterFl; set => SetMod(ref _filterFl, value); }
+    public bool IsFilterEz { get => _filterEz; set => SetMod(ref _filterEz, value); }
+    public bool IsFilterHt { get => _filterHt; set => SetMod(ref _filterHt, value); }
+
+    private void SetMod(ref bool field, bool value)
+    {
+        if (field != value)
+        {
+            field = value;
+            if (value) _filterNm = false;
+            OnPropertyChanged(nameof(IsFilterNm));
+            OnPropertyChanged();
+            _ = ApplyModFiltersAsync();
+        }
+    }
+
+    private void RaiseModPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(IsFilterHd));
+        OnPropertyChanged(nameof(IsFilterHr));
+        OnPropertyChanged(nameof(IsFilterDt));
+        OnPropertyChanged(nameof(IsFilterFl));
+        OnPropertyChanged(nameof(IsFilterEz));
+        OnPropertyChanged(nameof(IsFilterHt));
+    }
+
+    private async Task ApplyModFiltersAsync()
+    {
+        int bitfield = 0;
+        if (_filterHd) bitfield |= (1 << 3);
+        if (_filterHr) bitfield |= (1 << 4);
+        if (_filterDt) bitfield |= (1 << 6);
+        if (_filterEz) bitfield |= (1 << 1);
+        if (_filterHt) bitfield |= (1 << 8);
+        if (_filterFl) bitfield |= (1 << 10);
+
+        ModFilterMode mode = ModFilterMode.Any;
+        int? req = null;
+        if (_filterNm)
+        {
+            mode = ModFilterMode.NoModOnly;
+        }
+        else if (bitfield > 0)
+        {
+            mode = ModFilterMode.ContainsAll;
+            req = bitfield;
+        }
+
+        _currentFilter = _currentFilter with
+        {
+            ModMode = mode,
+            RequiredModsBitfield = req
+        };
+        CurrentPage = 1;
+        await LoadPlayHistoryAsync(default);
+    }
     
     public string SearchText
     {
@@ -383,9 +508,13 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
     private async Task LoadPlayHistoryAsync(CancellationToken ct)
     {
-        _currentFilter = _currentFilter with { Page = CurrentPage, PageSize = PageSize };
-        if (!string.IsNullOrWhiteSpace(SearchText))
-            _currentFilter = _currentFilter with { SearchQuery = SearchText };
+        string? query = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim();
+        _currentFilter = _currentFilter with
+        {
+            Page = CurrentPage,
+            PageSize = PageSize,
+            SearchQuery = query
+        };
 
         var result = await Task.Run(() => _queryEngine.QueryPlaysAsync(_currentFilter, ct), ct);
 
@@ -400,6 +529,7 @@ public class AnalyticsViewModel : INotifyPropertyChanged
             SubsetAvgAccuracy = (double)result.Summary.AverageAccuracy;
             SubsetAvgStars = (double)result.Summary.AverageStars;
             SubsetTotalPlaytime = result.Summary.TotalPlayTimeSeconds;
+            UpdatePaginationCanExecute();
         }, DispatcherPriority.Background);
     }
 
@@ -429,7 +559,22 @@ public class AnalyticsViewModel : INotifyPropertyChanged
 
     private async Task ExportCsvAsync()
     {
-        await Task.CompletedTask;
+        try
+        {
+            if (RequestSaveFilePathAsync == null || _exportService == null) return;
+            string? destination = await RequestSaveFilePathAsync();
+            if (string.IsNullOrWhiteSpace(destination)) return;
+            IsLoading = true;
+            await _exportService.ExportPlaysAsync(destination, ExportFormat.Csv, _currentFilter);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to export plays to CSV");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -527,5 +672,12 @@ public class RelayCommand : ICommand
 
     public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
     public async void Execute(object? parameter) => await _execute();
-    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+
+    public void RaiseCanExecuteChanged()
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        else
+            Dispatcher.UIThread.Post(() => CanExecuteChanged?.Invoke(this, EventArgs.Empty));
+    }
 }

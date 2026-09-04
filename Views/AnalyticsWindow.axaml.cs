@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -16,6 +17,18 @@ public partial class AnalyticsWindow : Window
     public AnalyticsWindow(AnalyticsViewModel viewModel) : this()
     {
         DataContext = viewModel;
+        viewModel.RequestSaveFilePathAsync = async () =>
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel == null) return null;
+            var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+            {
+                Title = "Export Plays to CSV",
+                DefaultExtension = "csv",
+                SuggestedFileName = $"circle_tracker_plays_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+            });
+            return file?.Path.LocalPath;
+        };
         _ = viewModel.InitializeAsync();
     }
 

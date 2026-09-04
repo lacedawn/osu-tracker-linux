@@ -25,6 +25,8 @@ namespace Circle_Tracker.Storage.Querying
             { PlaySortField.ConsecutivePlayCount, "consecutive_play_count" }
         };
 
+        public IDatabaseManager DbManager => _dbManager;
+
         public SqlitePlayQueryEngine(IDatabaseManager dbManager)
         {
             _dbManager = dbManager;

@@ -15,6 +15,9 @@
 
   <Window.Resources>
     <converters:DoubleToGridLengthConverter x:Key="DoubleToGridLengthConverter"/>
+    <converters:PassFailTextConverter x:Key="PassFailTextConverter"/>
+    <converters:PassFailBackgroundConverter x:Key="PassFailBackgroundConverter"/>
+    <converters:PassFailForegroundConverter x:Key="PassFailForegroundConverter"/>
   </Window.Resources>
 
   <Panel>
@@ -434,7 +437,7 @@
                 <ContentControl Content="{Binding}" IsVisible="{Binding SelectedTabIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=4}">
                   <ContentControl.ContentTemplate>
                     <DataTemplate>
-                      <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+                      <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto">
                         <Border Grid.Row="0" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
                           <Grid ColumnDefinitions="*,Auto">
                             <TextBox Grid.Column="0" Text="{Binding SearchText}" Watermark="Search beatmaps..." Background="#252038" Foreground="{StaticResource TextPrimary}" BorderBrush="#2e2744" Padding="10,6" CornerRadius="6"/>
@@ -442,21 +445,43 @@
                           </Grid>
                         </Border>
 
-                        <Border Grid.Row="1" Classes="hud-card">
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
+                          <TextBlock Text="Filter Mods:" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" FontSize="11" FontWeight="Bold"/>
+                          <ToggleButton Content="NM" IsChecked="{Binding IsFilterNm}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="HD" IsChecked="{Binding IsFilterHd}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="HR" IsChecked="{Binding IsFilterHr}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="DT" IsChecked="{Binding IsFilterDt}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="FL" IsChecked="{Binding IsFilterFl}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="EZ" IsChecked="{Binding IsFilterEz}" Classes="secondary-flat" Padding="8,3"/>
+                          <ToggleButton Content="HT" IsChecked="{Binding IsFilterHt}" Classes="secondary-flat" Padding="8,3"/>
+                        </StackPanel>
+
+                        <Border Grid.Row="2" Classes="hud-card">
                           <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding PlayHistory}">
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                   <Border Background="#252038" CornerRadius="6" Padding="12" Margin="0,0,0,6">
                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                      <StackPanel Grid.Column="1" Spacing="4">
+                                      <!-- Status Badge -->
+                                      <Border Grid.Column="0" CornerRadius="4" Padding="8,4" Margin="0,0,12,0" VerticalAlignment="Center"
+                                              Background="{Binding IsComplete, Converter={StaticResource PassFailBackgroundConverter}}">
+                                        <TextBlock Text="{Binding IsComplete, Converter={StaticResource PassFailTextConverter}}"
+                                                   Foreground="{Binding IsComplete, Converter={StaticResource PassFailForegroundConverter}}"
+                                                   FontSize="10" FontWeight="Bold"/>
+                                      </Border>
+                                      <!-- Map Details -->
+                                      <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding BeatmapString}" Foreground="{StaticResource TextPrimary}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                           <TextBlock Text="{Binding ModsString}" Foreground="{StaticResource AccentPink}" FontSize="10" FontWeight="Bold"/>
                                           <TextBlock Text="{Binding Stars, StringFormat={}★ {0:F2}}" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="Bold"/>
+                                          <TextBlock Text="{Binding TotalHits, StringFormat={}{0} hits}" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                                         </StackPanel>
                                       </StackPanel>
+                                      <!-- Accuracy -->
                                       <TextBlock Grid.Column="2" Text="{Binding Accuracy, StringFormat={}{0:F2}%}" Foreground="{StaticResource AccentCyan}" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0"/>
+                                      <!-- Hit Counts -->
                                       <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Hit300}" Foreground="{StaticResource AccentCyan}" FontSize="10" FontWeight="SemiBold"/>
                                         <TextBlock Text="/" Foreground="{StaticResource TextMuted}" FontSize="10"/>
@@ -466,6 +491,7 @@
                                         <TextBlock Text="/" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                                         <TextBlock Text="{Binding HitMiss}" Foreground="{StaticResource AccentRed}" FontSize="10" FontWeight="SemiBold"/>
                                       </StackPanel>
+                                      <!-- Timestamp -->
                                       <TextBlock Grid.Column="4" Text="{Binding TimestampUtc, StringFormat={}{0:g}}" Foreground="{StaticResource TextMuted}" FontSize="10" VerticalAlignment="Center" Margin="12,0,0,0"/>
                                     </Grid>
                                   </Border>
@@ -475,7 +501,7 @@
                           </ScrollViewer>
                         </Border>
 
-                        <Border Grid.Row="2" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                        <Border Grid.Row="3" Background="#cc1d192b" BorderBrush="#2e2744" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
                           <Grid ColumnDefinitions="Auto,*,Auto">
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
                               <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11">
