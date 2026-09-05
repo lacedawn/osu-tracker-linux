@@ -3,7 +3,9 @@ using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -188,6 +190,8 @@ namespace Circle_Tracker
         private int _tickLock = 0;
         private readonly object _snapshotLock = new();
         private readonly SemaphoreSlim _sheetsLock = new SemaphoreSlim(1, 1);
+        private readonly object _submissionTasksLock = new();
+        private readonly HashSet<Task> _activeSubmissionTasks = new();
         private string _lastLoggedBeatmapChecksum = "";
         private int _lastLoggedBeatmapId = 0;
         private string _lastLoggedBeatmapString = "";
@@ -798,6 +802,43 @@ namespace Circle_Tracker
             _form.UpdateTime();
         }
 
+        public async Task FlushPendingSubmissionsAsync(CancellationToken ct = default)
+        {
+            while (true)
+            {
+                Task[] tasksToAwait;
+                lock (_submissionTasksLock)
+                {
+                    if (_activeSubmissionTasks.Count == 0)
+                    {
+                        break;
+                    }
+                    tasksToAwait = _activeSubmissionTasks.ToArray();
+                }
+
+                try
+                {
+                    await Task.WhenAll(tasksToAwait).WaitAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+            }
+
+            await _sheetsLock.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+            }
+            finally
+            {
+                _sheetsLock.Release();
+            }
+        }
+
         private void TryPostBeatmapEntry(bool complete)
         {
             if (TotalBeatmapHits < MinHitsToSubmit || IsReplay || _currentGameMode != 0)
@@ -871,20 +912,33 @@ namespace Circle_Tracker
                 SubmitSoundEnabled: SubmitSoundEnabled
             );
 
-            _ = Task.Run(async () =>
+            Task submissionTask;
+            lock (_submissionTasksLock)
             {
-                await _sheetsLock.WaitAsync();
-                try
+                submissionTask = Task.Run(async () =>
                 {
-                    await _sessionManager.IncrementPlaysAsync();
-                    await _playSink.TryLogPlayAsync(data, context);
-                    PlayLogged?.Invoke(this, (data, context));
-                }
-                finally
+                    await _sheetsLock.WaitAsync();
+                    try
+                    {
+                        await _sessionManager.IncrementPlaysAsync();
+                        await _playSink.TryLogPlayAsync(data, context);
+                        PlayLogged?.Invoke(this, (data, context));
+                    }
+                    finally
+                    {
+                        _sheetsLock.Release();
+                    }
+                });
+                _activeSubmissionTasks.Add(submissionTask);
+            }
+
+            _ = submissionTask.ContinueWith(t =>
+            {
+                lock (_submissionTasksLock)
                 {
-                    _sheetsLock.Release();
+                    _activeSubmissionTasks.Remove(t);
                 }
-            });
+            }, TaskScheduler.Default);
         }
     }
 }

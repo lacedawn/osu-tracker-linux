@@ -1309,11 +1309,12 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _tracker.FlushPendingSubmissionsAsync(cts.Token);
                 await _tracker.SessionManager.EndSessionAsync(cts.Token);
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "Failed to end session cleanly during shutdown");
+                _log.LogError(ex, "Failed to flush submissions and end session cleanly during shutdown");
             }
 
             if (_tracker.PlaySink is CompositePlaySink composite)

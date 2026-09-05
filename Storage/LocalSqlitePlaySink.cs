@@ -172,16 +172,31 @@ namespace Circle_Tracker.Storage
         public void Dispose()
         {
             _channel.Writer.TryComplete();
-            _cts.Cancel();
-            try { _workerTask.Wait(TimeSpan.FromSeconds(2)); } catch { }
+            try 
+            { 
+                if (!_workerTask.Wait(TimeSpan.FromSeconds(5))) 
+                {
+                    _cts.Cancel();
+                    _workerTask.Wait(TimeSpan.FromSeconds(2));
+                }
+            } 
+            catch { }
             _cts.Dispose();
         }
 
         public async ValueTask DisposeAsync()
         {
             _channel.Writer.TryComplete();
-            _cts.Cancel();
-            try { await _workerTask; } catch { }
+            try 
+            { 
+                await _workerTask.WaitAsync(TimeSpan.FromSeconds(5));
+            } 
+            catch (TimeoutException)
+            {
+                _cts.Cancel();
+                try { await _workerTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            }
+            catch { }
             _cts.Dispose();
         }
     }

@@ -5,6 +5,8 @@ using System.IO;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -170,6 +172,13 @@ namespace Circle_Tracker
             Error = (_, args) => { args.ErrorContext.Handled = true; }
         };
 
+        public static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         private async Task<bool> RunWebSocketSessionAsync(byte[] buffer, CancellationToken ct)
         {
             using var ws = new ClientWebSocket();
@@ -216,12 +225,10 @@ namespace Circle_Tracker
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
                         ms.Position = 0;
-                        using var reader = new StreamReader(ms, Encoding.UTF8, false, 1024, leaveOpen: true);
-                        string json = await reader.ReadToEndAsync();
 
                         try
                         {
-                            var state = JsonConvert.DeserializeObject<TosuState>(json, SerializerSettings);
+                            var state = System.Text.Json.JsonSerializer.Deserialize<TosuState>(ms, SerializerOptions);
                             if (state != null)
                             {
                                 LatestState = state;
@@ -258,8 +265,8 @@ namespace Circle_Tracker
                 using var response = await _httpClient.GetAsync(url, ct);
                 if (response.IsSuccessStatusCode)
                 {
-                    string json = await response.Content.ReadAsStringAsync(ct);
-                    var state = JsonConvert.DeserializeObject<TosuState>(json, SerializerSettings);
+                    using var stream = await response.Content.ReadAsStreamAsync(ct);
+                    var state = await System.Text.Json.JsonSerializer.DeserializeAsync<TosuState>(stream, SerializerOptions, ct);
                     if (state != null)
                     {
                         LatestState = state;

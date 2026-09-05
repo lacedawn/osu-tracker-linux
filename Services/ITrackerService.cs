@@ -32,5 +32,6 @@ public interface ITrackerService
     TrackerSnapshot GetSnapshot();
     Task InitializeStorageAsync(bool silent = false, CancellationToken ct = default);
     Task InitGoogleAPIAsync(bool silent = false);
+    Task FlushPendingSubmissionsAsync(CancellationToken ct = default);
     Analytics.ISessionAnalyticsService? GetSessionAnalyticsService();
 }

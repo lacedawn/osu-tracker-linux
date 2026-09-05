@@ -1,4 +1,6 @@
 using Circle_Tracker;
+using Circle_Tracker.Storage;
+using Dapper;
 using FluentAssertions;
 using Moq;
 using System;
@@ -391,5 +393,90 @@ namespace CircleTracker.Tests
             snapshot.TotalBeatmapHits.Should().Be(35);
             snapshot.Accuracy.Should().Be(98.5m);
         }
+        [Fact]
+        public async Task Should_TrackAndAwaitInFlightSubmissions_During_Shutdown()
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            mockClient.Setup(c => c.IsConnected).Returns(true);
+
+            var mockSink = new Mock<IPlaySink>();
+            mockSink.Setup(s => s.IsReady).Returns(true);
+            mockSink.Setup(s => s.InitializeAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+            var callCount = 0;
+            mockSink.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .Returns(async () =>
+                {
+                    await Task.Delay(150);
+                    Interlocked.Increment(ref callCount);
+                });
+
+            var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object, null, null);
+            await tracker.InitializeStorageAsync(true);
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000, checksum: "map1"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50, checksum: "map1"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 60, songTimeMs: 30000, checksum: "map2"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 60, checksum: "map2"));
+            tracker.Tick();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await tracker.FlushPendingSubmissionsAsync(cts.Token);
+
+            callCount.Should().Be(2);
+            mockSink.Verify(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task Should_NotThrowChannelClosedException_When_ShutdownInitiatedDuringActiveSubmissions()
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            mockClient.Setup(c => c.IsConnected).Returns(true);
+
+            var dbPath = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            var dbManager = new SqliteDatabaseManager(dbPath);
+            await dbManager.InitializeAsync();
+            var sessionManager = new SessionManager(dbManager);
+            await sessionManager.InitializeAsync();
+            var localSink = new LocalSqlitePlaySink(dbManager);
+            await localSink.InitializeAsync(true);
+
+            var tracker = new Tracker(mockWindow.Object, mockClient.Object, localSink, sessionManager, null);
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000, checksum: "map1"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50, checksum: "map1"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 60, songTimeMs: 30000, checksum: "map2"));
+            tracker.Tick();
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 60, checksum: "map2"));
+            tracker.Tick();
+
+            var shutdown = async () =>
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await tracker.FlushPendingSubmissionsAsync(cts.Token);
+                await localSink.DisposeAsync();
+            };
+
+            await shutdown.Should().NotThrowAsync();
+            localSink.TotalPlaysRecorded.Should().Be(2);
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            var count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays;");
+            count.Should().Be(2);
+        }
     }
 }
+
