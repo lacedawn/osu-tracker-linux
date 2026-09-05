@@ -662,8 +662,57 @@ public class LiveSessionTrackerTests
 
         var report = await tracker.GenerateSessionSummaryAsync();
 
-        report.SessionAccuracy.Should().BeApproximately(97.05m, 0.05m);
-        report.BaselineDeltaAccuracy.Should().BeApproximately(-0.95m, 0.05m);
+        report.TotalPlays.Should().Be(11);
+        report.TotalPasses.Should().Be(1);
+        report.SessionAccuracy.Should().BeApproximately(99.5m, 0.05m);
+        report.BaselineDeltaAccuracy.Should().BeApproximately(1.5m, 0.05m);
+    }
+
+    [Fact]
+    public async Task GenerateSessionSummary_ZeroPassesSession_DoesNotCalculateAccuracyOrStars()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 100,
+            TotalActiveHours: 10.0,
+            MeanAccuracy: 98.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        for (int i = 0; i < 3; i++)
+        {
+            var failedPlay = CreatePlayEntry(totalHits: 200, accuracy: 98.82m, complete: false, playTimeSeconds: 60);
+            await tracker.ProcessPlay(failedPlay);
+        }
+
+        var report = await tracker.GenerateSessionSummaryAsync();
+
+        report.TotalPlays.Should().Be(3);
+        report.TotalPasses.Should().Be(0);
+        report.HasPasses.Should().BeFalse();
+        report.SessionAccuracy.Should().Be(0m);
+        report.BaselineDeltaAccuracy.Should().Be(0m);
+        report.SessionAvgStars.Should().Be(0m);
+        report.BaselineDeltaStars.Should().Be(0m);
+        report.SessionAvgBpm.Should().Be(0);
+        report.BaselineDeltaBpm.Should().Be(0);
+        report.SessionAccuracyText.Should().Be("—");
+        report.SessionStarsText.Should().Be("—");
+        report.SessionBpmText.Should().Be("—");
+        report.PassRatePercent.Should().Be(0.0);
     }
 
     [Fact]

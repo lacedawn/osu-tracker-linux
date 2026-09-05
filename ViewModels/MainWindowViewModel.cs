@@ -35,6 +35,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     private readonly IDatabaseManager _dbManager;
     private readonly ISessionAnalyticsService _sessionService;
     private readonly IPlayQueryEngine _queryEngine;
+    private readonly ITosuClient? _tosuClient;
+    private CancellationTokenSource? _reconnectDebounce;
 
     private DateTime _sessionStartTime = DateTime.UtcNow;
     private CancellationTokenSource? _achievementBannerCts;
@@ -137,13 +139,15 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         ILiveSessionTracker liveSessionTracker,
         IDatabaseManager dbManager,
         ISessionAnalyticsService sessionService,
-        IPlayQueryEngine queryEngine)
+        IPlayQueryEngine queryEngine,
+        ITosuClient? tosuClient = null)
     {
         _tracker = tracker;
         _liveSessionTracker = liveSessionTracker;
         _dbManager = dbManager;
         _sessionService = sessionService;
         _queryEngine = queryEngine;
+        _tosuClient = tosuClient;
 
         OpenAnalyticsCommand = new RelayCommand(async () => await OpenAnalyticsAsync());
         ResetSessionCommand = new RelayCommand(async () => await ResetSessionAsync());
@@ -162,6 +166,37 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             _tracker.PlayLogged += OnPlayLogged;
             LoadSettingsFromTracker();
             SetupTimers();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _tracker.InitializeStorageAsync(silent: true);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Failed to initialize storage");
+                }
+            });
+        }
+
+        if (_tosuClient != null)
+        {
+            _tosuClient.Host = !string.IsNullOrWhiteSpace(TosuHost) ? TosuHost : "127.0.0.1";
+            _tosuClient.Port = int.TryParse(TosuPortText, out int port) ? port : 24050;
+            _tosuClient.ConnectionStateChanged += OnTosuConnectionStateChanged;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _tosuClient.ConnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Failed to connect to tosu");
+                }
+            });
         }
 
         CheckCredentials();
@@ -551,6 +586,11 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             {
                 _tracker.TosuHost = value;
                 _tracker.SaveSettings();
+                if (_tosuClient != null && !string.IsNullOrWhiteSpace(value) && !value.Contains(' '))
+                {
+                    _tosuClient.Host = value.Trim();
+                    DebounceReconnect();
+                }
             }
         }
     }
@@ -564,6 +604,11 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             {
                 _tracker.TosuPort = port;
                 _tracker.SaveSettings();
+                if (_tosuClient != null && port >= 1 && port <= 65535)
+                {
+                    _tosuClient.Port = port;
+                    DebounceReconnect();
+                }
             }
         }
     }
@@ -688,6 +733,39 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         CredentialsStatusBrush = CredentialsFound ? GreenBrush : RedBrush;
     }
 
+    private void OnTosuConnectionStateChanged(object? sender, bool connected)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            TosuConnected = connected;
+            TosuStatusBrush = connected ? GreenBrush : RedBrush;
+            TosuStatusText = connected ? "tosu: Connected" : "tosu: Connecting...";
+        });
+    }
+
+    private void DebounceReconnect()
+    {
+        _reconnectDebounce?.Cancel();
+        _reconnectDebounce = new CancellationTokenSource();
+        var token = _reconnectDebounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1000, token);
+                if (!token.IsCancellationRequested && _tosuClient != null)
+                {
+                    await _tosuClient.ReconnectAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to reconnect to tosu");
+            }
+        });
+    }
+
     private void SetupTimers()
     {
         if (_tracker == null) return;
@@ -796,9 +874,10 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
                 PlayCountBadge = $"Play #{snapshot.PlayCount}";
 
-                TosuConnected = !snapshot.MemoryReadError;
-                TosuStatusText = snapshot.MemoryReadError ? "tosu: Connecting..." : $"tosu: {snapshot.DetectedClient}";
-                TosuStatusBrush = snapshot.MemoryReadError ? RedBrush : GreenBrush;
+                bool isTosuConnected = _tosuClient != null ? _tosuClient.IsConnected : !snapshot.MemoryReadError;
+                TosuConnected = isTosuConnected;
+                TosuStatusText = isTosuConnected ? $"tosu: {snapshot.DetectedClient}" : "tosu: Connecting...";
+                TosuStatusBrush = isTosuConnected ? GreenBrush : RedBrush;
 
                 DatabaseReady = snapshot.DatabaseReady;
                 DbStatusText = snapshot.DatabaseReady ? $"DB: {snapshot.LocalPlayCount} plays" : "DB: Error";
@@ -1207,9 +1286,23 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public async Task ShutdownAsync()
     {
+        _reconnectDebounce?.Cancel();
         _gameTickTimer?.Stop();
         _uiUpdateTimer?.Stop();
         _secondsTimer?.Stop();
+
+        if (_tosuClient != null)
+        {
+            _tosuClient.ConnectionStateChanged -= OnTosuConnectionStateChanged;
+            try
+            {
+                await _tosuClient.DisconnectAsync();
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to disconnect tosu cleanly during shutdown");
+            }
+        }
 
         if (_tracker != null)
         {

@@ -63,11 +63,10 @@ namespace Circle_Tracker
         {
             var services = new ServiceCollection();
 
-            services.AddSingleton<IDatabaseManager>(sp => new SqliteDatabaseManager(""));
-            services.AddSingleton<SessionManager>();
-            services.AddSingleton<ISessionManager>(sp => sp.GetRequiredService<SessionManager>());
             services.AddSingleton<ITosuClient, TosuClient>();
             services.AddSingleton<ITrackerService, TrackerService>();
+            services.AddSingleton<ISessionManager>(sp => sp.GetRequiredService<ITrackerService>().SessionManager);
+            services.AddSingleton<IDatabaseManager>(sp => sp.GetRequiredService<ISessionManager>().GetDatabaseManager());
 
             services.AddSingleton<ISessionAnalyticsService>(sp =>
                 new SessionAnalyticsService(sp.GetRequiredService<IDatabaseManager>()));

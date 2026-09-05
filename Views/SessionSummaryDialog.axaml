@@ -56,8 +56,8 @@
             <Border Grid.Column="2" Classes="hud-card" Margin="8,0,0,0">
               <StackPanel Spacing="8">
                 <TextBlock Text="SESSION ACCURACY" Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding SessionAccuracy, StringFormat={}{0:F2}%}" Classes="hero-number" FontSize="36"/>
-                <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
+                <TextBlock Text="{Binding SessionAccuracyText}" Classes="hero-number" FontSize="36"/>
+                <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" IsVisible="{Binding HasPasses}">
                   <Border.Background>
                     <SolidColorBrush Color="{Binding BaselineDeltaAccuracy, Converter={StaticResource DeltaToColorConverter}}"/>
                   </Border.Background>
@@ -116,11 +116,8 @@
                 <Grid ColumnDefinitions="180,*">
                   <TextBlock Grid.Column="0" Text="Star Rating:" Foreground="{StaticResource TextMuted}" FontSize="12"/>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold">
-                      <Run Text="{Binding SessionAvgStars, StringFormat={}{0:F2}}"/>
-                      <Run Text="★"/>
-                    </TextBlock>
-                    <Border CornerRadius="4" Padding="6,2">
+                    <TextBlock Text="{Binding SessionStarsText}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
+                    <Border CornerRadius="4" Padding="6,2" IsVisible="{Binding HasPasses}">
                       <Border.Background>
                         <SolidColorBrush Color="{Binding BaselineDeltaStars, Converter={StaticResource DeltaToColorConverter}}"/>
                       </Border.Background>
@@ -151,8 +148,8 @@
                 <Grid ColumnDefinitions="180,*">
                   <TextBlock Grid.Column="0" Text="Speed/BPM:" Foreground="{StaticResource TextMuted}" FontSize="12"/>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{Binding SessionAvgBpm, StringFormat={}{0:F0} BPM}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
-                    <Border CornerRadius="4" Padding="6,2">
+                    <TextBlock Text="{Binding SessionBpmText}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
+                    <Border CornerRadius="4" Padding="6,2" IsVisible="{Binding HasPasses}">
                       <Border.Background>
                         <SolidColorBrush Color="{Binding BaselineDeltaBpm, Converter={StaticResource DeltaToColorConverter}}"/>
                       </Border.Background>

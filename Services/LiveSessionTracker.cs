@@ -44,7 +44,13 @@ public record SessionSummaryReport(
     double BaselineDeltaPassRate,
     BestPlayCard? BestPlay,
     decimal PassAccuracy = 0m
-);
+)
+{
+    public bool HasPasses => TotalPasses > 0;
+    public string SessionAccuracyText => HasPasses ? $"{SessionAccuracy:F2}%" : "—";
+    public string SessionStarsText => HasPasses ? $"{SessionAvgStars:F2}★" : "—";
+    public string SessionBpmText => HasPasses ? $"{SessionAvgBpm:F0} BPM" : "—";
+};
 
 public record BestPlayCard(
     string BeatmapString,
@@ -229,20 +235,29 @@ public class LiveSessionTracker : ILiveSessionTracker
         var passes = snapshot.Where(p => p.Complete).ToList();
         var passCount = passes.Count;
         var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
-        long totalSessionHits = snapshot.Sum(p => (long)p.TotalHits);
-        decimal hitWeightedAcc = totalSessionHits > 0
-            ? (decimal)(snapshot.Sum(p => (double)p.Accuracy * p.TotalHits) / totalSessionHits)
-            : (snapshot.Count > 0 ? snapshot.Average(p => p.Accuracy) : 0m);
-
-        var passAccuracy = passCount > 0 ? (decimal)passes.Average(p => p.Accuracy) : 0m;
-        var avgStars = snapshot.Average(p => p.BeatmapStars);
-        var avgBpm = snapshot.Average(p => p.BeatmapBpm);
         var passRate = snapshot.Count > 0 ? (passCount / (double)snapshot.Count) * 100.0 : 0;
-
-        var deltaAcc = _baseline30Day != null ? hitWeightedAcc - _baseline30Day.MeanAccuracy : 0m;
-        var deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
-        var deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
         var deltaPassRate = _baseline30Day != null ? passRate - _baseline30Day.PassRatePercent : 0;
+
+        decimal hitWeightedAcc = 0m;
+        decimal avgStars = 0m;
+        double avgBpm = 0;
+        decimal deltaAcc = 0m;
+        decimal deltaStars = 0m;
+        double deltaBpm = 0;
+
+        if (passCount > 0)
+        {
+            long totalPassHits = passes.Sum(p => (long)p.TotalHits);
+            hitWeightedAcc = totalPassHits > 0
+                ? (decimal)(passes.Sum(p => (double)p.Accuracy * p.TotalHits) / totalPassHits)
+                : (decimal)passes.Average(p => p.Accuracy);
+            avgStars = passes.Average(p => p.BeatmapStars);
+            avgBpm = passes.Average(p => p.BeatmapBpm);
+
+            deltaAcc = _baseline30Day != null ? hitWeightedAcc - _baseline30Day.MeanAccuracy : 0m;
+            deltaStars = _baseline30Day != null ? avgStars - _baseline30Day.MeanStars : 0m;
+            deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
+        }
 
         var bestPlay = GetBestPlay();
 
@@ -259,7 +274,7 @@ public class LiveSessionTracker : ILiveSessionTracker
             PassRatePercent: passRate,
             BaselineDeltaPassRate: deltaPassRate,
             BestPlay: bestPlay,
-            PassAccuracy: passAccuracy
+            PassAccuracy: hitWeightedAcc
         );
     }
 
