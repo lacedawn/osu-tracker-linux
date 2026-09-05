@@ -82,7 +82,7 @@ namespace Circle_Tracker
             services.AddSingleton<ILiveSessionTracker, LiveSessionTracker>();
 
             services.AddSingleton<MainWindowViewModel>();
-            services.AddSingleton<AnalyticsViewModel>();
+            services.AddTransient<AnalyticsViewModel>();
 
             return services.BuildServiceProvider();
         }

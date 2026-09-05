@@ -7,6 +7,7 @@ using Circle_Tracker.Storage;
 using Circle_Tracker.Storage.Querying;
 using Circle_Tracker.ViewModels;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using System;
 using System.Collections.Generic;
@@ -639,5 +640,72 @@ public class AnalyticsViewModelTests
 
         queriedFilters.Should().ContainSingle();
         queriedFilters[0].SearchText.Should().Be("updated");
+    }
+
+    [Fact]
+    public void Should_ReturnDistinctInstances_When_ResolvedFromServiceProviderMultipleTimes()
+    {
+        var services = new ServiceCollection();
+        
+        var mockSkillService = new Mock<ISkillAnalyticsService>();
+        var mockSessionService = new Mock<ISessionAnalyticsService>();
+        var mockQueryEngine = new Mock<IPlayQueryEngine>();
+        
+        services.AddTransient<AnalyticsViewModel>(sp => 
+            new AnalyticsViewModel(mockSkillService.Object, mockSessionService.Object, mockQueryEngine.Object));
+        
+        var provider = services.BuildServiceProvider();
+        
+        var vm1 = provider.GetService<AnalyticsViewModel>();
+        var vm2 = provider.GetService<AnalyticsViewModel>();
+        
+        vm1.Should().NotBeNull();
+        vm2.Should().NotBeNull();
+        vm1.Should().NotBeSameAs(vm2);
+    }
+
+    [AvaloniaFact]
+    public async Task Should_FunctionNormally_When_NewInstanceCreatedAfterPreviousInstanceDisposed()
+    {
+        var skillService = new Mock<ISkillAnalyticsService>();
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var queryEngine = new Mock<IPlayQueryEngine>();
+
+        skillService.Setup(s => s.GetStarMasteryCurveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<Circle_Tracker.Analytics.StarMasteryBracket>)new List<Circle_Tracker.Analytics.StarMasteryBracket>());
+        skillService.Setup(s => s.GetOdAccuracyCurveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<OdAccuracyTier>)new List<OdAccuracyTier>());
+        skillService.Setup(s => s.GetBpmSpeedCeilingsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<BpmBracketStats>)new List<BpmBracketStats>());
+        queryEngine.Setup(q => q.QueryPlaysAsync(It.IsAny<PlayQueryFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<PlayRecord>(
+                new List<PlayRecord>(),
+                0,
+                1,
+                50,
+                new PlayFilterSummary(0, 0m, 0m, 0, 0, 0, 0)
+            ));
+
+        var vm1 = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+        await vm1.InitializeAsync();
+        vm1.IsLoading.Should().BeFalse();
+        
+        vm1.Dispose();
+
+        var vm2 = new AnalyticsViewModel(skillService.Object, sessionService.Object, queryEngine.Object);
+        
+        var initAction = async () => await vm2.InitializeAsync();
+        await initAction.Should().NotThrowAsync();
+        
+        vm2.IsLoading.Should().BeFalse();
+        
+        vm2.SearchText = "test query";
+        await Task.Delay(350);
+        
+        queryEngine.Verify(q => q.QueryPlaysAsync(
+            It.Is<PlayQueryFilter>(f => f.SearchText == "test query"), 
+            It.IsAny<CancellationToken>()), Times.Once());
+        
+        vm2.Dispose();
     }
 }

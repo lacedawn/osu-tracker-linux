@@ -45,6 +45,10 @@ public partial class AnalyticsWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        if (DataContext is AnalyticsViewModel vm)
+        {
+            vm.RequestSaveFilePathAsync = null;
+        }
         if (DataContext is IDisposable disposable)
         {
             disposable.Dispose();
