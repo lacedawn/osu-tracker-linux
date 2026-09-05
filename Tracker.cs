@@ -722,13 +722,27 @@ namespace Circle_Tracker
                         if (newMissc > PlayMissc)
                             PlayMissc = newMissc;
 
-                        if (newHits > TotalBeatmapHits && newHits - TotalBeatmapHits < MaxHitJumpPerTick)
+                        if (newHits > TotalBeatmapHits)
                         {
-                            Accuracy = newAcc;
-                            Play300c = new300c;
-                            Play100c = new100c;
-                            Play50c = new50c;
-                            TotalBeatmapHits = newHits;
+                            int hitDelta = newHits - TotalBeatmapHits;
+                            int timeDelta = newSongTime - Time;
+
+                            if (hitDelta < MaxHitJumpPerTick)
+                            {
+                                Accuracy = newAcc;
+                                Play300c = new300c;
+                                Play100c = new100c;
+                                Play50c = new50c;
+                                TotalBeatmapHits = newHits;
+                            }
+                            else if (timeDelta > 500)
+                            {
+                                Accuracy = newAcc;
+                                Play300c = new300c;
+                                Play100c = new100c;
+                                Play50c = new50c;
+                                TotalBeatmapHits = newHits;
+                            }
                         }
 
                         if (newSongTime < Time && Time > 0)

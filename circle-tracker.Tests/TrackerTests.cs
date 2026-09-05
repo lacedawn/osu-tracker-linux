@@ -77,7 +77,9 @@ namespace CircleTracker.Tests
                 StateBuilder.Playing(h300: 100, songTimeMs: 60000, playerName: "SomeOtherPlayer", profileName: "testplayer"));
             tracker.Tick();
 
-            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 100));
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Build(
+                gameStateNumber: 7, h300: 100, songTimeMs: 60000, 
+                playerName: "SomeOtherPlayer", profileName: "testplayer"));
             tracker.Tick();
 
             sink.Verify(s => s.TryAppendPlayEntry(
@@ -158,14 +160,14 @@ namespace CircleTracker.Tests
         }
 
         [Fact]
-        public void Tick_WhenHitJumpExceedsMax_IgnoresStaleData()
+        public void Tick_WhenHitJumpExceedsMax_ButShortTimeDelta_IgnoresStaleData()
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
             tracker.Tick();
 
-            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 200, songTimeMs: 6000));
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 200, songTimeMs: 5100));
             tracker.Tick();
 
             client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 10));
@@ -256,6 +258,138 @@ namespace CircleTracker.Tests
             var snapshot = tracker.GetSnapshot();
 
             snapshot.CoverUrl.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void Should_AcceptHitCountJump_When_SongTimeAdvancedProportionally()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 10000));
+            tracker.Tick();
+
+            var snapshot1 = tracker.GetSnapshot();
+            snapshot1.TotalBeatmapHits.Should().Be(40);
+            snapshot1.Accuracy.Should().Be(0);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 110, songTimeMs: 12000, accuracy: 95.5m));
+            tracker.Tick();
+
+            var snapshot2 = tracker.GetSnapshot();
+            snapshot2.TotalBeatmapHits.Should().Be(110);
+            snapshot2.Accuracy.Should().Be(95.5m);
+            snapshot2.Play300c.Should().Be(110);
+        }
+
+        [Fact]
+        public void Should_ContinueTrackingHitsNormally_After_LargeHitJump()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 10000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 110, songTimeMs: 12000, accuracy: 95.5m));
+            tracker.Tick();
+
+            var snapshot1 = tracker.GetSnapshot();
+            snapshot1.TotalBeatmapHits.Should().Be(110);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 115, songTimeMs: 12100, accuracy: 96.0m));
+            tracker.Tick();
+
+            var snapshot2 = tracker.GetSnapshot();
+            snapshot2.TotalBeatmapHits.Should().Be(115);
+            snapshot2.Accuracy.Should().Be(96.0m);
+            snapshot2.Play300c.Should().Be(115);
+        }
+
+        [Fact]
+        public void Should_RejectNegativeOrCorruptHitJumps()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000, accuracy: 98.0m));
+            tracker.Tick();
+
+            var snapshot1 = tracker.GetSnapshot();
+            snapshot1.TotalBeatmapHits.Should().Be(50);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 5000, songTimeMs: 10100, accuracy: 99.0m));
+            tracker.Tick();
+
+            var snapshot2 = tracker.GetSnapshot();
+            snapshot2.TotalBeatmapHits.Should().Be(50);
+            snapshot2.Accuracy.Should().Be(98.0m);
+        }
+
+        [Fact]
+        public void Should_AcceptLargeHitJump_When_LongTimeElapsed()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
+            tracker.Tick();
+
+            var snapshot1 = tracker.GetSnapshot();
+            snapshot1.TotalBeatmapHits.Should().Be(30);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 150, songTimeMs: 12000, accuracy: 97.0m));
+            tracker.Tick();
+
+            var snapshot2 = tracker.GetSnapshot();
+            snapshot2.TotalBeatmapHits.Should().Be(150);
+            snapshot2.Accuracy.Should().Be(97.0m);
+        }
+
+        [Fact]
+        public void Should_UpdateMissCount_Monotonically()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, misses: 2, songTimeMs: 10000));
+            tracker.Tick();
+
+            var snapshot1 = tracker.GetSnapshot();
+            snapshot1.PlayMissc.Should().Be(2);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 110, misses: 5, songTimeMs: 12000, accuracy: 95.5m));
+            tracker.Tick();
+
+            var snapshot2 = tracker.GetSnapshot();
+            snapshot2.PlayMissc.Should().Be(5);
+        }
+
+        [Fact]
+        public void Should_RejectHitJump_When_ShortTimeElapsed()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 150, songTimeMs: 8200, accuracy: 97.0m));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+            snapshot.TotalBeatmapHits.Should().Be(30);
+            snapshot.Accuracy.Should().Be(99.0m);
+        }
+
+        [Fact]
+        public void Should_AcceptSmallHitJump_Regardless_Of_TimeElapsed()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 35, songTimeMs: 8100, accuracy: 98.5m));
+            tracker.Tick();
+
+            var snapshot = tracker.GetSnapshot();
+            snapshot.TotalBeatmapHits.Should().Be(35);
+            snapshot.Accuracy.Should().Be(98.5m);
         }
     }
 }
