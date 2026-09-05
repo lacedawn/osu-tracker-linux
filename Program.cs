@@ -21,11 +21,10 @@ namespace Circle_Tracker
         [STAThread]
         public static void Main(string[] args)
         {
-            string lockDir = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") ?? Path.GetTempPath();
-            string lockPath = Path.Combine(lockDir, "circle-tracker.lock");
+            string lockPath = SingleInstanceLock.GetLockFilePath();
             try
             {
-                _lockFile = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                _lockFile = SingleInstanceLock.TryAcquire(lockPath);
             }
             catch (IOException)
             {
@@ -45,11 +44,7 @@ namespace Circle_Tracker
             }
             finally
             {
-                if (_lockFile != null)
-                {
-                    try { _lockFile.Dispose(); } catch { }
-                    try { if (File.Exists(lockPath)) File.Delete(lockPath); } catch { }
-                }
+                SingleInstanceLock.Release(_lockFile, lockPath);
             }
         }
 

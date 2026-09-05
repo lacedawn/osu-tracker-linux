@@ -9,7 +9,6 @@
         
         <converters:IntToBoolConverter x:Key="IntToBoolConverter"/>
         <converters:DeltaToColorConverter x:Key="DeltaToColorConverter"/>
-        <converters:PercentToWidthConverter x:Key="PercentToWidthConverter"/>
         <converters:BeatmapCoverConverter x:Key="BeatmapCoverConverter"/>
         <converters:DoubleToGridLengthConverter x:Key="DoubleToGridLengthConverter"/>
 
