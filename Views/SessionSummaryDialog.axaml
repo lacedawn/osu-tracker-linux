@@ -117,10 +117,7 @@
                     <TextBlock Text="{Binding SessionStarsText}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
                     <Border CornerRadius="4" Padding="6,2" IsVisible="{Binding HasPasses}"
                             Background="{Binding BaselineDeltaStars, Converter={StaticResource DeltaToColorConverter}}">
-                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
-                        <Run Text="{Binding BaselineDeltaStars, StringFormat={}{0:+0.00;-0.00}}"/>
-                        <Run Text="★ above 30D avg"/>
-                      </TextBlock>
+                      <TextBlock Text="{Binding DeltaStarsBadgeText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                     </Border>
                   </StackPanel>
                 </Grid>
@@ -131,10 +128,7 @@
                     <TextBlock Text="{Binding PassRatePercent, StringFormat={}{0:F1}%}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
                     <Border CornerRadius="4" Padding="6,2"
                             Background="{Binding BaselineDeltaPassRate, Converter={StaticResource DeltaToColorConverter}}">
-                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
-                        <Run Text="{Binding BaselineDeltaPassRate, StringFormat={}{0:+0.0;-0.0}%}"/>
-                        <Run Text=" above 30D avg"/>
-                      </TextBlock>
+                      <TextBlock Text="{Binding DeltaPassRateBadgeText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                     </Border>
                   </StackPanel>
                 </Grid>
@@ -145,10 +139,7 @@
                     <TextBlock Text="{Binding SessionBpmText}" Foreground="{StaticResource TextPrimary}" FontSize="12" FontWeight="Bold"/>
                     <Border CornerRadius="4" Padding="6,2" IsVisible="{Binding HasPasses}"
                             Background="{Binding BaselineDeltaBpm, Converter={StaticResource DeltaToColorConverter}}">
-                      <TextBlock Foreground="White" FontSize="10" FontWeight="Bold">
-                        <Run Text="{Binding BaselineDeltaBpm, StringFormat={}{0:+0;-0}}"/>
-                        <Run Text=" BPM above 30D avg"/>
-                      </TextBlock>
+                      <TextBlock Text="{Binding DeltaBpmBadgeText}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                     </Border>
                   </StackPanel>
                 </Grid>

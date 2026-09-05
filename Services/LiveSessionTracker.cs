@@ -50,6 +50,15 @@ public record SessionSummaryReport(
     public string SessionAccuracyText => HasPasses ? $"{SessionAccuracy:F2}%" : "—";
     public string SessionStarsText => HasPasses ? $"{SessionAvgStars:F2}★" : "—";
     public string SessionBpmText => HasPasses ? $"{SessionAvgBpm:F0} BPM" : "—";
+    public string DeltaStarsBadgeText => BaselineDeltaStars >= 0 
+        ? $"+{BaselineDeltaStars:F2} ★ above 30D avg" 
+        : $"{Math.Abs(BaselineDeltaStars):F2} ★ below 30D avg";
+    public string DeltaPassRateBadgeText => BaselineDeltaPassRate >= 0 
+        ? $"+{BaselineDeltaPassRate:F1}% above 30D avg" 
+        : $"{Math.Abs(BaselineDeltaPassRate):F1}% below 30D avg";
+    public string DeltaBpmBadgeText => BaselineDeltaBpm >= 0 
+        ? $"+{BaselineDeltaBpm:F0} BPM above 30D avg" 
+        : $"{Math.Abs(BaselineDeltaBpm):F0} BPM below 30D avg";
 };
 
 public record BestPlayCard(
