@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -14,6 +7,11 @@ using Circle_Tracker.Storage;
 using Circle_Tracker.Storage.Querying;
 using Circle_Tracker.Sync;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using static Circle_Tracker.Tracker;
 
 namespace Circle_Tracker.ViewModels;
 
@@ -21,29 +19,14 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 {
     private static readonly ILogger<MainWindowViewModel> _log = AppLogger.For<MainWindowViewModel>();
 
-    private static readonly IBrush GreenBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0xde, 0x80));
-    private static readonly IBrush RedBrush = new SolidColorBrush(Color.FromRgb(0xf8, 0x71, 0x71));
-    private static readonly IBrush CyanBrush = new SolidColorBrush(Color.FromRgb(0x7d, 0xd3, 0xfc));
-    private static readonly IBrush OrangeBrush = new SolidColorBrush(Color.FromRgb(0xfb, 0x92, 0x3c));
-    private static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x8f, 0x87, 0xa3));
-    private static readonly IBrush WhiteBrush = new SolidColorBrush(Color.FromRgb(0xf5, 0xf4, 0xfa));
-    private static readonly IBrush GoldBrush = new SolidColorBrush(Color.FromRgb(0xfa, 0xcc, 0x15));
-    private static readonly IBrush PinkBrush = new SolidColorBrush(Color.FromRgb(0xf4, 0x72, 0xb6));
-
     private readonly ITrackerService? _tracker;
     private readonly ILiveSessionTracker _liveSessionTracker;
     private readonly IDatabaseManager _dbManager;
     private readonly ISessionAnalyticsService _sessionService;
     private readonly IPlayQueryEngine _queryEngine;
     private readonly ITosuClient? _tosuClient;
-    private CancellationTokenSource? _reconnectDebounce;
 
     private DateTime _sessionStartTime = DateTime.UtcNow;
-    private CancellationTokenSource? _achievementBannerCts;
-    private static readonly HttpClient _imageHttpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
-    private readonly ConcurrentDictionary<string, Bitmap> _coverCache = new();
-    private string _currentCoverUrl = "";
-    private CancellationTokenSource? _coverLoadCts;
 
     private DispatcherTimer? _gameTickTimer;
     private DispatcherTimer? _uiUpdateTimer;
@@ -55,78 +38,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     private string _sessionPassRateText = "0%";
     private string _currentPpText = "0 PP";
 
-    private string _beatmapTitle = "No beatmap detected";
-    private string _beatmapArtist = "-";
-    private string _beatmapVersion = "-";
-    private string _beatmapStars = "★ 0.00";
-    private bool _bannerTrianglesVisible = true;
-    private Bitmap? _coverImage;
-
-    private string _gameState = "IDLE";
-    private IBrush _gameStateBrush = MutedBrush;
-
-    private string _statCs = "0.0";
-    private string _statAr = "0.0";
-    private string _statOd = "0.0";
-    private string _statHp = "0.0";
-    private string _statBpm = "0";
-    private string _statMods = "None";
-    private IBrush _statArBrush = WhiteBrush;
-    private IBrush _statOdBrush = WhiteBrush;
-    private IBrush _statBpmBrush = WhiteBrush;
-    private IBrush _statModsBrush = MutedBrush;
-
-    private string _hits300 = "0";
-    private string _hits100 = "0";
-    private string _hits50 = "0";
-    private string _hitsMiss = "0";
-    private string _totalObjectsText = "Total: 0";
-
-    private string _accuracyText = "100.00%";
-    private IBrush _accuracyBrush = GoldBrush;
-    private string _playCountBadge = "Play #0";
-    private string _sessionTimeText = "Play: 0m  •  Idle: 0m  •  Efficiency: 0%";
-
-    private bool _liveSessionCardVisible;
-    private string _deltaAccuracyText = "+0.00%";
-    private string _deltaStarsText = "+0.00★";
-    private string _deltaBpmText = "+0 BPM";
-    private string _sessionStatsText = "0 plays • 0 passes • 0.0 min active";
-    private string _sessionElapsedText = "0m session";
-
-    private bool _achievementBannerVisible;
-    private string _achievementTitle = "";
-    private string _achievementDescription = "";
-    private string _achievementAccentColor = "#facc15";
-
-    private bool _tosuConnected;
-    private string _tosuStatusText = "tosu: Connecting...";
-    private IBrush _tosuStatusBrush = RedBrush;
-
-    private bool _databaseReady;
-    private string _dbStatusText = "DB: Ready";
-    private IBrush _dbStatusBrush = GreenBrush;
-    private int _localPlayCount;
-
-    private bool _sheetsConnected;
-    private string _sheetsStatusText = "Sheets: Not connected";
-    private IBrush _sheetsStatusBrush = RedBrush;
-
-    private bool _credentialsFound;
-    private string _credentialsStatusText = "Missing";
-    private IBrush _credentialsStatusBrush = RedBrush;
-
-    private bool _enableLocalLogging = true;
-    private string _localDatabasePath = "";
-    private bool _submitSoundEnabled = true;
-    private string _tosuHost = "127.0.0.1";
-    private string _tosuPortText = "24050";
-    private bool _startupLaunch;
-    private bool _enableSheetsLogging;
-    private string _spreadsheetId = "";
-    private string _sheetName = "Raw Data";
-    private bool _useAltFuncSeparator;
-
     private Func<Task>? _openAnalyticsAction;
     private Func<Task>? _showSessionSummaryAction;
 
@@ -134,13 +45,22 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     public event Func<Task<bool>>? SessionSummaryRequested;
     public event EventHandler<Bitmap?>? CoverImageChanged;
 
+    public GameplayHudViewModel Hud { get; }
+    public BeatmapBannerViewModel Banner { get; }
+    public SettingsViewModel Settings { get; }
+    public SessionLiveCardViewModel SessionLive { get; }
+
     public MainWindowViewModel(
         ITrackerService? tracker,
         ILiveSessionTracker liveSessionTracker,
         IDatabaseManager dbManager,
         ISessionAnalyticsService sessionService,
         IPlayQueryEngine queryEngine,
-        ITosuClient? tosuClient = null)
+        ITosuClient? tosuClient = null,
+        GameplayHudViewModel? hud = null,
+        BeatmapBannerViewModel? banner = null,
+        SettingsViewModel? settings = null,
+        SessionLiveCardViewModel? sessionLive = null)
     {
         _tracker = tracker;
         _liveSessionTracker = liveSessionTracker;
@@ -149,13 +69,23 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         _queryEngine = queryEngine;
         _tosuClient = tosuClient;
 
+        Hud = hud ?? new GameplayHudViewModel();
+        Banner = banner ?? new BeatmapBannerViewModel();
+        Settings = settings ?? new SettingsViewModel(_tracker, _tosuClient, _dbManager, msg => StatusText = msg);
+        SessionLive = sessionLive ?? new SessionLiveCardViewModel();
+
+        Banner.CoverImageChanged += (s, e) => CoverImageChanged?.Invoke(this, e);
+
+        Hud.PropertyChanged += (s, e) => OnPropertyChanged(e.PropertyName);
+        Banner.PropertyChanged += (s, e) => OnPropertyChanged(e.PropertyName);
+        Settings.PropertyChanged += (s, e) => OnPropertyChanged(e.PropertyName);
+        SessionLive.PropertyChanged += (s, e) => OnPropertyChanged(e.PropertyName);
+
         OpenAnalyticsCommand = new RelayCommand(async () => await OpenAnalyticsAsync());
         ResetSessionCommand = new RelayCommand(async () => await ResetSessionAsync());
         ExportSessionCommand = new RelayCommand(async () => await ExportSessionAsync());
         AuthenticateOsuCommand = new RelayCommand(async () => await AuthenticateOsuAsync());
         RefreshCommand = new RelayCommand(async () => await RefreshDataAsync());
-        ConnectSheetsCommand = new RelayCommand(async () => await ConnectSheetsAsync());
-        ImportSheetsCommand = new RelayCommand(async () => await ImportSheetsAsync());
 
         _liveSessionTracker.MetricsUpdated += OnLiveSessionMetricsUpdated;
         _liveSessionTracker.PlayProcessed += OnLiveSessionMetricsUpdated;
@@ -164,7 +94,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         if (_tracker != null)
         {
             _tracker.PlayLogged += OnPlayLogged;
-            LoadSettingsFromTracker();
             SetupTimers();
 
             _ = Task.Run(async () =>
@@ -182,9 +111,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
         if (_tosuClient != null)
         {
-            _tosuClient.Host = !string.IsNullOrWhiteSpace(TosuHost) ? TosuHost : "127.0.0.1";
-            _tosuClient.Port = int.TryParse(TosuPortText, out int port) ? port : 24050;
-            _tosuClient.ConnectionStateChanged += OnTosuConnectionStateChanged;
+            _tosuClient.Host = !string.IsNullOrWhiteSpace(Settings.TosuHost) ? Settings.TosuHost : "127.0.0.1";
+            _tosuClient.Port = int.TryParse(Settings.TosuPortText, out int port) ? port : 24050;
 
             _ = Task.Run(async () =>
             {
@@ -198,8 +126,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
                 }
             });
         }
-
-        CheckCredentials();
     }
 
     public string StatusText
@@ -234,454 +160,362 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public string BeatmapTitle
     {
-        get => _beatmapTitle;
-        set => SetProperty(ref _beatmapTitle, value);
+        get => Banner.BeatmapTitle;
+        set => Banner.BeatmapTitle = value;
     }
 
     public string BeatmapArtist
     {
-        get => _beatmapArtist;
-        set => SetProperty(ref _beatmapArtist, value);
+        get => Banner.BeatmapArtist;
+        set => Banner.BeatmapArtist = value;
     }
 
     public string BeatmapVersion
     {
-        get => _beatmapVersion;
-        set => SetProperty(ref _beatmapVersion, value);
+        get => Banner.BeatmapVersion;
+        set => Banner.BeatmapVersion = value;
     }
 
     public string BeatmapStars
     {
-        get => _beatmapStars;
-        set => SetProperty(ref _beatmapStars, value);
+        get => Banner.BeatmapStars;
+        set => Banner.BeatmapStars = value;
     }
 
     public bool BannerTrianglesVisible
     {
-        get => _bannerTrianglesVisible;
-        set => SetProperty(ref _bannerTrianglesVisible, value);
+        get => Banner.BannerTrianglesVisible;
+        set => Banner.BannerTrianglesVisible = value;
     }
 
     public Bitmap? CoverImage
     {
-        get => _coverImage;
-        set
-        {
-            if (SetProperty(ref _coverImage, value))
-            {
-                CoverImageChanged?.Invoke(this, value);
-            }
-        }
+        get => Banner.CoverImage;
+        set => Banner.CoverImage = value;
     }
 
     public string GameState
     {
-        get => _gameState;
-        set => SetProperty(ref _gameState, value);
+        get => Hud.GameState;
+        set => Hud.GameState = value;
     }
 
     public IBrush GameStateBrush
     {
-        get => _gameStateBrush;
-        set => SetProperty(ref _gameStateBrush, value);
+        get => Hud.GameStateBrush;
+        set => Hud.GameStateBrush = value;
     }
 
     public string StatCs
     {
-        get => _statCs;
-        set => SetProperty(ref _statCs, value);
+        get => Hud.StatCs;
+        set => Hud.StatCs = value;
     }
 
     public string StatAr
     {
-        get => _statAr;
-        set => SetProperty(ref _statAr, value);
+        get => Hud.StatAr;
+        set => Hud.StatAr = value;
     }
 
     public string StatOd
     {
-        get => _statOd;
-        set => SetProperty(ref _statOd, value);
+        get => Hud.StatOd;
+        set => Hud.StatOd = value;
     }
 
     public string StatHp
     {
-        get => _statHp;
-        set => SetProperty(ref _statHp, value);
+        get => Hud.StatHp;
+        set => Hud.StatHp = value;
     }
 
     public string StatBpm
     {
-        get => _statBpm;
-        set => SetProperty(ref _statBpm, value);
+        get => Hud.StatBpm;
+        set => Hud.StatBpm = value;
     }
 
     public string StatMods
     {
-        get => _statMods;
-        set => SetProperty(ref _statMods, value);
+        get => Hud.StatMods;
+        set => Hud.StatMods = value;
     }
 
     public IBrush StatArBrush
     {
-        get => _statArBrush;
-        set => SetProperty(ref _statArBrush, value);
+        get => Hud.StatArBrush;
+        set => Hud.StatArBrush = value;
     }
 
     public IBrush StatOdBrush
     {
-        get => _statOdBrush;
-        set => SetProperty(ref _statOdBrush, value);
+        get => Hud.StatOdBrush;
+        set => Hud.StatOdBrush = value;
     }
 
     public IBrush StatBpmBrush
     {
-        get => _statBpmBrush;
-        set => SetProperty(ref _statBpmBrush, value);
+        get => Hud.StatBpmBrush;
+        set => Hud.StatBpmBrush = value;
     }
 
     public IBrush StatModsBrush
     {
-        get => _statModsBrush;
-        set => SetProperty(ref _statModsBrush, value);
+        get => Hud.StatModsBrush;
+        set => Hud.StatModsBrush = value;
     }
 
     public string Hits300
     {
-        get => _hits300;
-        set => SetProperty(ref _hits300, value);
+        get => Hud.Hits300;
+        set => Hud.Hits300 = value;
     }
 
     public string Hits100
     {
-        get => _hits100;
-        set => SetProperty(ref _hits100, value);
+        get => Hud.Hits100;
+        set => Hud.Hits100 = value;
     }
 
     public string Hits50
     {
-        get => _hits50;
-        set => SetProperty(ref _hits50, value);
+        get => Hud.Hits50;
+        set => Hud.Hits50 = value;
     }
 
     public string HitsMiss
     {
-        get => _hitsMiss;
-        set => SetProperty(ref _hitsMiss, value);
+        get => Hud.HitsMiss;
+        set => Hud.HitsMiss = value;
     }
 
     public string TotalObjectsText
     {
-        get => _totalObjectsText;
-        set => SetProperty(ref _totalObjectsText, value);
+        get => Hud.TotalObjectsText;
+        set => Hud.TotalObjectsText = value;
     }
 
     public string AccuracyText
     {
-        get => _accuracyText;
-        set => SetProperty(ref _accuracyText, value);
+        get => Hud.AccuracyText;
+        set => Hud.AccuracyText = value;
     }
 
     public IBrush AccuracyBrush
     {
-        get => _accuracyBrush;
-        set => SetProperty(ref _accuracyBrush, value);
+        get => Hud.AccuracyBrush;
+        set => Hud.AccuracyBrush = value;
     }
 
     public string PlayCountBadge
     {
-        get => _playCountBadge;
-        set => SetProperty(ref _playCountBadge, value);
+        get => Hud.PlayCountBadge;
+        set => Hud.PlayCountBadge = value;
     }
 
     public string SessionTimeText
     {
-        get => _sessionTimeText;
-        set => SetProperty(ref _sessionTimeText, value);
+        get => Hud.SessionTimeText;
+        set => Hud.SessionTimeText = value;
     }
 
     public bool LiveSessionCardVisible
     {
-        get => _liveSessionCardVisible;
-        set => SetProperty(ref _liveSessionCardVisible, value);
+        get => SessionLive.LiveSessionCardVisible;
+        set => SessionLive.LiveSessionCardVisible = value;
     }
 
     public string DeltaAccuracyText
     {
-        get => _deltaAccuracyText;
-        set => SetProperty(ref _deltaAccuracyText, value);
+        get => SessionLive.DeltaAccuracyText;
+        set => SessionLive.DeltaAccuracyText = value;
     }
 
     public string DeltaStarsText
     {
-        get => _deltaStarsText;
-        set => SetProperty(ref _deltaStarsText, value);
+        get => SessionLive.DeltaStarsText;
+        set => SessionLive.DeltaStarsText = value;
     }
 
     public string DeltaBpmText
     {
-        get => _deltaBpmText;
-        set => SetProperty(ref _deltaBpmText, value);
+        get => SessionLive.DeltaBpmText;
+        set => SessionLive.DeltaBpmText = value;
     }
 
     public string SessionStatsText
     {
-        get => _sessionStatsText;
-        set => SetProperty(ref _sessionStatsText, value);
+        get => SessionLive.SessionStatsText;
+        set => SessionLive.SessionStatsText = value;
     }
 
     public string SessionElapsedText
     {
-        get => _sessionElapsedText;
-        set => SetProperty(ref _sessionElapsedText, value);
+        get => SessionLive.SessionElapsedText;
+        set => SessionLive.SessionElapsedText = value;
     }
 
     public bool AchievementBannerVisible
     {
-        get => _achievementBannerVisible;
-        set => SetProperty(ref _achievementBannerVisible, value);
+        get => SessionLive.AchievementBannerVisible;
+        set => SessionLive.AchievementBannerVisible = value;
     }
 
     public string AchievementTitle
     {
-        get => _achievementTitle;
-        set => SetProperty(ref _achievementTitle, value);
+        get => SessionLive.AchievementTitle;
+        set => SessionLive.AchievementTitle = value;
     }
 
     public string AchievementDescription
     {
-        get => _achievementDescription;
-        set => SetProperty(ref _achievementDescription, value);
+        get => SessionLive.AchievementDescription;
+        set => SessionLive.AchievementDescription = value;
     }
 
     public string AchievementAccentColor
     {
-        get => _achievementAccentColor;
-        set => SetProperty(ref _achievementAccentColor, value);
+        get => SessionLive.AchievementAccentColor;
+        set => SessionLive.AchievementAccentColor = value;
     }
 
     public bool TosuConnected
     {
-        get => _tosuConnected;
-        set => SetProperty(ref _tosuConnected, value);
+        get => Settings.TosuConnected;
+        set => Settings.TosuConnected = value;
     }
 
     public string TosuStatusText
     {
-        get => _tosuStatusText;
-        set => SetProperty(ref _tosuStatusText, value);
+        get => Settings.TosuStatusText;
+        set => Settings.TosuStatusText = value;
     }
 
     public IBrush TosuStatusBrush
     {
-        get => _tosuStatusBrush;
-        set => SetProperty(ref _tosuStatusBrush, value);
+        get => Settings.TosuStatusBrush;
+        set => Settings.TosuStatusBrush = value;
     }
 
     public bool DatabaseReady
     {
-        get => _databaseReady;
-        set => SetProperty(ref _databaseReady, value);
+        get => Settings.DatabaseReady;
+        set => Settings.DatabaseReady = value;
     }
 
     public string DbStatusText
     {
-        get => _dbStatusText;
-        set => SetProperty(ref _dbStatusText, value);
+        get => Settings.DbStatusText;
+        set => Settings.DbStatusText = value;
     }
 
     public IBrush DbStatusBrush
     {
-        get => _dbStatusBrush;
-        set => SetProperty(ref _dbStatusBrush, value);
+        get => Settings.DbStatusBrush;
+        set => Settings.DbStatusBrush = value;
     }
 
     public int LocalPlayCount
     {
-        get => _localPlayCount;
-        set => SetProperty(ref _localPlayCount, value);
+        get => Settings.LocalPlayCount;
+        set => Settings.LocalPlayCount = value;
     }
 
     public bool SheetsConnected
     {
-        get => _sheetsConnected;
-        set => SetProperty(ref _sheetsConnected, value);
+        get => Settings.SheetsConnected;
+        set => Settings.SheetsConnected = value;
     }
 
     public string SheetsStatusText
     {
-        get => _sheetsStatusText;
-        set => SetProperty(ref _sheetsStatusText, value);
+        get => Settings.SheetsStatusText;
+        set => Settings.SheetsStatusText = value;
     }
 
     public IBrush SheetsStatusBrush
     {
-        get => _sheetsStatusBrush;
-        set => SetProperty(ref _sheetsStatusBrush, value);
+        get => Settings.SheetsStatusBrush;
+        set => Settings.SheetsStatusBrush = value;
     }
 
     public bool CredentialsFound
     {
-        get => _credentialsFound;
-        set => SetProperty(ref _credentialsFound, value);
+        get => Settings.CredentialsFound;
+        set => Settings.CredentialsFound = value;
     }
 
     public string CredentialsStatusText
     {
-        get => _credentialsStatusText;
-        set => SetProperty(ref _credentialsStatusText, value);
+        get => Settings.CredentialsStatusText;
+        set => Settings.CredentialsStatusText = value;
     }
 
     public IBrush CredentialsStatusBrush
     {
-        get => _credentialsStatusBrush;
-        set => SetProperty(ref _credentialsStatusBrush, value);
+        get => Settings.CredentialsStatusBrush;
+        set => Settings.CredentialsStatusBrush = value;
     }
 
     public bool EnableLocalLogging
     {
-        get => _enableLocalLogging;
-        set
-        {
-            if (SetProperty(ref _enableLocalLogging, value) && _tracker != null)
-            {
-                _tracker.EnableLocalLogging = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.EnableLocalLogging;
+        set => Settings.EnableLocalLogging = value;
     }
 
     public string LocalDatabasePath
     {
-        get => _localDatabasePath;
-        set
-        {
-            if (SetProperty(ref _localDatabasePath, value) && _tracker != null)
-            {
-                _tracker.LocalDatabasePath = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.LocalDatabasePath;
+        set => Settings.LocalDatabasePath = value;
     }
 
     public bool SubmitSoundEnabled
     {
-        get => _submitSoundEnabled;
-        set
-        {
-            if (SetProperty(ref _submitSoundEnabled, value) && _tracker != null)
-            {
-                _tracker.SubmitSoundEnabled = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.SubmitSoundEnabled;
+        set => Settings.SubmitSoundEnabled = value;
     }
 
     public string TosuHost
     {
-        get => _tosuHost;
-        set
-        {
-            if (SetProperty(ref _tosuHost, value) && _tracker != null)
-            {
-                _tracker.TosuHost = value;
-                _tracker.SaveSettings();
-                if (_tosuClient != null && !string.IsNullOrWhiteSpace(value) && !value.Contains(' '))
-                {
-                    _tosuClient.Host = value.Trim();
-                    DebounceReconnect();
-                }
-            }
-        }
+        get => Settings.TosuHost;
+        set => Settings.TosuHost = value;
     }
 
     public string TosuPortText
     {
-        get => _tosuPortText;
-        set
-        {
-            if (SetProperty(ref _tosuPortText, value) && int.TryParse(value, out int port) && _tracker != null)
-            {
-                _tracker.TosuPort = port;
-                _tracker.SaveSettings();
-                if (_tosuClient != null && port >= 1 && port <= 65535)
-                {
-                    _tosuClient.Port = port;
-                    DebounceReconnect();
-                }
-            }
-        }
+        get => Settings.TosuPortText;
+        set => Settings.TosuPortText = value;
     }
 
     public bool StartupLaunch
     {
-        get => _startupLaunch;
-        set
-        {
-            if (SetProperty(ref _startupLaunch, value))
-            {
-                if (value)
-                {
-                    AutostartHelper.CreateAutostart();
-                }
-                else
-                {
-                    AutostartHelper.DeleteAutostart();
-                }
-            }
-        }
+        get => Settings.StartupLaunch;
+        set => Settings.StartupLaunch = value;
     }
 
     public bool EnableSheetsLogging
     {
-        get => _enableSheetsLogging;
-        set
-        {
-            if (SetProperty(ref _enableSheetsLogging, value) && _tracker != null)
-            {
-                _tracker.EnableGoogleSheetsLogging = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.EnableSheetsLogging;
+        set => Settings.EnableSheetsLogging = value;
     }
 
     public string SpreadsheetId
     {
-        get => _spreadsheetId;
-        set
-        {
-            if (SetProperty(ref _spreadsheetId, value) && _tracker != null)
-            {
-                _tracker.SpreadsheetId = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.SpreadsheetId;
+        set => Settings.SpreadsheetId = value;
     }
 
     public string SheetName
     {
-        get => _sheetName;
-        set
-        {
-            if (SetProperty(ref _sheetName, value) && _tracker != null)
-            {
-                _tracker.SheetName = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.SheetName;
+        set => Settings.SheetName = value;
     }
 
     public bool UseAltFuncSeparator
     {
-        get => _useAltFuncSeparator;
-        set
-        {
-            if (SetProperty(ref _useAltFuncSeparator, value) && _tracker != null)
-            {
-                _tracker.UseAltFuncSeparator = value;
-                _tracker.SaveSettings();
-            }
-        }
+        get => Settings.UseAltFuncSeparator;
+        set => Settings.UseAltFuncSeparator = value;
     }
 
     public ICommand OpenAnalyticsCommand { get; }
@@ -689,8 +523,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     public ICommand ExportSessionCommand { get; }
     public ICommand AuthenticateOsuCommand { get; }
     public ICommand RefreshCommand { get; }
-    public ICommand ConnectSheetsCommand { get; }
-    public ICommand ImportSheetsCommand { get; }
+    public ICommand ConnectSheetsCommand => Settings.ConnectSheetsCommand;
+    public ICommand ImportSheetsCommand => Settings.ImportSheetsCommand;
 
     public void SetOpenAnalyticsAction(Func<Task> action) => _openAnalyticsAction = action;
     public void SetShowSessionSummaryAction(Func<Task> action) => _showSessionSummaryAction = action;
@@ -709,61 +543,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         }
 
         return false;
-    }
-
-    private void LoadSettingsFromTracker()
-    {
-        if (_tracker == null) return;
-        _enableLocalLogging = _tracker.EnableLocalLogging;
-        _enableSheetsLogging = _tracker.EnableGoogleSheetsLogging;
-        _localDatabasePath = _tracker.LocalDatabasePath;
-        _sheetName = _tracker.SheetName;
-        _spreadsheetId = _tracker.SpreadsheetId;
-        _submitSoundEnabled = _tracker.SubmitSoundEnabled;
-        _useAltFuncSeparator = _tracker.UseAltFuncSeparator;
-        _tosuHost = _tracker.TosuHost;
-        _tosuPortText = _tracker.TosuPort.ToString();
-        _startupLaunch = AutostartHelper.AutostartExists();
-    }
-
-    private void CheckCredentials()
-    {
-        CredentialsFound = File.Exists(Path.Combine(AppContext.BaseDirectory, "credentials.json"));
-        CredentialsStatusText = CredentialsFound ? "Found" : "Missing";
-        CredentialsStatusBrush = CredentialsFound ? GreenBrush : RedBrush;
-    }
-
-    private void OnTosuConnectionStateChanged(object? sender, bool connected)
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            TosuConnected = connected;
-            TosuStatusBrush = connected ? GreenBrush : RedBrush;
-            TosuStatusText = connected ? "tosu: Connected" : "tosu: Connecting...";
-        });
-    }
-
-    private void DebounceReconnect()
-    {
-        _reconnectDebounce?.Cancel();
-        _reconnectDebounce = new CancellationTokenSource();
-        var token = _reconnectDebounce.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(1000, token);
-                if (!token.IsCancellationRequested && _tosuClient != null)
-                {
-                    await _tosuClient.ReconnectAsync();
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to reconnect to tosu");
-            }
-        });
     }
 
     private void SetupTimers()
@@ -827,76 +606,10 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         {
             void Apply()
             {
-                BeatmapTitle = !string.IsNullOrEmpty(snapshot.BeatmapTitle)
-                    ? snapshot.BeatmapTitle
-                    : (!string.IsNullOrEmpty(snapshot.BeatmapString) ? snapshot.BeatmapString : "No beatmap detected");
-                BeatmapArtist = !string.IsNullOrEmpty(snapshot.BeatmapArtist) ? snapshot.BeatmapArtist : "-";
-                BeatmapVersion = !string.IsNullOrEmpty(snapshot.BeatmapVersion) ? snapshot.BeatmapVersion : "-";
-                BeatmapStars = $"★ {snapshot.BeatmapStars:0.00}";
-                BannerTrianglesVisible = string.IsNullOrEmpty(snapshot.BeatmapTitle) && string.IsNullOrEmpty(snapshot.BeatmapString);
-
-                GameState = snapshot.GameStateLabel;
-                GameStateBrush = snapshot.GameStateLabel switch
-                {
-                    "PLAYING" => GreenBrush,
-                    "RESULTS" => CyanBrush,
-                    "REPLAY" => OrangeBrush,
-                    _ => MutedBrush
-                };
-
-                StatCs = snapshot.BeatmapCs.ToString("0.0");
-                StatAr = snapshot.BeatmapAr.ToString("0.0");
-                StatArBrush = snapshot.BeatmapAr >= 10.0m ? GreenBrush : WhiteBrush;
-
-                StatOd = snapshot.BeatmapOd.ToString("0.0");
-                StatOdBrush = snapshot.BeatmapOd >= 10.0m ? GreenBrush : WhiteBrush;
-
-                StatHp = snapshot.BeatmapHp.ToString("0.0");
-                StatBpm = snapshot.BeatmapBpm.ToString();
-                StatBpmBrush = snapshot.BeatmapBpm >= 200 ? OrangeBrush : WhiteBrush;
-
-                StatMods = !string.IsNullOrEmpty(snapshot.ModsString) ? $"+{snapshot.ModsString}" : "None";
-                StatModsBrush = !string.IsNullOrEmpty(snapshot.ModsString) ? PinkBrush : MutedBrush;
-
-                Hits300 = snapshot.Play300c.ToString();
-                Hits100 = snapshot.Play100c.ToString();
-                Hits50 = snapshot.Play50c.ToString();
-                HitsMiss = snapshot.PlayMissc.ToString();
-                TotalObjectsText = $"Total: {snapshot.TotalBeatmapHits}";
-
-                AccuracyText = $"{snapshot.Accuracy:0.00}%";
-                if (snapshot.Accuracy >= 100.0m)
-                    AccuracyBrush = GoldBrush;
-                else if (snapshot.Accuracy > 95.0m)
-                    AccuracyBrush = GreenBrush;
-                else
-                    AccuracyBrush = WhiteBrush;
-
-                PlayCountBadge = $"Play #{snapshot.PlayCount}";
-
-                bool isTosuConnected = _tosuClient != null ? _tosuClient.IsConnected : !snapshot.MemoryReadError;
-                TosuConnected = isTosuConnected;
-                TosuStatusText = isTosuConnected ? $"tosu: {snapshot.DetectedClient}" : "tosu: Connecting...";
-                TosuStatusBrush = isTosuConnected ? GreenBrush : RedBrush;
-
-                DatabaseReady = snapshot.DatabaseReady;
-                DbStatusText = snapshot.DatabaseReady ? $"DB: {snapshot.LocalPlayCount} plays" : "DB: Error";
-                DbStatusBrush = snapshot.DatabaseReady ? GreenBrush : RedBrush;
-                LocalPlayCount = snapshot.LocalPlayCount;
-
-                SheetsConnected = snapshot.SheetsApiReady;
-                SheetsStatusText = snapshot.SheetsApiReady ? "Sheets: Connected" : "Sheets: Not connected";
-                SheetsStatusBrush = snapshot.SheetsApiReady ? GreenBrush : RedBrush;
-
-                int playing = snapshot.PlayingSeconds;
-                int idle = snapshot.IdleSeconds;
-                float total = playing + idle;
-                float eff = total > 0 ? 100f * playing / total : 0f;
-                int playingMin = playing / 60;
-                int idleMin = idle / 60;
-                SessionTimeText = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
-
-                LoadCoverImage(snapshot.CoverUrl);
+                Hud.UpdateFromSnapshot(snapshot);
+                Banner.UpdateFromSnapshot(snapshot);
+                Settings.UpdateFromSnapshot(snapshot);
+                SessionLive.UpdateFromSnapshot(snapshot);
             }
 
             if (Dispatcher.UIThread.CheckAccess())
@@ -923,13 +636,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             try
             {
                 var s = _tracker.GetSnapshot();
-                int playing = s.PlayingSeconds;
-                int idle = s.IdleSeconds;
-                float total = playing + idle;
-                float eff = total > 0 ? 100f * playing / total : 0f;
-                int playingMin = playing / 60;
-                int idleMin = idle / 60;
-                SessionTimeText = $"Play: {playingMin}m  •  Idle: {idleMin}m  •  Efficiency: {(int)eff}%";
+                Hud.UpdateSessionTime(s.PlayingSeconds, s.IdleSeconds);
             }
             catch (Exception ex)
             {
@@ -947,76 +654,21 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         }
     }
 
-    private void LoadCoverImage(string coverUrl)
-    {
-        if (_currentCoverUrl == coverUrl) return;
-        _currentCoverUrl = coverUrl;
-        _coverLoadCts?.Cancel();
-
-        if (string.IsNullOrEmpty(coverUrl))
-        {
-            CoverImage = null;
-            return;
-        }
-
-        if (_coverCache.TryGetValue(coverUrl, out var cached))
-        {
-            CoverImage = cached;
-            return;
-        }
-
-        _coverLoadCts = new CancellationTokenSource();
-        var token = _coverLoadCts.Token;
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                byte[] data = await _imageHttpClient.GetByteArrayAsync(coverUrl, token);
-                if (token.IsCancellationRequested) return;
-
-                using var ms = new MemoryStream(data);
-                var bitmap = new Bitmap(ms);
-                _coverCache[coverUrl] = bitmap;
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (_currentCoverUrl == coverUrl)
-                    {
-                        CoverImage = bitmap;
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                _log.LogDebug("Failed to load cover image: {Error}", ex.Message);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (_currentCoverUrl == coverUrl)
-                    {
-                        CoverImage = null;
-                    }
-                });
-            }
-        }, token);
-    }
-
     private void OnLiveSessionMetricsUpdated(object? sender, LiveSessionMetrics metrics)
     {
         void Update()
         {
             try
             {
+                SessionLive.UpdateFromMetrics(metrics, _sessionStartTime);
                 if (metrics.SessionPlayCount == 0)
                 {
-                    LiveSessionCardVisible = false;
                     SessionPlaysCount = 0;
                     SessionAccuracyText = "0.00%";
                     SessionPassRateText = "0%";
                     return;
                 }
 
-                LiveSessionCardVisible = true;
                 SessionPlaysCount = metrics.SessionPlayCount;
                 SessionAccuracyText = $"{metrics.SessionAccuracy:F2}%";
 
@@ -1024,23 +676,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
                     ? (double)metrics.SessionPassCount / metrics.SessionPlayCount * 100.0
                     : 0.0;
                 SessionPassRateText = $"{passRate:F0}%";
-
-                DeltaAccuracyText = metrics.BaselineDeltaAccuracy >= 0
-                    ? $"+{metrics.BaselineDeltaAccuracy:F2}%"
-                    : $"{metrics.BaselineDeltaAccuracy:F2}%";
-
-                DeltaStarsText = metrics.BaselineDeltaStars >= 0
-                    ? $"+{metrics.BaselineDeltaStars:F2}★"
-                    : $"{metrics.BaselineDeltaStars:F2}★";
-
-                DeltaBpmText = metrics.BaselineDeltaBpm >= 0
-                    ? $"+{metrics.BaselineDeltaBpm:F0} BPM"
-                    : $"{metrics.BaselineDeltaBpm:F0} BPM";
-
-                SessionStatsText = $"{metrics.SessionPlayCount} plays • {metrics.SessionPassCount} passes • {metrics.ActivePlayMinutes:F1} min active";
-
-                var wallClockMinutes = (DateTime.UtcNow - _sessionStartTime).TotalMinutes;
-                SessionElapsedText = $"{wallClockMinutes:F0}m session";
             }
             catch (Exception ex)
             {
@@ -1064,27 +699,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         {
             try
             {
-                AchievementTitle = achievement.Title;
-                AchievementDescription = achievement.Description;
-                AchievementAccentColor = achievement.AccentColorHex;
-                AchievementBannerVisible = true;
-
-                _achievementBannerCts?.Cancel();
-                _achievementBannerCts = new CancellationTokenSource();
-                var token = _achievementBannerCts.Token;
-
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await Task.Delay(4000, token);
-                        if (!token.IsCancellationRequested)
-                        {
-                            await Dispatcher.UIThread.InvokeAsync(() => AchievementBannerVisible = false);
-                        }
-                    }
-                    catch (OperationCanceledException) { }
-                }, token);
+                SessionLive.ShowAchievement(achievement);
             }
             catch (Exception ex)
             {
@@ -1154,11 +769,11 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         try
         {
             _liveSessionTracker.ResetSession();
+            SessionLive.ResetSession();
             _sessionStartTime = DateTime.UtcNow;
             SessionPlaysCount = 0;
             SessionAccuracyText = "0.00%";
             SessionPassRateText = "0%";
-            LiveSessionCardVisible = false;
             await Task.CompletedTask;
         }
         catch (Exception ex)
@@ -1200,74 +815,12 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public async Task ConnectSheetsAsync()
     {
-        try
-        {
-            StatusText = "Connecting to Sheets...";
-            if (_tracker != null)
-            {
-                await _tracker.InitGoogleAPIAsync();
-                SheetsConnected = _tracker.SheetsApiReady;
-                SheetsStatusText = _tracker.SheetsApiReady ? "Sheets: Connected" : "Sheets: Not connected";
-                SheetsStatusBrush = _tracker.SheetsApiReady ? GreenBrush : RedBrush;
-                StatusText = _tracker.SheetsApiReady ? "Sheets connected" : "Sheets connection failed";
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Failed to connect to Sheets");
-            StatusText = "Sheets connection failed";
-        }
+        await Settings.ConnectSheetsAsync();
     }
 
     public async Task ImportSheetsAsync()
     {
-        try
-        {
-            if (_tracker == null) return;
-            if (!_tracker.SheetsApiReady)
-            {
-                await _tracker.InitGoogleAPIAsync();
-            }
-
-            if (!_tracker.SheetsApiReady)
-            {
-                StatusText = "Sheets API not connected";
-                return;
-            }
-
-            string spreadsheetId = _tracker.SpreadsheetId;
-            string sheetName = _tracker.SheetName;
-            if (string.IsNullOrWhiteSpace(spreadsheetId))
-            {
-                StatusText = "Missing Spreadsheet ID";
-                return;
-            }
-
-            var sheetsService = GoogleSheetsManager.CreateSheetsService();
-            if (sheetsService == null)
-            {
-                StatusText = "Failed to create Google Sheets service";
-                return;
-            }
-
-            StatusText = "Importing sheets data...";
-            var importer = new GoogleSheetsHistoricalImporter(sheetsService, _dbManager);
-            var result = await importer.ImportFromSpreadsheetAsync(spreadsheetId, sheetName, null, CancellationToken.None);
-
-            if (result.Success)
-            {
-                StatusText = $"Imported {result.SyncedCount} plays";
-            }
-            else
-            {
-                StatusText = "Import failed";
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Failed to import from Sheets");
-            StatusText = "Import error";
-        }
+        await Settings.ImportSheetsAsync();
     }
 
     public async Task<SessionSummaryReport> GenerateSessionSummaryAsync(CancellationToken ct = default)
@@ -1286,14 +839,15 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public async Task ShutdownAsync()
     {
-        _reconnectDebounce?.Cancel();
         _gameTickTimer?.Stop();
         _uiUpdateTimer?.Stop();
         _secondsTimer?.Stop();
 
+        Settings.Dispose();
+        SessionLive.Dispose();
+
         if (_tosuClient != null)
         {
-            _tosuClient.ConnectionStateChanged -= OnTosuConnectionStateChanged;
             try
             {
                 await _tosuClient.DisconnectAsync();
@@ -1352,9 +906,9 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     {
         Dispatcher.UIThread.Post(() =>
         {
-            CredentialsFound = found;
-            CredentialsStatusText = found ? "Found" : "Missing";
-            CredentialsStatusBrush = found ? GreenBrush : RedBrush;
+            Settings.CredentialsFound = found;
+            Settings.CredentialsStatusText = found ? "Found" : "Missing";
+            Settings.CredentialsStatusBrush = found ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
         });
     }
 
@@ -1362,9 +916,9 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     {
         Dispatcher.UIThread.Post(() =>
         {
-            SheetsConnected = val;
-            SheetsStatusText = val ? "Sheets: Connected" : "Sheets: Not connected";
-            SheetsStatusBrush = val ? GreenBrush : RedBrush;
+            Settings.SheetsConnected = val;
+            Settings.SheetsStatusText = val ? "Sheets: Connected" : "Sheets: Not connected";
+            Settings.SheetsStatusBrush = val ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
         });
     }
 

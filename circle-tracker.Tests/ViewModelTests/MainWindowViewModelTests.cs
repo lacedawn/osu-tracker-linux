@@ -158,6 +158,80 @@ public class MainWindowViewModelTests
         viewModel.StatusText.Should().Be("Ready");
     }
 
+    [AvaloniaFact]
+    public void Should_CoordinateAllChildViewModels_When_SnapshotReceived()
+    {
+        var viewModel = CreateViewModel();
+        var snapshot = new TrackerSnapshot(
+            IsPlaying: true,
+            IsReplay: false,
+            DetectedClient: "tosu-test",
+            BeatmapString: "Artist - Coordinated Song [Expert]",
+            BeatmapTitle: "Coordinated Song",
+            BeatmapArtist: "Artist",
+            BeatmapVersion: "Expert",
+            BeatmapId: 555,
+            BeatmapSetId: 777,
+            BeatmapHp: 6.5m,
+            BeatmapStars: 6.85m,
+            BeatmapAim: 3.5m,
+            BeatmapSpeed: 3.3m,
+            BeatmapCs: 4.5m,
+            BeatmapAr: 10.3m,
+            BeatmapOd: 10.1m,
+            BeatmapBpm: 240,
+            TotalBeatmapHits: 850,
+            Play300c: 700,
+            Play100c: 30,
+            Play50c: 5,
+            PlayMissc: 2,
+            Accuracy: 99.15m,
+            Time: 180,
+            ModsString: "HDDT",
+            GameStateLabel: "PLAYING",
+            SheetsApiReady: true,
+            MemoryReadError: false,
+            PlayingSeconds: 180,
+            IdleSeconds: 60,
+            PlayCount: 8,
+            DatabaseReady: true,
+            LocalPlayCount: 142
+        );
+
+        viewModel.UpdateFromSnapshot(snapshot);
+
+        viewModel.Hud.AccuracyText.Should().Be("99.15%");
+        viewModel.Hud.Hits300.Should().Be("700");
+        viewModel.Hud.Hits100.Should().Be("30");
+        viewModel.Hud.Hits50.Should().Be("5");
+        viewModel.Hud.HitsMiss.Should().Be("2");
+        viewModel.Hud.TotalObjectsText.Should().Be("Total: 850");
+        viewModel.Hud.StatCs.Should().Be("4.5");
+        viewModel.Hud.StatAr.Should().Be("10.3");
+        viewModel.Hud.StatOd.Should().Be("10.1");
+        viewModel.Hud.StatHp.Should().Be("6.5");
+        viewModel.Hud.StatBpm.Should().Be("240");
+        viewModel.Hud.StatMods.Should().Be("+HDDT");
+        viewModel.Hud.GameState.Should().Be("PLAYING");
+
+        viewModel.Banner.BeatmapTitle.Should().Be("Coordinated Song");
+        viewModel.Banner.BeatmapArtist.Should().Be("Artist");
+        viewModel.Banner.BeatmapVersion.Should().Be("Expert");
+        viewModel.Banner.BeatmapStars.Should().Be("★ 6.85");
+        viewModel.Banner.BannerTrianglesVisible.Should().BeFalse();
+
+        viewModel.Settings.DatabaseReady.Should().BeTrue();
+        viewModel.Settings.LocalPlayCount.Should().Be(142);
+        viewModel.Settings.DbStatusText.Should().Be("DB: 142 plays");
+        viewModel.Settings.SheetsConnected.Should().BeTrue();
+        viewModel.Settings.SheetsStatusText.Should().Be("Sheets: Connected");
+        viewModel.Settings.TosuConnected.Should().BeTrue();
+        viewModel.Settings.TosuStatusText.Should().Be("tosu: tosu-test");
+
+        viewModel.SessionLive.LiveSessionCardVisible.Should().BeTrue();
+        viewModel.SessionLive.SessionElapsedText.Should().Be("4m session");
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         return new MainWindowViewModel(

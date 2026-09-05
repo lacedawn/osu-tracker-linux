@@ -81,6 +81,10 @@ namespace Circle_Tracker
 
             services.AddSingleton<ILiveSessionTracker, LiveSessionTracker>();
 
+            services.AddSingleton<GameplayHudViewModel>();
+            services.AddSingleton<BeatmapBannerViewModel>();
+            services.AddSingleton<SettingsViewModel>();
+            services.AddSingleton<SessionLiveCardViewModel>();
             services.AddSingleton<MainWindowViewModel>();
             services.AddTransient<AnalyticsViewModel>();
 
