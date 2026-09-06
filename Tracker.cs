@@ -118,40 +118,16 @@ namespace Circle_Tracker
         private readonly CompositePlaySink? _compositeSink;
         private readonly SessionManager _sessionManager;
 
-        private static string FindFile(string relativePath)
-        {
-            string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
-            if (File.Exists(p1)) return p1;
-            string p2 = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-            if (File.Exists(p2)) return p2;
-            return p1;
-        }
-
-        private static string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "user_settings.json");
-        private static string SoundFilePath => FindFile(Path.Combine("assets", "sectionpass.wav"));
-
         public int IdleSeconds { get; private set; } = 0;
         public int PlayingSeconds { get; private set; } = 0;
 
-        public bool EnableLocalLogging { get; set; } = true;
-        public bool EnableGoogleSheetsLogging { get; set; } = false;
-        public string LocalDatabasePath { get; set; } = "";
+        private readonly ISettingsService _settings;
+        public ISettingsService Settings => _settings;
 
-        public string TosuHost { get; set; } = "127.0.0.1";
-        public int TosuPort { get; set; } = 24050;
-        public bool DisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
         private readonly IGameStateManager _gameStateManager;
         public string DetectedClient => _gameStateManager.DetectedClient;
         private readonly IBeatmapStateTracker _beatmapState;
         public IBeatmapStateTracker BeatmapState => _beatmapState;
-
-        public bool SubmitSoundEnabled { get; set; }
-
-        public string Username
-        {
-            get => _gameStateManager.Username;
-            set => _gameStateManager.Username = value;
-        }
 
         private int Play300c { get; set; } = 0;
         private int Play100c { get; set; } = 0;
@@ -187,59 +163,52 @@ namespace Circle_Tracker
         }
 
         public bool SheetsApiReady => _sheetsManager?.SheetsApiReady ?? false;
-        public bool SpreadsheetTimezoneVerified
-        {
-            get => _sheetsManager?.SpreadsheetTimezoneVerified ?? false;
-            set { if (_sheetsManager != null) _sheetsManager.SpreadsheetTimezoneVerified = value; }
-        }
-        public bool UseAltFuncSeparator
-        {
-            get => _sheetsManager?.UseAltFuncSeparator ?? false;
-            set { if (_sheetsManager != null) _sheetsManager.UseAltFuncSeparator = value; }
-        }
-        public string SpreadsheetId
-        {
-            get => _sheetsManager?.SpreadsheetId ?? "";
-            set { if (_sheetsManager != null) _sheetsManager.SpreadsheetId = value; }
-        }
-        public string SheetName
-        {
-            get => _sheetsManager?.SheetName ?? "";
-            set { if (_sheetsManager != null) _sheetsManager.SheetName = value; }
-        }
         public int SheetRows => _sheetsManager?.SheetRows ?? 0;
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient)
+        private void SyncSheetsSettings()
+        {
+            if (_sheetsManager is GoogleSheetsManager gsm)
+            {
+                gsm.SpreadsheetId = _settings.SpreadsheetId;
+                gsm.SheetName = _settings.SheetName;
+                gsm.SpreadsheetTimezoneVerified = _settings.SpreadsheetTimezoneVerified;
+                gsm.UseAltFuncSeparator = _settings.UseAltFuncSeparator;
+            }
+        }
+
+        public Tracker(IMainWindow form, ITosuClient tosuClient, ISettingsService? settings = null)
         {
             _form = form;
             _tosuClient = tosuClient;
+            _settings = settings ?? new SettingsService();
             _gameStateManager = new GameStateManager();
+            _gameStateManager.Username = _settings.Username;
             _beatmapState = new BeatmapStateTracker(tosuClient);
 
-            var sheetsManager = new GoogleSheetsManager(form, GetFunctionSeparator);
-            sheetsManager.OnSettingsChanged = SaveSettings;
+            var sheetsManager = new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
+            sheetsManager.OnSettingsChanged = _settings.SaveSettings;
             _sheetsManager = sheetsManager;
+            SyncSheetsSettings();
+            _settings.SettingsChanged += SyncSheetsSettings;
 
-            LoadSettings();
-
-            _dbManager = new SqliteDatabaseManager(LocalDatabasePath);
+            _dbManager = new SqliteDatabaseManager(_settings.LocalDatabasePath);
             _localSqliteSink = new LocalSqlitePlaySink(_dbManager);
             _sessionManager = new SessionManager(_dbManager);
 
             _compositeSink = new CompositePlaySink();
-            _compositeSink.AddSink(_localSqliteSink, () => EnableLocalLogging);
-            _compositeSink.AddSink(sheetsManager, () => EnableGoogleSheetsLogging);
+            _compositeSink.AddSink(_localSqliteSink, () => _settings.EnableLocalLogging);
+            _compositeSink.AddSink(sheetsManager, () => _settings.EnableGoogleSheetsLogging);
             _playSink = _compositeSink;
 
-            _tosuClient.Host = TosuHost;
-            _tosuClient.Port = TosuPort;
+            _tosuClient.Host = _settings.TosuHost;
+            _tosuClient.Port = _settings.TosuPort;
 
             _submissionService = new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
 
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
-            if (!File.Exists(SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
+            if (!File.Exists(_settings.SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
             {
                 string welcomeMsg = "Welcome to circle tracker!\n\n" +
                     "This app connects to 'tosu' running alongside osu!.\n\n" +
@@ -248,14 +217,18 @@ namespace Circle_Tracker
             }
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, ISheetsSink sheetsSink)
+        public Tracker(IMainWindow form, ITosuClient tosuClient, ISheetsSink sheetsSink, ISettingsService? settings = null)
         {
             _form = form;
             _tosuClient = tosuClient;
+            _settings = settings ?? new SettingsService();
             _gameStateManager = new GameStateManager();
+            _gameStateManager.Username = _settings.Username;
             _beatmapState = new BeatmapStateTracker(tosuClient);
             _sheetsManager = sheetsSink;
-            _sheetsManager.OnSettingsChanged = SaveSettings;
+            _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
+            SyncSheetsSettings();
+            _settings.SettingsChanged += SyncSheetsSettings;
 
             if (sheetsSink is IPlaySink playSink)
             {
@@ -274,15 +247,19 @@ namespace Circle_Tracker
             LastPostTime = DateTime.Now;
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null, IPlaySubmissionService? submissionService = null)
+        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null, IPlaySubmissionService? submissionService = null, ISettingsService? settings = null)
         {
             _form = form;
             _tosuClient = tosuClient;
+            _settings = settings ?? new SettingsService();
             _gameStateManager = gameStateManager ?? new GameStateManager();
+            _gameStateManager.Username = _settings.Username;
             _beatmapState = beatmapState ?? new BeatmapStateTracker(tosuClient);
             _playSink = playSink;
-            _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, GetFunctionSeparator);
-            _sheetsManager.OnSettingsChanged = SaveSettings;
+            _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
+            _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
+            SyncSheetsSettings();
+            _settings.SettingsChanged += SyncSheetsSettings;
 
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = sessionManager ?? new SessionManager(_dbManager);
@@ -305,106 +282,6 @@ namespace Circle_Tracker
                 await _playSink.InitializeAsync(silent, ct);
             }
             await _sessionManager.InitializeAsync(ct);
-        }
-
-        public void SaveSettings()
-        {
-            try
-            {
-                var settings = new UserSettings
-                {
-                    EnableLocalLogging = EnableLocalLogging,
-                    EnableGoogleSheetsLogging = EnableGoogleSheetsLogging,
-                    LocalDatabasePath = LocalDatabasePath,
-                    SpreadsheetId = SpreadsheetId,
-                    SheetName = SheetName,
-                    SubmitSoundEnabled = SubmitSoundEnabled,
-                    SpreadsheetTimezoneVerified = SpreadsheetTimezoneVerified,
-                    UseAltFuncSeparator = UseAltFuncSeparator,
-                    Username = Username,
-                    TosuHost = TosuHost,
-                    TosuPort = TosuPort,
-                    DisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused
-                };
-                string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to save settings");
-            }
-        }
-
-        private void LoadSettings()
-        {
-            EnableLocalLogging = true;
-            EnableGoogleSheetsLogging = false;
-            LocalDatabasePath = "";
-            SpreadsheetId = "";
-            SheetName = "Raw Data";
-            SubmitSoundEnabled = true;
-            SpreadsheetTimezoneVerified = false;
-            UseAltFuncSeparator = false;
-            Username = "";
-            TosuHost = "127.0.0.1";
-            TosuPort = 24050;
-
-            if (!File.Exists(SettingsFilePath))
-            {
-                string oldPath = Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
-                if (File.Exists(oldPath))
-                {
-                    MigrateOldSettings(oldPath);
-                }
-                return;
-            }
-            try
-            {
-                string json = File.ReadAllText(SettingsFilePath);
-                var settings = JsonSerializer.Deserialize<UserSettings>(json);
-                if (settings != null)
-                {
-                    EnableLocalLogging = settings.EnableLocalLogging;
-                    EnableGoogleSheetsLogging = settings.EnableGoogleSheetsLogging;
-                    LocalDatabasePath = settings.LocalDatabasePath ?? "";
-                    SpreadsheetId = settings.SpreadsheetId;
-                    SheetName = settings.SheetName;
-                    SubmitSoundEnabled = settings.SubmitSoundEnabled;
-                    SpreadsheetTimezoneVerified = settings.SpreadsheetTimezoneVerified;
-                    UseAltFuncSeparator = settings.UseAltFuncSeparator;
-                    Username = settings.Username;
-                    TosuHost = !string.IsNullOrWhiteSpace(settings.TosuHost) ? settings.TosuHost : "127.0.0.1";
-                    TosuPort = settings.TosuPort > 0 ? settings.TosuPort : 24050;
-                    DisableBackgroundAnimationsWhenUnfocused = settings.DisableBackgroundAnimationsWhenUnfocused;
-                    UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused;
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to load settings");
-            }
-        }
-
-        private void MigrateOldSettings(string oldPath)
-        {
-            try
-            {
-                var lines = File.ReadAllLines(oldPath);
-                if (lines.Length > 0) SpreadsheetId = lines[0];
-                if (lines.Length > 1) SheetName = lines[1];
-                if (lines.Length > 2) SubmitSoundEnabled = lines[2] == "1";
-                if (lines.Length > 3) SpreadsheetTimezoneVerified = lines[3] == "1";
-                if (lines.Length > 4) UseAltFuncSeparator = lines[4] == "1";
-                if (lines.Length > 5) Username = lines[5];
-                if (lines.Length > 6 && !string.IsNullOrWhiteSpace(lines[6])) TosuHost = lines[6];
-                if (lines.Length > 7 && int.TryParse(lines[7], out int port) && port > 0) TosuPort = port;
-                SaveSettings();
-                _log.LogInformation("Migrated settings from old text format to JSON");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to migrate old settings");
-            }
         }
 
         public TrackerSnapshot GetSnapshot()
@@ -449,7 +326,6 @@ namespace Circle_Tracker
             }
         }
 
-        public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
 
         public void Tick()
         {
@@ -501,7 +377,7 @@ namespace Circle_Tracker
                         bool beatmapCompleted = currentGameState == GameStatus.ResultsScreen;
                         _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
                             currentGameState, beatmapCompleted, TotalBeatmapHits);
-                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, SoundFilePath, SubmitSoundEnabled);
+                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
 
                         Play300c = 0;
                         Play100c = 0;
@@ -569,7 +445,7 @@ namespace Circle_Tracker
                             {
                                 _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
                                     newSongTime, Time, TotalBeatmapHits);
-                                _submissionService.TryPostBeatmapEntry(false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, SoundFilePath, SubmitSoundEnabled);
+                                _submissionService.TryPostBeatmapEntry(false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
                             }
                             Play300c = 0;
                             Play100c = 0;

@@ -12,53 +12,54 @@ public class TrackerService : ITrackerService, IMainWindow
 {
     private static readonly ILogger<TrackerService> _log = AppLogger.For<TrackerService>();
     private readonly Tracker _tracker;
+    private readonly ISettingsService _settings;
 
     public int IdleSeconds => _tracker.IdleSeconds;
     public int PlayingSeconds => _tracker.PlayingSeconds;
     public bool EnableLocalLogging
     {
-        get => _tracker.EnableLocalLogging;
-        set => _tracker.EnableLocalLogging = value;
+        get => _settings.EnableLocalLogging;
+        set => _settings.EnableLocalLogging = value;
     }
     public bool EnableGoogleSheetsLogging
     {
-        get => _tracker.EnableGoogleSheetsLogging;
-        set => _tracker.EnableGoogleSheetsLogging = value;
+        get => _settings.EnableGoogleSheetsLogging;
+        set => _settings.EnableGoogleSheetsLogging = value;
     }
     public string LocalDatabasePath
     {
-        get => _tracker.LocalDatabasePath;
-        set => _tracker.LocalDatabasePath = value;
+        get => _settings.LocalDatabasePath;
+        set => _settings.LocalDatabasePath = value;
     }
     public string TosuHost
     {
-        get => _tracker.TosuHost;
-        set => _tracker.TosuHost = value;
+        get => _settings.TosuHost;
+        set => _settings.TosuHost = value;
     }
     public int TosuPort
     {
-        get => _tracker.TosuPort;
-        set => _tracker.TosuPort = value;
+        get => _settings.TosuPort;
+        set => _settings.TosuPort = value;
     }
     public bool SubmitSoundEnabled
     {
-        get => _tracker.SubmitSoundEnabled;
-        set => _tracker.SubmitSoundEnabled = value;
+        get => _settings.SubmitSoundEnabled;
+        set => _settings.SubmitSoundEnabled = value;
     }
     public bool UseAltFuncSeparator
     {
-        get => _tracker.UseAltFuncSeparator;
-        set => _tracker.UseAltFuncSeparator = value;
+        get => _settings.UseAltFuncSeparator;
+        set => _settings.UseAltFuncSeparator = value;
     }
     public string SpreadsheetId
     {
-        get => _tracker.SpreadsheetId;
-        set => _tracker.SpreadsheetId = value;
+        get => _settings.SpreadsheetId;
+        set => _settings.SpreadsheetId = value;
     }
     public string SheetName
     {
-        get => _tracker.SheetName;
-        set => _tracker.SheetName = value;
+        get => _settings.SheetName;
+        set => _settings.SheetName = value;
     }
     public bool DatabaseReady => _tracker.DatabaseReady;
     public int LocalPlayCount => _tracker.LocalPlayCount;
@@ -72,17 +73,19 @@ public class TrackerService : ITrackerService, IMainWindow
         remove => _tracker.PlayLogged -= value;
     }
 
-    public TrackerService(ITosuClient tosuClient)
+    public TrackerService(ITosuClient tosuClient, ISettingsService? settings = null)
     {
-        _tracker = new Tracker(this, tosuClient);
+        _settings = settings ?? new SettingsService();
+        _tracker = new Tracker(this, tosuClient, _settings);
     }
 
-    public TrackerService(ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null)
+    public TrackerService(ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, ISettingsService? settings = null)
     {
-        _tracker = new Tracker(this, tosuClient, playSink, sessionManager, sheetsSink);
+        _settings = settings ?? new SettingsService();
+        _tracker = new Tracker(this, tosuClient, playSink, sessionManager, sheetsSink, settings: _settings);
     }
 
-    public void SaveSettings() => _tracker.SaveSettings();
+    public void SaveSettings() => _settings.SaveSettings();
     public void TickWrapper() => _tracker.TickWrapper();
     public void TickEverySecond() => _tracker.TickEverySecond();
     public TrackerSnapshot GetSnapshot() => _tracker.GetSnapshot();

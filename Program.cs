@@ -58,6 +58,7 @@ namespace Circle_Tracker
         {
             var services = new ServiceCollection();
 
+            services.AddSingleton<ISettingsService, SettingsService>();
             services.AddSingleton<ITosuClient, TosuClient>();
             services.AddSingleton<ITrackerService, TrackerService>();
             services.AddSingleton<ISessionManager>(sp => sp.GetRequiredService<ITrackerService>().SessionManager);
