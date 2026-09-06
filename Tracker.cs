@@ -3,105 +3,12 @@ using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
-    public enum GameStatus
-    {
-        Menu = 0,
-        Edit = 1,
-        Playing = 2,
-        SongSelect = 5,
-        ResultsScreen = 7,
-        MultiplayerRoom = 11,
-        MultiplayerSongSelect = 12,
-        Unknown = -1
-    }
-
-    [Flags]
-    public enum OsuMods
-    {
-        None = 0,
-        NoFail = 1,
-        Easy = 1 << 1,
-        TouchDevice = 1 << 2,
-        Hidden = 1 << 3,
-        HardRock = 1 << 4,
-        SuddenDeath = 1 << 5,
-        DoubleTime = 1 << 6,
-        Relax = 1 << 7,
-        HalfTime = 1 << 8,
-        Nightcore = 1 << 9,
-        Flashlight = 1 << 10,
-        Autoplay = 1 << 11,
-        SpunOut = 1 << 12,
-        Autopilot = 1 << 13,
-        Perfect = 1 << 14,
-    }
-
-    public record TrackerSnapshot(
-        bool IsPlaying,
-        bool IsReplay,
-        string DetectedClient,
-        string BeatmapString,
-        string BeatmapTitle,
-        string BeatmapArtist,
-        string BeatmapVersion,
-        int BeatmapId,
-        int BeatmapSetId,
-        decimal BeatmapHp,
-        decimal BeatmapStars,
-        decimal BeatmapAim,
-        decimal BeatmapSpeed,
-        decimal BeatmapCs,
-        decimal BeatmapAr,
-        decimal BeatmapOd,
-        int BeatmapBpm,
-        int TotalBeatmapHits,
-        int Play300c,
-        int Play100c,
-        int Play50c,
-        int PlayMissc,
-        decimal Accuracy,
-        int Time,
-        string ModsString,
-        string GameStateLabel,
-        bool SheetsApiReady,
-        bool MemoryReadError,
-        int PlayingSeconds,
-        int IdleSeconds,
-        int PlayCount = 0,
-        bool DatabaseReady = false,
-        int LocalPlayCount = 0
-    )
-    {
-        public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";
-    }
-
-    internal class SheetsSinkAdapter : IPlaySink
-    {
-        private readonly ISheetsSink _sink;
-        public string SinkName => "Google Sheets Adapter";
-        public bool IsReady => _sink.SheetsApiReady;
-        public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
-        {
-            return _sink.InitGoogleAPIAsync(silent);
-        }
-        public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
-        {
-            return _sink.TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
-                DateTime.MinValue, _ => { }, context.SoundFilePath, context.SubmitSoundEnabled, ct);
-        }
-        public SheetsSinkAdapter(ISheetsSink sink) => _sink = sink;
-    }
-
     public class Tracker
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
