@@ -84,8 +84,17 @@ namespace Circle_Tracker
                 bool played = await OpenAlAudioEngine.Instance.PlayAsync(path, ct);
                 if (played)
                 {
+                    _log.LogDebug("Played sound via OpenAL: {Path}", path);
                     return;
                 }
+                else
+                {
+                    _log.LogWarning("OpenAL failed to play sound, falling back to system player");
+                }
+            }
+            else
+            {
+                _log.LogDebug("OpenAL not available, using system audio player");
             }
 
             if (OperatingSystem.IsMacOS())
@@ -204,13 +213,39 @@ namespace Circle_Tracker
                 return;
             }
 
+            string playerName = Path.GetFileName(player);
+            _log.LogDebug("Using Linux audio player: {Player}", playerName);
+
             await _fallbackSemaphore.WaitAsync(ct);
             try
             {
-                var psi = new ProcessStartInfo(player, $"\"{path}\"")
+                // Add volume control based on player type
+                string args;
+                if (playerName == "pw-play")
+                {
+                    // PipeWire: use --volume (0.0 to 1.0, max valid value)
+                    args = $"--volume=1.0 \"{path}\"";
+                }
+                else if (playerName == "paplay")
+                {
+                    // PulseAudio: use --volume (0-65536, 65536 = 100%)
+                    args = $"--volume=327680 \"{path}\""; // 500% volume
+                }
+                else if (playerName == "aplay")
+                {
+                    // ALSA: no built-in volume control, use amixer or just play normally
+                    args = $"\"{path}\"";
+                }
+                else
+                {
+                    args = $"\"{path}\"";
+                }
+
+                var psi = new ProcessStartInfo(player, args)
                 {
                     CreateNoWindow = true,
-                    UseShellExecute = false
+                    UseShellExecute = false,
+                    RedirectStandardError = true
                 };
                 using var proc = Process.Start(psi);
                 if (proc == null)
@@ -343,6 +378,18 @@ namespace Circle_Tracker
 
                     lock (_lock)
                     {
+                        // Drain any stale error state before starting
+                        _al.GetError();
+
+                        // Ensure source is stopped and unbound before reuse
+                        _al.SourceStop(source);
+                        // Drain error from SourceStop (harmless if source wasn't playing)
+                        _al.GetError();
+
+                        _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
+                        // Drain error from unbind (harmless if no buffer was bound)
+                        _al.GetError();
+                        
                         _al.SetSourceProperty(source, SourceInteger.Buffer, (int)bufferId);
                         var error = _al.GetError();
                         if (error != AudioError.NoError)
@@ -351,8 +398,8 @@ namespace Circle_Tracker
                             return false;
                         }
 
-                        // Set consistent volume (1.0 = 100%)
-                        _al.SetSourceProperty(source, SourceFloat.Gain, 1.0f);
+                        // Set volume to 500% (5.0 = much louder notification sound)
+                        _al.SetSourceProperty(source, SourceFloat.Gain, 5.0f);
                         
                         _al.SourcePlay(source);
                         error = _al.GetError();
@@ -394,7 +441,12 @@ namespace Circle_Tracker
                     {
                         lock (_lock)
                         {
+                            // Must stop the source before unbinding the buffer,
+                            // otherwise OpenAL returns AL_INVALID_OPERATION (IllegalCommand)
+                            _al.SourceStop(source);
+                            _al.GetError(); // drain stop error
                             _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
+                            _al.GetError(); // drain unbind error
                         }
                         _sourcePool.Enqueue(source);
                     }

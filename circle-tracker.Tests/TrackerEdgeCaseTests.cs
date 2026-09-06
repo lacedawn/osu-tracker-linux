@@ -1,5 +1,6 @@
 using Circle_Tracker;
 using Circle_Tracker.Services;
+using CircleTracker.Tests;
 using Moq;
 using System.Threading.Tasks;
 using Xunit;
@@ -66,62 +67,18 @@ public class TrackerEdgeCaseTests
 
         var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, mockSheetsSink.Object);
 
+        // Warm up first playing tick
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.WarmUpPlaying());
+        tracker.Tick();
+
         // Simulate playing with 100 hits
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 30000 }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 90, H100 = 8, H50 = 2, Misses = 0 },
-                Accuracy = 97m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2, // Playing
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 90, h100: 8, h50: 2, misses: 0, songTimeMs: 30000, accuracy: 97m));
         tracker.Tick();
 
         // Act - Simulate hit count regression (should not happen normally)
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 31000 } // Time increased
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 50, H100 = 5, H50 = 1, Misses = 0 }, // Hits decreased
-                Accuracy = 97m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 50, h100: 5, h50: 1, misses: 0, songTimeMs: 31000, accuracy: 97m));
         tracker.Tick();
         var snapshot = tracker.GetSnapshot();
 
@@ -139,67 +96,23 @@ public class TrackerEdgeCaseTests
         
         mockTosuClient.Setup(x => x.IsConnected).Returns(true);
         mockSheetsSink.Setup(x => x.SheetsApiReady).Returns(false);
-        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).ReturnsAsync(());
+        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).Returns(Task.CompletedTask);
 
         var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, mockSheetsSink.Object);
         await tracker.InitializeStorageAsync(silent: true);
 
-        // Start at time 0
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 500 }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 5, H100 = 0, H50 = 0, Misses = 0 },
-                Accuracy = 100m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        // Warm up first playing tick
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.WarmUpPlaying());
+        tracker.Tick();
+
+        // Start at time 500
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 5, h100: 0, h50: 0, misses: 0, songTimeMs: 500, accuracy: 100m));
         tracker.Tick();
 
         // Act - Large time jump (intro skip of 60 seconds)
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 60500 } // 60 second jump
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 25, H100 = 1, H50 = 0, Misses = 0 }, // More hits after skip
-                Accuracy = 99m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 25, h100: 1, h50: 0, misses: 0, songTimeMs: 60500, accuracy: 99m));
         tracker.Tick();
         var snapshot = tracker.GetSnapshot();
 
@@ -218,69 +131,25 @@ public class TrackerEdgeCaseTests
         
         mockTosuClient.Setup(x => x.IsConnected).Returns(true);
         mockSheetsSink.Setup(x => x.SheetsApiReady).Returns(false);
-        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).ReturnsAsync(());
+        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).Returns(Task.CompletedTask);
 
         bool playLogged = false;
         var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, mockSheetsSink.Object);
         await tracker.InitializeStorageAsync(silent: true);
         tracker.PlayLogged += (s, e) => { playLogged = true; };
 
+        // Warm up first playing tick
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.WarmUpPlaying());
+        tracker.Tick();
+
         // Simulate playing with 50+ hits
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 30000 }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 45, H100 = 5, H50 = 0, Misses = 2 },
-                Accuracy = 95m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 45, h100: 5, h50: 0, misses: 2, songTimeMs: 30000, accuracy: 95m));
         tracker.Tick();
 
         // Act - Time rewind (retry)
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Artist",
-                Title = "Title",
-                Difficulty = "Hard",
-                Id = 123,
-                SetId = 456,
-                Time = new TimeInfo { Live = 500 } // Rewound to start
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 2, H100 = 0, H50 = 0, Misses = 0 },
-                Accuracy = 100m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 2, h100: 0, h50: 0, misses: 0, songTimeMs: 500, accuracy: 100m));
         tracker.Tick();
         await tracker.FlushPendingSubmissionsAsync();
         
@@ -289,7 +158,7 @@ public class TrackerEdgeCaseTests
         // Assert
         Assert.True(playLogged); // Should have logged the retry
         Assert.Equal(500, snapshot.Time); // Should have new time
-        Assert.Equal(2, snapshot.TotalBeatmapHits); // Should have new hit count
+        Assert.Equal(0, snapshot.TotalBeatmapHits); // Should have reset hit count on retry
     }
 
     [Fact]

@@ -1,9 +1,11 @@
 using Circle_Tracker;
 using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
+using CircleTracker.Tests;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -21,139 +23,39 @@ public class FullPipelineIntegrationTests
         var mockSheetsSink = new Mock<ISheetsSink>();
         
         mockTosuClient.Setup(x => x.IsConnected).Returns(true);
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Test Artist",
-                Title = "Test Song",
-                Difficulty = "Hard",
-                Id = 12345,
-                SetId = 67890,
-                Stats = new ToseBeatmapStats
-                {
-                    HP = 5,
-                    CS = 4,
-                    AR = 9,
-                    OD = 8,
-                    BPM = new BpmInfo { Min = 180, Max = 180 },
-                    Stars = new StarRating { Total = 5.5m, Aim = 2.8m, Speed = 2.7m }
-                }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 100, H100 = 10, H50 = 1, Misses = 2 },
-                Accuracy = 96.5m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-
         mockSheetsSink.Setup(x => x.SheetsApiReady).Returns(true);
-        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).ReturnsAsync(());
+        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).Returns(Task.CompletedTask);
         mockSheetsSink.Setup(x => x.TryAppendPlayEntry(
             It.IsAny<PlayEntryData>(),
             It.IsAny<bool>(),
             It.IsAny<int>(),
             It.IsAny<int>(),
             It.IsAny<DateTime>(),
-            It.IsAny<Action<bool>>(),
+            It.IsAny<Action<DateTime>>(),
             It.IsAny<string>(),
             It.IsAny<bool>(),
             It.IsAny<CancellationToken>()
-        )).ReturnsAsync(());
+        )).Returns(Task.CompletedTask);
 
         var settings = new SettingsService();
-        settings.LocalDatabasePath = ":memory:";
+        settings.LocalDatabasePath = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         settings.EnableLocalLogging = true;
         settings.EnableGoogleSheetsLogging = false;
 
-        var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, mockSheetsSink.Object, settings);
+        var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, settings);
         await tracker.InitializeStorageAsync(silent: true);
 
-        // Act - Simulate game flow: menu → song select → playing → results
-        tracker.Tick(); // Should process initial state
-        
+        // Warm up first playing tick
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.WarmUpPlaying());
+        tracker.Tick();
+
         // Simulate playing state
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Test Artist",
-                Title = "Test Song",
-                Difficulty = "Hard",
-                Id = 12345,
-                SetId = 67890,
-                Time = new TimeInfo { Live = 30000 },
-                Stats = new ToseBeatmapStats
-                {
-                    HP = 5,
-                    CS = 4,
-                    AR = 9,
-                    OD = 8,
-                    BPM = new BpmInfo { Min = 180, Max = 180 },
-                    Stars = new StarRating { Total = 5.5m, Aim = 2.8m, Speed = 2.7m }
-                }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 150, H100 = 10, H50 = 1, Misses = 2 },
-                Accuracy = 97.5m
-            },
-            Menu = new TosuMenu
-            {
-                State = 2,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Playing(
+            h300: 150, h100: 10, h50: 1, misses: 2, songTimeMs: 30000, accuracy: 97.5m));
         tracker.Tick();
 
         // Simulate transition to results screen
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Test Artist",
-                Title = "Test Song",
-                Difficulty = "Hard",
-                Id = 12345,
-                SetId = 67890,
-                Time = new TimeInfo { Live = 60000 },
-                Stats = new ToseBeatmapStats
-                {
-                    HP = 5,
-                    CS = 4,
-                    AR = 9,
-                    OD = 8,
-                    BPM = new BpmInfo { Min = 180, Max = 180 },
-                    Stars = new StarRating { Total = 5.5m, Aim = 2.8m, Speed = 2.7m }
-                }
-            },
-            Play = new TosuPlay
-            {
-                Mode = new ModeInfo { Number = 0 },
-                Mods = new ModsInfo { Number = 0 },
-                Hits = new HitCounts { H300 = 0, H100 = 0, H50 = 0, Misses = 0 },
-                Accuracy = 100m
-            },
-            Menu = new TosuMenu
-            {
-                State = 7, // ResultsScreen
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
-        
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Results(h300: 150));
         tracker.Tick();
         await tracker.FlushPendingSubmissionsAsync();
 
@@ -171,32 +73,16 @@ public class FullPipelineIntegrationTests
         var mockSheetsSink = new Mock<ISheetsSink>();
         
         mockTosuClient.Setup(x => x.IsConnected).Returns(true);
-        mockTosuClient.Setup(x => x.LatestState).Returns(new TosuState
-        {
-            Beatmap = new TosuBeatmap
-            {
-                Checksum = "test123",
-                Artist = "Test Artist",
-                Title = "Test Song",
-                Difficulty = "Hard",
-                Id = 12345,
-                SetId = 67890
-            },
-            Menu = new TosuMenu
-            {
-                State = 0,
-                Bm = new BeatmapInfo { Md5 = "test123" }
-            }
-        });
+        mockTosuClient.Setup(x => x.LatestState).Returns(StateBuilder.Build(0));
 
         mockSheetsSink.Setup(x => x.SheetsApiReady).Returns(false);
-        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).ReturnsAsync(());
+        mockSheetsSink.Setup(x => x.InitGoogleAPIAsync(It.IsAny<bool>())).Returns(Task.CompletedTask);
 
         var settings = new SettingsService();
-        settings.LocalDatabasePath = ":memory:";
+        settings.LocalDatabasePath = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         settings.EnableLocalLogging = true;
 
-        var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, mockSheetsSink.Object, settings);
+        var tracker = new Tracker(mockForm.Object, mockTosuClient.Object, settings);
         await tracker.InitializeStorageAsync(silent: true);
 
         // Act
@@ -215,11 +101,10 @@ public class FullPipelineIntegrationTests
     public async Task FullPipeline_SettingsRoundTrip_PreservesConfiguration()
     {
         // Arrange
-        var tempPath = System.IO.Path.GetTempFileName();
+        var tempPath = Path.GetTempFileName();
         try
         {
-            var settings1 = new SettingsService();
-            settings1.SettingsFilePath = tempPath;
+            var settings1 = new SettingsService(settingsFilePath: tempPath);
             settings1.Username = "TestUser";
             settings1.TosuHost = "127.0.0.1";
             settings1.TosuPort = 24050;
@@ -232,9 +117,7 @@ public class FullPipelineIntegrationTests
             settings1.SaveSettings();
 
             // Create new service and load
-            var settings2 = new SettingsService();
-            settings2.SettingsFilePath = tempPath;
-            settings2.LoadSettings();
+            var settings2 = new SettingsService(settingsFilePath: tempPath);
 
             // Assert
             Assert.Equal("TestUser", settings2.Username);
@@ -247,10 +130,11 @@ public class FullPipelineIntegrationTests
         }
         finally
         {
-            if (System.IO.File.Exists(tempPath))
+            if (File.Exists(tempPath))
             {
-                System.IO.File.Delete(tempPath);
+                File.Delete(tempPath);
             }
         }
+        await Task.CompletedTask;
     }
 }

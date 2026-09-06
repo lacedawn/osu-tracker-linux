@@ -17,6 +17,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000));
             tracker.Tick();
 
@@ -37,6 +39,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000));
             tracker.Tick();
 
@@ -57,6 +61,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
             tracker.Tick();
 
@@ -75,6 +81,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(
                 StateBuilder.Playing(h300: 100, songTimeMs: 60000, playerName: "SomeOtherPlayer", profileName: "testplayer"));
             tracker.Tick();
@@ -106,6 +114,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map1"));
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000, checksum: "map1"));
             tracker.Tick();
 
@@ -141,6 +151,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(mods: rawMods));
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, mods: rawMods));
             tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 45));
@@ -166,6 +178,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
             tracker.Tick();
 
@@ -267,6 +281,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 10000));
             tracker.Tick();
 
@@ -288,6 +304,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 10000));
             tracker.Tick();
 
@@ -311,6 +329,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000, accuracy: 98.0m));
             tracker.Tick();
 
@@ -330,6 +350,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
             tracker.Tick();
 
@@ -349,6 +371,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, misses: 2, songTimeMs: 10000));
             tracker.Tick();
 
@@ -367,6 +391,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
             tracker.Tick();
 
@@ -383,6 +409,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, _) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 8000, accuracy: 99.0m));
             tracker.Tick();
 
@@ -415,12 +443,16 @@ namespace CircleTracker.Tests
             var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object, null, null);
             await tracker.InitializeStorageAsync(true);
 
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map1"));
+            tracker.Tick();
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000, checksum: "map1"));
             tracker.Tick();
 
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50, checksum: "map1"));
             tracker.Tick();
 
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map2"));
+            tracker.Tick();
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 60, songTimeMs: 30000, checksum: "map2"));
             tracker.Tick();
 
@@ -451,12 +483,16 @@ namespace CircleTracker.Tests
 
             var tracker = new Tracker(mockWindow.Object, mockClient.Object, localSink, sessionManager, null);
 
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map1"));
+            tracker.Tick();
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000, checksum: "map1"));
             tracker.Tick();
 
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50, checksum: "map1"));
             tracker.Tick();
 
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map2"));
+            tracker.Tick();
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 60, songTimeMs: 30000, checksum: "map2"));
             tracker.Tick();
 
@@ -483,6 +519,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000));
             tracker.Tick();
 
@@ -506,6 +544,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000));
             tracker.Tick();
 
@@ -521,6 +561,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
             tracker.Tick();
 
@@ -544,6 +586,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000, accuracy: 95m));
             tracker.Tick();
 
@@ -567,6 +611,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 30000));
             tracker.Tick();
 
@@ -587,6 +633,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 39, songTimeMs: 10000));
             tracker.Tick();
 
@@ -606,6 +654,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 20, songTimeMs: 5000, mods: 0));
             tracker.Tick();
 
@@ -621,6 +671,8 @@ namespace CircleTracker.Tests
         {
             var (tracker, client, sink) = TrackerFactory.Create();
 
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
             client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, misses: 3, songTimeMs: 10000));
             tracker.Tick();
 

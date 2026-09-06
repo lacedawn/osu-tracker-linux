@@ -68,6 +68,15 @@ namespace CircleTracker.Tests
                 }
             };
         }
+
+        /// <summary>
+        /// Returns a Playing state with zero hits/time, used to warm up the tracker
+        /// past the first-tick stale-data skip when transitioning into Playing state.
+        /// Call tracker.Tick() with this state before providing actual play data.
+        /// </summary>
+        internal static TosuState WarmUpPlaying(string checksum = "abc123", int mods = 0)
+            => Build(2, h300: 0, h100: 0, h50: 0, misses: 0, songTimeMs: 0, accuracy: 0,
+                     checksum: checksum, mods: mods);
     }
 
     internal static class TrackerFactory

@@ -3,12 +3,17 @@ using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
+
     public class Tracker
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
@@ -278,6 +283,7 @@ namespace Circle_Tracker
                     if (stars.Speed > 0) _beatmapState.BeatmapSpeed = stars.Speed;
                 }
 
+                bool justEnteredPlaying = false;
                 if (currentGameState != previousGameState)
                 {
                     if (previousGameState == GameStatus.Playing && currentGameState != GameStatus.Playing)
@@ -287,6 +293,21 @@ namespace Circle_Tracker
                             currentGameState, beatmapCompleted, TotalBeatmapHits);
                         _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
 
+                        Play300c = 0;
+                        Play100c = 0;
+                        Play50c = 0;
+                        PlayMissc = 0;
+                        Accuracy = 0;
+                        TotalBeatmapHits = 0;
+                        Time = 0;
+                    }
+                    else if (previousGameState != GameStatus.Playing && currentGameState == GameStatus.Playing)
+                    {
+                        // Just entered Playing from a non-Playing state (e.g. ResultsScreen → Playing on retry).
+                        // Tosu still reports stale hit data from the previous play for this first tick,
+                        // so skip hit processing to avoid absorbing stale data and triggering a false retry.
+                        justEnteredPlaying = true;
+                        _log.LogDebug("Entered Playing from {PreviousState}, skipping first tick hit processing (stale data)", previousGameState);
                         Play300c = 0;
                         Play100c = 0;
                         Play50c = 0;
@@ -308,7 +329,7 @@ namespace Circle_Tracker
                     }
                 }
 
-                if (currentGameState == GameStatus.Playing && state.Play != null)
+                if (currentGameState == GameStatus.Playing && state.Play != null && !justEnteredPlaying)
                 {
                     var hits = state.Play.Hits;
                     if (hits != null)
@@ -357,7 +378,7 @@ namespace Circle_Tracker
                             }
                         }
 
-                        if (newSongTime < Time && Time > 0)
+                        if (newSongTime < Time && Time > 0 && previousGameState == GameStatus.Playing)
                         {
                             if (TotalBeatmapHits >= MinHitsToSubmit)
                             {
