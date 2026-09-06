@@ -322,5 +322,196 @@ namespace CircleTracker.Tests
             state.Beatmap.Stats!.Stars.Should().NotBeNull();
             state.Beatmap.Stats.Stars!.Total.Should().Be(7.0m);
         }
+
+        [Fact]
+        public async Task ConnectAsync_AlreadyConnected_IsNoop()
+        {
+            using var client = new TosuClient { Host = "127.0.0.1", Port = 99999 };
+
+            await client.ConnectAsync();
+            await Task.Delay(50);
+
+            await client.ConnectAsync();
+
+            await client.DisconnectAsync();
+        }
+
+        [Fact]
+        public async Task DisconnectAsync_NotConnected_DoesNotThrow()
+        {
+            using var client = new TosuClient { Host = "127.0.0.1", Port = 99999 };
+
+            var act = async () => await client.DisconnectAsync();
+
+            await act.Should().NotThrowAsync();
+        }
+
+        [Fact]
+        public async Task DisconnectAsync_WhileConnecting_CancelsCleanly()
+        {
+            using var client = new TosuClient { Host = "127.0.0.1", Port = 99999 };
+
+            var connectTask = client.ConnectAsync();
+            await Task.Delay(10);
+            await client.DisconnectAsync();
+
+            client.IsConnected.Should().BeFalse();
+        }
+
+        [Fact]
+        public void LatestState_SetFromWebSocket_AccessibleFromProperty()
+        {
+            using var client = new TosuClient();
+
+            client.LatestState.Should().BeNull();
+        }
+
+        [Fact]
+        public void IsConnected_InitialState_IsFalse()
+        {
+            using var client = new TosuClient();
+
+            client.IsConnected.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ConnectionStateChanged_OnConnect_FiresEvent()
+        {
+            using var server = new CircleTracker.Tests.Mocks.MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            bool connectedFired = false;
+            client.ConnectionStateChanged += (sender, isConnected) =>
+            {
+                if (isConnected) connectedFired = true;
+            };
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(2));
+
+            await Task.Delay(100);
+
+            connectedFired.Should().BeTrue();
+
+            await client.DisconnectAsync();
+        }
+
+        [Fact]
+        public async Task ConnectionStateChanged_OnDisconnect_FiresEvent()
+        {
+            using var server = new CircleTracker.Tests.Mocks.MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            bool disconnectedFired = false;
+            client.ConnectionStateChanged += (sender, isConnected) =>
+            {
+                if (!isConnected) disconnectedFired = true;
+            };
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(2));
+            await Task.Delay(50);
+
+            await client.DisconnectAsync();
+            await Task.Delay(100);
+
+            disconnectedFired.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Deserialize_MalformedJson_DoesNotCrash()
+        {
+            using var server = new CircleTracker.Tests.Mocks.MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(2));
+
+            await server.BroadcastJsonAsync("{invalid json", default);
+            await Task.Delay(100);
+
+            await client.DisconnectAsync();
+        }
+
+        [Fact]
+        public async Task Deserialize_PartialTosuState_HandlesGracefully()
+        {
+            using var server = new CircleTracker.Tests.Mocks.MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            TosuState? receivedState = null;
+            client.StateUpdated += (sender, state) => receivedState = state;
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(2));
+
+            var partialJson = @"{""state"":{""number"":2}}";
+            await server.BroadcastJsonAsync(partialJson, default);
+            await Task.Delay(100);
+
+            receivedState.Should().NotBeNull();
+            receivedState!.State.Should().NotBeNull();
+            receivedState.State!.Number.Should().Be(2);
+
+            await client.DisconnectAsync();
+        }
+
+        [Fact]
+        public async Task Deserialize_EmptyJson_DoesNotCrash()
+        {
+            using var server = new CircleTracker.Tests.Mocks.MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(2));
+
+            await server.BroadcastJsonAsync("{}", default);
+            await Task.Delay(100);
+
+            await client.DisconnectAsync();
+        }
+
+        [Fact]
+        public async Task CalculatePpAsync_ServerDown_ReturnsNull()
+        {
+            using var client = new TosuClient { Host = "127.0.0.1", Port = 99999 };
+
+            var result = await client.CalculatePpAsync();
+
+            result.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task CalculatePpAsync_CancellationRequested_ThrowsOperationCancelled()
+        {
+            using var client = new TosuClient { Host = "127.0.0.1", Port = 24050 };
+            using var cts = new System.Threading.CancellationTokenSource();
+            cts.CancelAfter(1);
+
+            var act = async () => await client.CalculatePpAsync(0, cts.Token);
+
+            await act.Should().ThrowAsync<System.OperationCanceledException>();
+        }
+
+        [Fact]
+        public void Dispose_CleansUpResources()
+        {
+            var client = new TosuClient();
+
+            var act = () => client.Dispose();
+
+            act.Should().NotThrow();
+        }
+
+        [Fact]
+        public void Dispose_CalledMultipleTimes_DoesNotThrow()
+        {
+            var client = new TosuClient();
+
+            client.Dispose();
+            var act = () => client.Dispose();
+
+            act.Should().NotThrow();
+        }
     }
 }

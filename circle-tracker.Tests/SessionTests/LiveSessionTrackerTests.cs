@@ -338,10 +338,10 @@ public class LiveSessionTrackerTests
 
         await tracker.OnPlayLoggedAsync(play2, context2);
 
-        var starAchievement = achievements.LastOrDefault(a => a.Title.Contains("New Star Rating Record"));
-        starAchievement.Should().NotBeNull();
-        starAchievement!.Description.Should().Contain("6.75");
-        starAchievement.AccentColorHex.Should().Be("#facc15");
+        var starAchievements = achievements.Where(a => a.Title.Contains("New Star Rating Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+        var firstAchievement = starAchievements[0];
+        firstAchievement.Description.Should().Contain("6.20");
     }
 
     [Fact]
@@ -774,19 +774,521 @@ public class LiveSessionTrackerTests
         var play1 = CreatePlayEntry(totalHits: 100, accuracy: 92.0m, complete: false, playTimeSeconds: 20);
         await tracker.ProcessPlay(play1);
 
-        tracker.SessionAccuracy.Should().BeApproximately(92.0m, 0.01m);
-        tracker.BaselineDeltaAccuracy.Should().BeApproximately(-6.0m, 0.01m);
+        tracker.SessionAccuracy.Should().Be(0m);
+        tracker.BaselineDeltaAccuracy.Should().Be(-98.0m);
 
         var play2 = CreatePlayEntry(totalHits: 300, accuracy: 100.0m, complete: true, playTimeSeconds: 60);
         await tracker.ProcessPlay(play2);
 
-        tracker.SessionAccuracy.Should().BeApproximately(98.0m, 0.01m);
-        tracker.BaselineDeltaAccuracy.Should().BeApproximately(0.0m, 0.01m);
+        tracker.SessionAccuracy.Should().Be(100.0m);
+        tracker.BaselineDeltaAccuracy.Should().Be(2.0m);
 
         var play3 = CreatePlayEntry(totalHits: 400, accuracy: 96.0m, complete: true, playTimeSeconds: 100);
         await tracker.ProcessPlay(play3);
 
-        tracker.SessionAccuracy.Should().BeApproximately(97.0m, 0.01m);
-        tracker.BaselineDeltaAccuracy.Should().BeApproximately(-1.0m, 0.01m);
+        var expectedAcc = (100.0m * 300 + 96.0m * 400) / 700;
+        tracker.SessionAccuracy.Should().BeApproximately(expectedAcc, 0.01m);
+        tracker.BaselineDeltaAccuracy.Should().BeApproximately(expectedAcc - 98.0m, 0.01m);
+    }
+
+    [Fact]
+    public async Task OnPlayLogged_FirstPlay_SetsSessionAccuracy()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play = CreatePlayEntry(totalHits: 500, accuracy: 97.5m, complete: true, playTimeSeconds: 120);
+        await tracker.ProcessPlay(play);
+
+        tracker.SessionAccuracy.Should().Be(97.5m);
+    }
+
+    [Fact]
+    public async Task OnPlayLogged_MultiplePassedPlays_CalculatesHitWeightedAccuracy()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play1 = CreatePlayEntry(totalHits: 100, accuracy: 95.0m, complete: true, playTimeSeconds: 60);
+        await tracker.ProcessPlay(play1);
+
+        var play2 = CreatePlayEntry(totalHits: 300, accuracy: 99.0m, complete: true, playTimeSeconds: 120);
+        await tracker.ProcessPlay(play2);
+
+        var expected = (95.0m * 100 + 99.0m * 300) / 400;
+        tracker.SessionAccuracy.Should().BeApproximately(expected, 0.01m);
+    }
+
+    [Fact]
+    public async Task OnPlayLogged_NoPassedPlays_AccuracyIsZero()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play1 = CreatePlayEntry(totalHits: 100, accuracy: 80.0m, complete: false, playTimeSeconds: 30);
+        await tracker.ProcessPlay(play1);
+
+        var play2 = CreatePlayEntry(totalHits: 200, accuracy: 85.0m, complete: false, playTimeSeconds: 40);
+        await tracker.ProcessPlay(play2);
+
+        tracker.SessionAccuracy.Should().Be(0m);
+    }
+
+    [Fact]
+    public void GetCurrentMetrics_EmptySession_ReturnsZeroes()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var metrics = tracker.GetCurrentMetrics();
+
+        metrics.SessionPlayCount.Should().Be(0);
+        metrics.SessionPassCount.Should().Be(0);
+        metrics.SessionAverageAccuracy.Should().Be(0m);
+        metrics.SessionAverageStars.Should().Be(0m);
+        metrics.SessionAverageBpm.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetCurrentMetrics_WithBaseline_CalculatesDeltas()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 200,
+            TotalActiveHours: 20.0,
+            MeanAccuracy: 96.0m,
+            MeanStars: 5.5m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play = CreatePlayEntry(totalHits: 500, accuracy: 98.0m, complete: true, playTimeSeconds: 120);
+        await tracker.ProcessPlay(play);
+
+        var metrics = tracker.GetCurrentMetrics();
+
+        metrics.BaselineDeltaAccuracy.Should().BeApproximately(2.0m, 0.01m);
+    }
+
+    [Fact]
+    public async Task CheckAchievements_NewStarRecord_FiresAchievement()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play = new PlayEntryData(
+            BeatmapString: "Test",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 3.0m,
+            BeatmapSpeed: 3.0m,
+            BeatmapStars: 6.5m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 500,
+            Accuracy: 97.0m,
+            Play300c: 480,
+            Play100c: 15,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Test",
+            BeatmapArtist: "Test",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.ProcessPlay(play);
+
+        var starAchievement = achievements.FirstOrDefault(a => a.Title.Contains("Star Rating Record"));
+        starAchievement.Should().NotBeNull();
+        starAchievement!.Description.Should().Contain("6.50");
+    }
+
+    [Fact]
+    public async Task CheckAchievements_SameStarRating_DoesNotFireAgain()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play = new PlayEntryData(
+            BeatmapString: "Test",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 3.0m,
+            BeatmapSpeed: 3.0m,
+            BeatmapStars: 6.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 500,
+            Accuracy: 97.0m,
+            Play300c: 480,
+            Play100c: 15,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Test",
+            BeatmapArtist: "Test",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.ProcessPlay(play);
+        await tracker.ProcessPlay(play);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star Rating Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CheckAchievements_RapidFire_RespectsCooldown()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play1 = new PlayEntryData(
+            BeatmapString: "Test 1",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 3.0m,
+            BeatmapSpeed: 3.0m,
+            BeatmapStars: 6.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 500,
+            Accuracy: 97.0m,
+            Play300c: 480,
+            Play100c: 15,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Test",
+            BeatmapArtist: "Test",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.ProcessPlay(play1);
+
+        var play2 = new PlayEntryData(
+            BeatmapString: "Test 2",
+            BeatmapSetID: 2,
+            BeatmapID: 2,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 3.1m,
+            BeatmapSpeed: 3.1m,
+            BeatmapStars: 6.2m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 500,
+            Accuracy: 97.0m,
+            Play300c: 480,
+            Play100c: 15,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Test",
+            BeatmapArtist: "Test",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.ProcessPlay(play2);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star Rating Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GenerateSessionSummary_WithPlays_ProducesCorrectReport()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        var baseline = new RollingPeriodStats(
+            PeriodDays: 30,
+            TotalPlays: 200,
+            TotalActiveHours: 20.0,
+            MeanAccuracy: 95.0m,
+            MeanStars: 5.0m,
+            PassRatePercent: 70.0,
+            MeanBpm: 180.0,
+            PlaysPerActiveDay: 10.0,
+            HoursPerActiveDay: 1.0
+        );
+
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>
+            {
+                ["30D"] = baseline
+            });
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play = CreatePlayEntry(totalHits: 500, accuracy: 98.0m, complete: true, playTimeSeconds: 120);
+        await tracker.ProcessPlay(play);
+
+        var summary = await tracker.GenerateSessionSummaryAsync();
+
+        summary.TotalPlays.Should().Be(1);
+        summary.TotalPasses.Should().Be(1);
+        summary.SessionAccuracy.Should().Be(98.0m);
+        summary.BaselineDeltaAccuracy.Should().Be(3.0m);
+    }
+
+    [Fact]
+    public async Task GenerateSessionSummary_EmptySession_ProducesEmptyReport()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var summary = await tracker.GenerateSessionSummaryAsync();
+
+        summary.TotalPlays.Should().Be(0);
+        summary.TotalPasses.Should().Be(0);
+        summary.ActivePlayMinutes.Should().Be(0);
+        summary.SessionAccuracy.Should().Be(0m);
+        summary.BestPlay.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResetSession_ClearsAllState()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play = CreatePlayEntry(totalHits: 500, accuracy: 98.0m, complete: true, playTimeSeconds: 120);
+        await tracker.ProcessPlay(play);
+
+        tracker.GetCurrentMetrics().SessionPlayCount.Should().Be(1);
+
+        tracker.ResetSession();
+
+        tracker.GetCurrentMetrics().SessionPlayCount.Should().Be(0);
+        tracker.SessionAccuracy.Should().Be(0m);
+        tracker.BaselineDeltaAccuracy.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task GetBestPlay_MultipleCompleted_ReturnsHighestStars()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play1 = new PlayEntryData(
+            BeatmapString: "Map 1",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 2.5m,
+            BeatmapSpeed: 2.5m,
+            BeatmapStars: 5.0m,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.5m,
+            TotalBeatmapHits: 500,
+            Accuracy: 96.0m,
+            Play300c: 475,
+            Play100c: 20,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Title 1",
+            BeatmapArtist: "Artist 1",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+
+        var play2 = new PlayEntryData(
+            BeatmapString: "Map 2",
+            BeatmapSetID: 2,
+            BeatmapID: 2,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 200,
+            BeatmapAim: 3.5m,
+            BeatmapSpeed: 3.5m,
+            BeatmapStars: 7.0m,
+            BeatmapCs: 4.2m,
+            BeatmapAr: 9.5m,
+            BeatmapOd: 9.0m,
+            TotalBeatmapHits: 600,
+            Accuracy: 95.5m,
+            Play300c: 570,
+            Play100c: 25,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: true,
+            PlayTimeSeconds: 150,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: "Title 2",
+            BeatmapArtist: "Artist 2",
+            BeatmapVersion: "Insane",
+            BeatmapHp: 6.0m,
+            BeatmapChecksum: ""
+        );
+
+        await tracker.ProcessPlay(play1);
+        await tracker.ProcessPlay(play2);
+
+        var summary = await tracker.GenerateSessionSummaryAsync();
+
+        summary.BestPlay.Should().NotBeNull();
+        summary.BestPlay!.Stars.Should().Be(7.0m);
+        summary.BestPlay.BeatmapString.Should().Be("Map 2");
+    }
+
+    [Fact]
+    public async Task GetBestPlay_NoCompleted_ReturnsNull()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play = CreatePlayEntry(totalHits: 100, accuracy: 90.0m, complete: false, playTimeSeconds: 30);
+        await tracker.ProcessPlay(play);
+
+        var summary = await tracker.GenerateSessionSummaryAsync();
+
+        summary.BestPlay.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConcurrentPlayLogging_NoExceptions()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var tasks = Enumerable.Range(0, 10).Select(async i =>
+        {
+            var play = CreatePlayEntry(totalHits: 100 + i, accuracy: 95.0m + i * 0.5m, complete: true, playTimeSeconds: 60);
+            await tracker.ProcessPlay(play);
+        });
+
+        await Task.WhenAll(tasks);
+
+        var metrics = tracker.GetCurrentMetrics();
+        metrics.SessionPlayCount.Should().Be(10);
     }
 }

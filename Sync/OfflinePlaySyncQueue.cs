@@ -18,11 +18,14 @@ public interface IOfflinePlaySyncQueue
     Task<SyncResult> FlushPendingQueueAsync(CancellationToken ct = default);
     void StartBackgroundSync(TimeSpan checkInterval);
     void StopBackgroundSync();
+    Task StopBackgroundSyncAsync();
 }
 
-public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
+public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDisposable
 {
     private static readonly ILogger<OfflinePlaySyncQueue> _log = AppLogger.For<OfflinePlaySyncQueue>();
+
+    private const int BatchSize = 50;
 
     private readonly Storage.IDatabaseManager _dbManager;
     private readonly SheetsService? _sheetsService;
@@ -92,58 +95,74 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
                 return new SyncResult(true, 0, 0, null);
             }
 
-            var rows = pendingPlays.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
-
-            if (_sheetsAppender != null)
-            {
-                await _sheetsAppender(rows, ct);
-            }
-            else if (_sheetsService != null)
-            {
-                var valueRange = new ValueRange { Values = rows };
-                var range = $"'{_sheetName}'!A:X";
-                var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
-                appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-
-                _log.LogInformation("Syncing {Count} pending plays to Google Sheets", pendingPlays.Count);
-                await appendRequest.ExecuteAsync(ct);
-            }
-            else
-            {
-                throw new InvalidOperationException("Google Sheets service is not configured");
-            }
-
+            int totalSynced = 0;
             var nowUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var playIds = pendingPlays.Select(p => p.Id).ToArray();
 
-            const string updateSql = @"
-                UPDATE plays
-                SET sync_status = 'Synced', synced_at = @SyncedAt
-                WHERE id IN @Ids;";
+            for (int i = 0; i < pendingPlays.Count; i += BatchSize)
+            {
+                var batch = pendingPlays.Skip(i).Take(BatchSize).ToList();
+                var rows = batch.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
+                var batchIds = batch.Select(p => p.Id).ToList();
 
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                foreach (var chunk in playIds.Chunk(500))
-                {
-                    await conn.ExecuteAsync(updateSql, new { Ids = chunk, SyncedAt = nowUtc }, tx);
-                }
-                tx.Commit();
-            }
-            catch
-            {
                 try
                 {
-                    tx.Rollback();
+                    if (_sheetsAppender != null)
+                    {
+                        await _sheetsAppender(rows, ct);
+                    }
+                    else if (_sheetsService != null)
+                    {
+                        var valueRange = new ValueRange { Values = rows };
+                        var range = $"'{_sheetName}'!A:X";
+                        var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
+                        appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+                        _log.LogInformation("Syncing batch of {Count} plays to Google Sheets", batch.Count);
+                        await appendRequest.ExecuteAsync(ct);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("Google Sheets service is not configured");
+                    }
+
+                    const string updateSql = @"
+                        UPDATE plays
+                        SET sync_status = 'Synced', synced_at = @SyncedAt
+                        WHERE id IN @Ids;";
+
+                    using var tx = conn.BeginTransaction();
+                    try
+                    {
+                        await conn.ExecuteAsync(updateSql, new { Ids = batchIds, SyncedAt = nowUtc }, tx);
+                        tx.Commit();
+                        totalSynced += batch.Count;
+                        _log.LogInformation("Successfully marked {Count} plays as synced", batch.Count);
+                    }
+                    catch (Exception dbEx)
+                    {
+                        try
+                        {
+                            tx.Rollback();
+                        }
+                        catch
+                        {
+                        }
+                        _log.LogError(dbEx, "Failed to mark batch as synced (plays may be duplicated on next sync)");
+                    }
                 }
-                catch
+                catch (Exception batchEx)
                 {
+                    _log.LogError(batchEx, "Failed to sync batch starting at index {Index}", i);
+                    if (totalSynced == 0)
+                    {
+                        return new SyncResult(false, 0, 0, batchEx.Message);
+                    }
+                    break;
                 }
-                throw;
             }
 
-            _log.LogInformation("Successfully synced {Count} plays to Google Sheets", pendingPlays.Count);
-            return new SyncResult(true, pendingPlays.Count, 0, null);
+            _log.LogInformation("Successfully synced {Count} of {Total} plays to Google Sheets", totalSynced, pendingPlays.Count);
+            return new SyncResult(true, totalSynced, 0, null);
         }
         catch (Exception ex)
         {
@@ -165,7 +184,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
         _log.LogInformation("Started background sync loop with interval {Interval}", checkInterval);
     }
 
-    public void StopBackgroundSync()
+    public async Task StopBackgroundSyncAsync()
     {
         if (_backgroundTask == null)
             return;
@@ -174,7 +193,10 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
         _backgroundCts?.Cancel();
         try
         {
-            _backgroundTask.Wait(TimeSpan.FromSeconds(5));
+            await _backgroundTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException)
+        {
         }
         catch (AggregateException)
         {
@@ -182,6 +204,11 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
         _backgroundCts?.Dispose();
         _backgroundCts = null;
         _backgroundTask = null;
+    }
+
+    public void StopBackgroundSync()
+    {
+        StopBackgroundSyncAsync().GetAwaiter().GetResult();
     }
 
     private async Task BackgroundSyncLoopAsync(TimeSpan checkInterval, CancellationToken ct)
@@ -262,6 +289,11 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable
     public void Dispose()
     {
         StopBackgroundSync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopBackgroundSyncAsync();
     }
 
     private class PendingPlay

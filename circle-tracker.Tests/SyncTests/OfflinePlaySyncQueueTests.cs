@@ -105,7 +105,204 @@ public class OfflinePlaySyncQueueTests
     }
 
     [Fact]
-    public async Task FlushPendingQueueAsync_WithLargeBatch_UpdatesAllRowsInSingleBatch()
+    public async Task FlushPending_LargeBatch_ChunksCorrectly()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 120);
+
+        int appendCallCount = 0;
+        var sheetsAppender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            appendCallCount++;
+            rows.Count.Should().BeLessOrEqualTo(50);
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            null,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true,
+            sheetsAppender);
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.SyncedCount.Should().Be(120);
+        appendCallCount.Should().Be(3);
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var syncedCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Synced';");
+        syncedCount.Should().Be(120);
+    }
+
+    [Fact]
+    public async Task FlushPending_PartialBatchFailure_PreviousBatchesSynced()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 120);
+
+        int appendCallCount = 0;
+        var sheetsAppender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            appendCallCount++;
+            if (appendCallCount == 2)
+            {
+                throw new Exception("Simulated Sheets API failure");
+            }
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            null,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true,
+            sheetsAppender);
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.SyncedCount.Should().Be(50);
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var syncedCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Synced';");
+        var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
+
+        syncedCount.Should().Be(50);
+        pendingCount.Should().Be(70);
+    }
+
+    [Fact]
+    public async Task FlushPending_NoPendingPlays_ReturnsSuccessWithZeroCount()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+
+        var sheetsService = CreateMockSheetsService();
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            sheetsService,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true);
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.SyncedCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task FlushPending_SheetsNotReady_ReturnsFailure()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 10);
+
+        var sheetsService = CreateMockSheetsService();
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            sheetsService,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => false);
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not ready");
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
+        pendingCount.Should().Be(10);
+    }
+
+    [Fact]
+    public async Task StopBackgroundSync_GracefulShutdown_CompletesCleanly()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+
+        var sheetsService = CreateMockSheetsService();
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            sheetsService,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true);
+
+        queue.StartBackgroundSync(TimeSpan.FromSeconds(10));
+
+        await Task.Delay(100);
+
+        queue.StopBackgroundSync();
+
+        await Task.Delay(100);
+    }
+
+    [Fact]
+    public async Task BackgroundSync_FindsPendingPlays_FlushesAutomatically()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+
+        var sheetsService = CreateMockSheetsService();
+        using var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            sheetsService,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true);
+
+        await SeedPendingPlaysAsync(dbManager, 5);
+
+        queue.StartBackgroundSync(TimeSpan.FromMilliseconds(200));
+
+        await Task.Delay(500);
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var syncedCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Synced';");
+
+        queue.StopBackgroundSync();
+
+        syncedCount.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Dispose_StopsBackgroundSync()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+
+        var sheetsService = CreateMockSheetsService();
+        var queue = new OfflinePlaySyncQueue(
+            dbManager,
+            sheetsService,
+            "test-spreadsheet-id",
+            "Sheet1",
+            () => ",",
+            () => true);
+
+        queue.StartBackgroundSync(TimeSpan.FromSeconds(10));
+
+        await Task.Delay(100);
+
+        queue.Dispose();
+
+        await Task.Delay(100);
+    }
+
+    [Fact]
+    public async Task FlushPendingQueueAsync_WithLargeBatch_UpdatesAllRowsInBatches()
     {
         using var dbManager = await CreateInitializedDbManagerAsync();
         await SeedPendingPlaysAsync(dbManager, 750);
@@ -135,34 +332,41 @@ public class OfflinePlaySyncQueueTests
     }
 
     [Fact]
-    public async Task FlushPendingQueueAsync_WhenDatabaseFailsMidBatch_RollsBackEntireTransaction()
+    public async Task FlushPendingQueueAsync_WhenDatabaseFailsMidBatch_PreviousBatchesStillSynced()
     {
         using var dbManager = await CreateInitializedDbManagerAsync();
-        await SeedPendingPlaysAsync(dbManager, 750);
+        await SeedPendingPlaysAsync(dbManager, 120);
 
-        await using (var triggerConn = await dbManager.CreateConnectionAsync())
+        int appendCallCount = 0;
+        var sheetsAppender = new Func<IList<IList<object>>, CancellationToken, Task>(async (rows, ct) =>
         {
-            await triggerConn.ExecuteAsync(@"
-                CREATE TRIGGER fail_mid_batch
-                BEFORE UPDATE ON plays
-                WHEN NEW.id > 500
-                BEGIN
-                    SELECT RAISE(ABORT, 'Simulated database disruption mid batch');
-                END;");
-        }
+            appendCallCount++;
+            if (appendCallCount == 2)
+            {
+                await using var triggerConn = await dbManager.CreateConnectionAsync();
+                await triggerConn.ExecuteAsync(@"
+                    CREATE TRIGGER fail_mid_batch
+                    BEFORE UPDATE ON plays
+                    WHEN NEW.sync_status = 'Synced'
+                    BEGIN
+                        SELECT RAISE(ABORT, 'Simulated database disruption mid batch');
+                    END;");
+            }
+        });
 
-        var sheetsService = CreateMockSheetsService();
         using var queue = new OfflinePlaySyncQueue(
             dbManager,
-            sheetsService,
+            null,
             "test-spreadsheet-id",
             "Sheet1",
             () => ",",
-            () => true);
+            () => true,
+            sheetsAppender);
 
         var result = await queue.FlushPendingQueueAsync();
 
-        result.IsSuccess.Should().BeFalse();
+        result.IsSuccess.Should().BeTrue();
+        result.SyncedCount.Should().Be(50);
 
         await using var verifyConn = await dbManager.CreateConnectionAsync();
         var syncedCount = await verifyConn.ExecuteScalarAsync<int>(
@@ -170,8 +374,8 @@ public class OfflinePlaySyncQueueTests
         var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
 
-        syncedCount.Should().Be(0);
-        pendingCount.Should().Be(750);
+        syncedCount.Should().Be(50);
+        pendingCount.Should().Be(70);
     }
 
     [Fact]
@@ -225,25 +429,5 @@ public class OfflinePlaySyncQueueTests
         var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
         pendingCount.Should().Be(10);
-    }
-
-    [Fact]
-    public async Task FlushPendingQueueAsync_WhenNoPendingPlays_ReturnsSuccessWithZeroCount()
-    {
-        using var dbManager = await CreateInitializedDbManagerAsync();
-
-        var sheetsService = CreateMockSheetsService();
-        using var queue = new OfflinePlaySyncQueue(
-            dbManager,
-            sheetsService,
-            "test-spreadsheet-id",
-            "Sheet1",
-            () => ",",
-            () => true);
-
-        var result = await queue.FlushPendingQueueAsync();
-
-        result.IsSuccess.Should().BeTrue();
-        result.SyncedCount.Should().Be(0);
     }
 }

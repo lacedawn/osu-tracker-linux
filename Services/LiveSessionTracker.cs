@@ -90,11 +90,8 @@ public class LiveSessionTracker : ILiveSessionTracker
     private readonly ISessionAnalyticsService _sessionService;
     private readonly List<PlayEntryData> _sessionPlays = new();
     private readonly object _playsLock = new();
+    private readonly Dictionary<string, DateTime> _lastAchievementTimes = new();
     private DateTime _sessionStartTime = DateTime.UtcNow;
-    private decimal _sessionPeakAccuracy = 0m;
-    private decimal _highestStarPass = 0m;
-    private double _highestBpmPass = 0;
-    private double _highestAimPass = 0;
     
     private RollingPeriodStats? _baseline30Day;
 
@@ -131,7 +128,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         var totalPlayTime = snapshot.Sum(p => p.PlayTimeSeconds);
         var passedPlays = snapshot.Where(p => p.Complete).ToList();
         var passCount = passedPlays.Count;
-        decimal avgAccuracy = 0m;
+        decimal avgAccuracy = CalculateHitWeightedAccuracy(snapshot);
         decimal avgStars = 0m;
         double avgBpm = 0.0;
         decimal deltaAcc = 0m;
@@ -139,10 +136,6 @@ public class LiveSessionTracker : ILiveSessionTracker
         double deltaBpm = 0.0;
         if (passCount > 0)
         {
-            long totalPassHits = passedPlays.Sum(p => (long)p.TotalHits);
-            avgAccuracy = totalPassHits > 0
-                ? (decimal)(passedPlays.Sum(p => (double)p.Accuracy * p.TotalHits) / totalPassHits)
-                : (decimal)passedPlays.Average(p => p.Accuracy);
             avgStars = (decimal)passedPlays.Average(p => p.BeatmapStars);
             avgBpm = passedPlays.Average(p => p.BeatmapBpm);
             if (_baseline30Day != null)
@@ -193,19 +186,10 @@ public class LiveSessionTracker : ILiveSessionTracker
             snapshot = _sessionPlays.ToList();
         }
 
-        long totalSessionHits = snapshot.Sum(p => (long)p.TotalHits);
-        SessionAccuracy = totalSessionHits > 0
-            ? (decimal)(snapshot.Sum(p => (double)p.Accuracy * p.TotalHits) / totalSessionHits)
-            : (snapshot.Count > 0 ? snapshot.Average(p => p.Accuracy) : 0m);
-
+        SessionAccuracy = CalculateHitWeightedAccuracy(snapshot);
         BaselineDeltaAccuracy = _baseline30Day != null ? SessionAccuracy - _baseline30Day.MeanAccuracy : 0m;
 
-        if (play.Accuracy > _sessionPeakAccuracy)
-        {
-            _sessionPeakAccuracy = play.Accuracy;
-        }
-
-        await CheckAchievementsAsync(play, context);
+        CheckAchievements(play, context);
 
         var currentMetrics = GetCurrentMetrics();
         MetricsUpdated?.Invoke(this, currentMetrics);
@@ -247,7 +231,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         var passRate = snapshot.Count > 0 ? (passCount / (double)snapshot.Count) * 100.0 : 0;
         var deltaPassRate = _baseline30Day != null ? passRate - _baseline30Day.PassRatePercent : 0;
 
-        decimal hitWeightedAcc = 0m;
+        decimal hitWeightedAcc = CalculateHitWeightedAccuracy(snapshot);
         decimal avgStars = 0m;
         double avgBpm = 0;
         decimal deltaAcc = 0m;
@@ -256,10 +240,6 @@ public class LiveSessionTracker : ILiveSessionTracker
 
         if (passCount > 0)
         {
-            long totalPassHits = passes.Sum(p => (long)p.TotalHits);
-            hitWeightedAcc = totalPassHits > 0
-                ? (decimal)(passes.Sum(p => (double)p.Accuracy * p.TotalHits) / totalPassHits)
-                : (decimal)passes.Average(p => p.Accuracy);
             avgStars = passes.Average(p => p.BeatmapStars);
             avgBpm = passes.Average(p => p.BeatmapBpm);
 
@@ -292,12 +272,9 @@ public class LiveSessionTracker : ILiveSessionTracker
         lock (_playsLock)
         {
             _sessionPlays.Clear();
+            _lastAchievementTimes.Clear();
         }
         _sessionStartTime = DateTime.UtcNow;
-        _sessionPeakAccuracy = 0m;
-        _highestStarPass = 0m;
-        _highestBpmPass = 0;
-        _highestAimPass = 0;
         SessionAccuracy = 0m;
         BaselineDeltaAccuracy = 0m;
     }
@@ -311,56 +288,101 @@ public class LiveSessionTracker : ILiveSessionTracker
         }
     }
 
-    private async Task CheckAchievementsAsync(PlayEntryData play, PlayContext context)
+    private void CheckAchievements(PlayEntryData play, PlayContext context)
     {
-        if (play.Complete && play.BeatmapStars > _highestStarPass)
+        const int CooldownSeconds = 30;
+        var now = DateTime.UtcNow;
+
+        if (play.Complete && play.BeatmapStars > 0)
         {
-            _highestStarPass = play.BeatmapStars;
-            var achievement = new PostPlayAchievement(
-                Title: "New Star Rating Record Pass!",
-                Description: $"{play.BeatmapStars:F2}★",
-                AccentColorHex: "#facc15",
-                Timestamp: DateTime.UtcNow
-            );
-            AchievementUnlocked?.Invoke(this, achievement);
+            string starAchievementKey = "StarRecordPass";
+            if (ShouldFireAchievement(starAchievementKey, now, CooldownSeconds))
+            {
+                var achievement = new PostPlayAchievement(
+                    Title: "New Star Rating Record Pass!",
+                    Description: $"{play.BeatmapStars:F2}★",
+                    AccentColorHex: "#facc15",
+                    Timestamp: now
+                );
+                AchievementUnlocked?.Invoke(this, achievement);
+                _lastAchievementTimes[starAchievementKey] = now;
+            }
         }
 
         if (play.Complete && play.Accuracy >= 95m && play.BeatmapStars >= 5.0m && play.BeatmapStars <= 6.0m)
         {
-            var achievement = new PostPlayAchievement(
-                Title: "Comfort Zone Clear",
-                Description: $"{play.Accuracy:F1}% on {play.BeatmapStars:F1}★",
-                AccentColorHex: "#4ade80",
-                Timestamp: DateTime.UtcNow
-            );
-            AchievementUnlocked?.Invoke(this, achievement);
+            string comfortKey = "ComfortZoneClear";
+            if (ShouldFireAchievement(comfortKey, now, CooldownSeconds))
+            {
+                var achievement = new PostPlayAchievement(
+                    Title: "Comfort Zone Clear",
+                    Description: $"{play.Accuracy:F1}% on {play.BeatmapStars:F1}★",
+                    AccentColorHex: "#4ade80",
+                    Timestamp: now
+                );
+                AchievementUnlocked?.Invoke(this, achievement);
+                _lastAchievementTimes[comfortKey] = now;
+            }
         }
 
-        if (play.Complete && play.BeatmapBpm >= 220 && play.BeatmapBpm > _highestBpmPass)
+        if (play.Complete && play.BeatmapBpm >= 220)
         {
-            _highestBpmPass = play.BeatmapBpm;
-            var achievement = new PostPlayAchievement(
-                Title: "Speed PR",
-                Description: $"Passed {play.BeatmapBpm:F0} BPM Stream Map",
-                AccentColorHex: "#7dd3fc",
-                Timestamp: DateTime.UtcNow
-            );
-            AchievementUnlocked?.Invoke(this, achievement);
+            string speedKey = "SpeedPR";
+            if (ShouldFireAchievement(speedKey, now, CooldownSeconds))
+            {
+                var achievement = new PostPlayAchievement(
+                    Title: "Speed PR",
+                    Description: $"Passed {play.BeatmapBpm:F0} BPM Stream Map",
+                    AccentColorHex: "#7dd3fc",
+                    Timestamp: now
+                );
+                AchievementUnlocked?.Invoke(this, achievement);
+                _lastAchievementTimes[speedKey] = now;
+            }
         }
 
-        if (play.Complete && play.BeatmapAim >= 3.0m && play.BeatmapAim > (decimal)_highestAimPass)
+        if (play.Complete && play.BeatmapAim >= 3.0m)
         {
-            _highestAimPass = (double)play.BeatmapAim;
-            var achievement = new PostPlayAchievement(
-                Title: "Aim Record",
-                Description: $"{play.BeatmapAim:F1}★ Aim Pass",
-                AccentColorHex: "#e11d48",
-                Timestamp: DateTime.UtcNow
-            );
-            AchievementUnlocked?.Invoke(this, achievement);
+            string aimKey = "AimRecord";
+            if (ShouldFireAchievement(aimKey, now, CooldownSeconds))
+            {
+                var achievement = new PostPlayAchievement(
+                    Title: "Aim Record",
+                    Description: $"{play.BeatmapAim:F1}★ Aim Pass",
+                    AccentColorHex: "#e11d48",
+                    Timestamp: now
+                );
+                AchievementUnlocked?.Invoke(this, achievement);
+                _lastAchievementTimes[aimKey] = now;
+            }
+        }
+    }
+
+    private bool ShouldFireAchievement(string achievementKey, DateTime now, int cooldownSeconds)
+    {
+        if (_lastAchievementTimes.TryGetValue(achievementKey, out var lastTime))
+        {
+            return (now - lastTime).TotalSeconds >= cooldownSeconds;
+        }
+        return true;
+    }
+
+    private static decimal CalculateHitWeightedAccuracy(List<PlayEntryData> plays)
+    {
+        var passedPlays = plays.Where(p => p.Complete).ToList();
+        
+        if (passedPlays.Count == 0)
+        {
+            return 0m;
         }
 
-        await Task.CompletedTask;
+        long totalHits = passedPlays.Sum(p => (long)p.TotalHits);
+        if (totalHits == 0)
+        {
+            return passedPlays.Average(p => p.Accuracy);
+        }
+
+        return (decimal)(passedPlays.Sum(p => (double)p.Accuracy * p.TotalHits) / totalHits);
     }
 
 

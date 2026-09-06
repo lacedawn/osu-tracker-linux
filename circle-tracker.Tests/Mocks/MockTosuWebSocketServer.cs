@@ -23,6 +23,7 @@ namespace CircleTracker.Tests.Mocks
 
         public int Port { get; }
         public string Url => $"ws://127.0.0.1:{Port}/websocket/v2";
+        public bool SimulateAbruptClose { get; set; } = false;
 
         public MockTosuWebSocketServer()
         {
@@ -144,6 +145,57 @@ namespace CircleTracker.Tests.Mocks
                 try
                 {
                     await ws.SendAsync(new ArraySegment<byte>(payload), WebSocketMessageType.Text, true, ct);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        public async Task BroadcastPartialJsonAsync(string json, int chunkSize, CancellationToken ct = default)
+        {
+            byte[] payload = Encoding.UTF8.GetBytes(json);
+            List<WebSocket> socketsToBroadcast;
+            lock (_socketsLock)
+            {
+                socketsToBroadcast = _connectedSockets.Where(s => s.State == WebSocketState.Open).ToList();
+            }
+
+            foreach (var ws in socketsToBroadcast)
+            {
+                try
+                {
+                    int offset = 0;
+                    while (offset < payload.Length)
+                    {
+                        int length = Math.Min(chunkSize, payload.Length - offset);
+                        bool isEnd = (offset + length) >= payload.Length;
+                        await ws.SendAsync(new ArraySegment<byte>(payload, offset, length), WebSocketMessageType.Text, isEnd, ct);
+                        offset += length;
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        public async Task CloseAllConnectionsAsync()
+        {
+            List<WebSocket> socketsToClose;
+            lock (_socketsLock)
+            {
+                socketsToClose = _connectedSockets.ToList();
+            }
+
+            foreach (var ws in socketsToClose)
+            {
+                try
+                {
+                    if (ws.State == WebSocketState.Open)
+                    {
+                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server closing", CancellationToken.None);
+                    }
                 }
                 catch
                 {
