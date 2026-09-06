@@ -3,112 +3,17 @@ using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Circle_Tracker
-{
-    public enum GameStatus
-    {
-        Menu = 0,
-        Edit = 1,
-        Playing = 2,
-        SongSelect = 5,
-        ResultsScreen = 7,
-        MultiplayerRoom = 11,
-        MultiplayerSongSelect = 12,
-        Unknown = -1
-    }
+namespace Circle_Tracker;
 
-    [Flags]
-    public enum OsuMods
-    {
-        None = 0,
-        NoFail = 1,
-        Easy = 1 << 1,
-        TouchDevice = 1 << 2,
-        Hidden = 1 << 3,
-        HardRock = 1 << 4,
-        SuddenDeath = 1 << 5,
-        DoubleTime = 1 << 6,
-        Relax = 1 << 7,
-        HalfTime = 1 << 8,
-        Nightcore = 1 << 9,
-        Flashlight = 1 << 10,
-        Autoplay = 1 << 11,
-        SpunOut = 1 << 12,
-        Autopilot = 1 << 13,
-        Perfect = 1 << 14,
-    }
-
-    public record TrackerSnapshot(
-        bool IsPlaying,
-        bool IsReplay,
-        string DetectedClient,
-        string BeatmapString,
-        string BeatmapTitle,
-        string BeatmapArtist,
-        string BeatmapVersion,
-        int BeatmapId,
-        int BeatmapSetId,
-        decimal BeatmapHp,
-        decimal BeatmapStars,
-        decimal BeatmapAim,
-        decimal BeatmapSpeed,
-        decimal BeatmapCs,
-        decimal BeatmapAr,
-        decimal BeatmapOd,
-        int BeatmapBpm,
-        int TotalBeatmapHits,
-        int Play300c,
-        int Play100c,
-        int Play50c,
-        int PlayMissc,
-        decimal Accuracy,
-        int Time,
-        string ModsString,
-        string GameStateLabel,
-        bool SheetsApiReady,
-        bool MemoryReadError,
-        int PlayingSeconds,
-        int IdleSeconds,
-        int PlayCount = 0,
-        bool DatabaseReady = false,
-        int LocalPlayCount = 0
-    )
-    {
-        public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";
-    }
-
-    internal class SheetsSinkAdapter : IPlaySink
-    {
-        private readonly ISheetsSink _sink;
-        public string SinkName => "Google Sheets Adapter";
-        public bool IsReady => _sink.SheetsApiReady;
-        public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
-        {
-            return _sink.InitGoogleAPIAsync(silent);
-        }
-        public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
-        {
-            return _sink.TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
-                DateTime.MinValue, _ => { }, context.SoundFilePath, context.SubmitSoundEnabled, ct);
-        }
-        public SheetsSinkAdapter(ISheetsSink sink) => _sink = sink;
-    }
-
-    public class Tracker
+public class Tracker
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
 
         private const int MinHitsToSubmit = 40;
-        private const int MaxHitJumpPerTick = 50;
-        private const int MaxTimeBetweenHitsMs = 30000;
 
         private readonly IMainWindow _form;
         private readonly ITosuClient _tosuClient;
@@ -129,14 +34,7 @@ namespace Circle_Tracker
         public string DetectedClient => _gameStateManager.DetectedClient;
         private readonly IBeatmapStateTracker _beatmapState;
         public IBeatmapStateTracker BeatmapState => _beatmapState;
-
-        private int Play300c { get; set; } = 0;
-        private int Play100c { get; set; } = 0;
-        private int Play50c { get; set; } = 0;
-        private int PlayMissc { get; set; } = 0;
-        private int TotalBeatmapHits { get; set; } = 0;
-        private decimal Accuracy { get; set; } = 0;
-        private int Time { get; set; } = 0;
+        private readonly IHitTrackingService _hitTracking;
 
         private int _currentGameMode = 0;
 
@@ -182,40 +80,27 @@ namespace Circle_Tracker
             _form = form;
             _tosuClient = tosuClient;
             _settings = settings ?? new SettingsService();
-            _gameStateManager = new GameStateManager();
-            _gameStateManager.Username = _settings.Username;
+            _gameStateManager = new GameStateManager { Username = _settings.Username };
             _beatmapState = new BeatmapStateTracker(tosuClient);
+            _hitTracking = new HitTrackingService();
 
-            var sheetsManager = new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
-            sheetsManager.OnSettingsChanged = _settings.SaveSettings;
+            var (playSink, compositeSink, localSink, sessionManager, dbManager, sheetsManager) = TrackerInitializer.InitializeProductionServices(form, _settings);
+            _playSink = playSink;
+            _compositeSink = compositeSink;
+            _localSqliteSink = localSink;
+            _sessionManager = sessionManager;
+            _dbManager = dbManager;
             _sheetsManager = sheetsManager;
-            SyncSheetsSettings();
-            _settings.SettingsChanged += SyncSheetsSettings;
 
-            _dbManager = new SqliteDatabaseManager(_settings.LocalDatabasePath);
-            _localSqliteSink = new LocalSqlitePlaySink(_dbManager);
-            _sessionManager = new SessionManager(_dbManager);
-
-            _compositeSink = new CompositePlaySink();
-            _compositeSink.AddSink(_localSqliteSink, () => _settings.EnableLocalLogging);
-            _compositeSink.AddSink(sheetsManager, () => _settings.EnableGoogleSheetsLogging);
-            _playSink = _compositeSink;
-
+            ConfigureSettings();
             _tosuClient.Host = _settings.TosuHost;
             _tosuClient.Port = _settings.TosuPort;
 
             _submissionService = new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
-
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
-            if (!File.Exists(_settings.SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
-            {
-                string welcomeMsg = "Welcome to circle tracker!\n\n" +
-                    "This app connects to 'tosu' running alongside osu!.\n\n" +
-                    "Works with both osu!stable (Wine) and osu!lazer.";
-                _form.ShowMessage(welcomeMsg, "Welcome to Circle Tracker!");
-            }
+            TrackerInitializer.ShowWelcomeMessageIfFirstRun(_form, _settings.SettingsFilePath);
         }
 
         public Tracker(IMainWindow form, ITosuClient tosuClient, ISheetsSink sheetsSink, ISettingsService? settings = null)
@@ -223,27 +108,18 @@ namespace Circle_Tracker
             _form = form;
             _tosuClient = tosuClient;
             _settings = settings ?? new SettingsService();
-            _gameStateManager = new GameStateManager();
-            _gameStateManager.Username = _settings.Username;
+            _gameStateManager = new GameStateManager { Username = _settings.Username };
             _beatmapState = new BeatmapStateTracker(tosuClient);
+            _hitTracking = new HitTrackingService();
             _sheetsManager = sheetsSink;
-            _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
-            SyncSheetsSettings();
-            _settings.SettingsChanged += SyncSheetsSettings;
 
-            if (sheetsSink is IPlaySink playSink)
-            {
-                _playSink = playSink;
-            }
-            else
-            {
-                _playSink = new SheetsSinkAdapter(sheetsSink);
-            }
+            var (playSink, sessionManager, dbManager) = TrackerInitializer.InitializeTestServices(sheetsSink);
+            _playSink = playSink;
+            _sessionManager = sessionManager;
+            _dbManager = dbManager;
 
-            _dbManager = new SqliteDatabaseManager(":memory:");
-            _sessionManager = new SessionManager(_dbManager);
+            ConfigureSettings();
             _submissionService = new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
-
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
         }
@@ -253,21 +129,26 @@ namespace Circle_Tracker
             _form = form;
             _tosuClient = tosuClient;
             _settings = settings ?? new SettingsService();
-            _gameStateManager = gameStateManager ?? new GameStateManager();
-            _gameStateManager.Username = _settings.Username;
+            _gameStateManager = gameStateManager ?? new GameStateManager { Username = _settings.Username };
             _beatmapState = beatmapState ?? new BeatmapStateTracker(tosuClient);
+            _hitTracking = new HitTrackingService();
             _playSink = playSink;
             _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
-            _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
-            SyncSheetsSettings();
-            _settings.SettingsChanged += SyncSheetsSettings;
 
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = sessionManager ?? new SessionManager(_dbManager);
             _submissionService = submissionService ?? new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
 
+            ConfigureSettings();
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
+        }
+
+        private void ConfigureSettings()
+        {
+            _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
+            SyncSheetsSettings();
+            _settings.SettingsChanged += SyncSheetsSettings;
         }
 
         public Task InitGoogleAPIAsync(bool silent = false) => _sheetsManager.InitGoogleAPIAsync(silent);
@@ -307,13 +188,13 @@ namespace Circle_Tracker
                     BeatmapAr: _beatmapState.BeatmapAr,
                     BeatmapOd: _beatmapState.BeatmapOd,
                     BeatmapBpm: _beatmapState.BeatmapBpm,
-                    TotalBeatmapHits: TotalBeatmapHits,
-                    Play300c: Play300c,
-                    Play100c: Play100c,
-                    Play50c: Play50c,
-                    PlayMissc: PlayMissc,
-                    Accuracy: Accuracy,
-                    Time: Time,
+                    TotalBeatmapHits: _hitTracking.TotalBeatmapHits,
+                    Play300c: _hitTracking.Play300c,
+                    Play100c: _hitTracking.Play100c,
+                    Play50c: _hitTracking.Play50c,
+                    PlayMissc: _hitTracking.PlayMissc,
+                    Accuracy: _hitTracking.Accuracy,
+                    Time: _hitTracking.Time,
                     ModsString: _beatmapState.GetModsString(),
                     GameStateLabel: _gameStateManager.GameStateLabel,
                     SheetsApiReady: SheetsApiReady,
@@ -377,16 +258,11 @@ namespace Circle_Tracker
                     {
                         bool beatmapCompleted = currentGameState == GameStatus.ResultsScreen;
                         _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
-                            currentGameState, beatmapCompleted, TotalBeatmapHits);
-                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
-
-                        Play300c = 0;
-                        Play100c = 0;
-                        Play50c = 0;
-                        PlayMissc = 0;
-                        Accuracy = 0;
-                        TotalBeatmapHits = 0;
-                        Time = 0;
+                            currentGameState, beatmapCompleted, _hitTracking.TotalBeatmapHits);
+                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, _hitTracking.TotalBeatmapHits, _hitTracking.Accuracy, 
+                            _hitTracking.Play300c, _hitTracking.Play100c, _hitTracking.Play50c, _hitTracking.PlayMissc, _hitTracking.Time, 
+                            _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
+                        _hitTracking.ResetHitStatistics();
                     }
                 }
 
@@ -411,65 +287,23 @@ namespace Circle_Tracker
                         int new100c = hits.H100;
                         int new50c = hits.H50;
                         int newMissc = hits.Misses;
-                        int newHits = new300c + new100c + new50c;
                         int newSongTime = state.Beatmap?.Time?.Live ?? 0;
 
-                        if (newMissc > PlayMissc)
-                            PlayMissc = newMissc;
-
-                        if (newHits < TotalBeatmapHits && newSongTime >= Time)
+                        // Handle time rewind (retry) - submit if enough hits
+                        if (newSongTime < _hitTracking.Time && _hitTracking.Time > 0)
                         {
-                            _log.LogWarning("Hit count regression detected: {NewHits} < {TotalHits} without time rewind", newHits, TotalBeatmapHits);
-                        }
-
-                        if (newHits > TotalBeatmapHits)
-                        {
-                            int hitDelta = newHits - TotalBeatmapHits;
-                            int timeDelta = newSongTime - Time;
-
-                            if (timeDelta > MaxTimeBetweenHitsMs && hitDelta > 0)
-                            {
-                                _log.LogInformation("Large time jump detected: {TimeDelta}ms with {HitDelta} hits (potential intro skip)", timeDelta, hitDelta);
-                            }
-
-                            if (hitDelta < MaxHitJumpPerTick)
-                            {
-                                Accuracy = newAcc;
-                                Play300c = new300c;
-                                Play100c = new100c;
-                                Play50c = new50c;
-                                TotalBeatmapHits = newHits;
-                            }
-                            else if (timeDelta > 500)
-                            {
-                                Accuracy = newAcc;
-                                Play300c = new300c;
-                                Play100c = new100c;
-                                Play50c = new50c;
-                                TotalBeatmapHits = newHits;
-                            }
-                        }
-
-                        if (newSongTime < Time && Time > 0)
-                        {
-                            if (TotalBeatmapHits >= MinHitsToSubmit)
+                            if (_hitTracking.TotalBeatmapHits >= MinHitsToSubmit)
                             {
                                 _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
-                                    newSongTime, Time, TotalBeatmapHits);
-                                _submissionService.TryPostBeatmapEntry(false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
+                                    newSongTime, _hitTracking.Time, _hitTracking.TotalBeatmapHits);
+                                _submissionService.TryPostBeatmapEntry(false, _hitTracking.TotalBeatmapHits, _hitTracking.Accuracy,
+                                    _hitTracking.Play300c, _hitTracking.Play100c, _hitTracking.Play50c, _hitTracking.PlayMissc,
+                                    _hitTracking.Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
                             }
-                            Play300c = 0;
-                            Play100c = 0;
-                            Play50c = 0;
-                            PlayMissc = 0;
-                            Accuracy = 0;
-                            TotalBeatmapHits = 0;
-                            Time = newSongTime;
+                            _hitTracking.ResetHitStatistics();
                         }
-                        else
-                        {
-                            Time = newSongTime;
-                        }
+
+                        _hitTracking.UpdateHitStatistics(new300c, new100c, new50c, newMissc, newAcc, newSongTime);
                     }
 
                     if (state.Play.Mods != null)
@@ -505,4 +339,3 @@ namespace Circle_Tracker
 
         public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _submissionService.FlushPendingSubmissionsAsync(ct);
     }
-}

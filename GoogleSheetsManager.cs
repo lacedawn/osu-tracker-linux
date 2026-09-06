@@ -443,7 +443,6 @@ namespace Circle_Tracker
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
             _log.LogInformation("Appending row to Google Sheets ({Range})...", range);
 
-            bool allAttemptsFailed = true;
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
