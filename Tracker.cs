@@ -1,4 +1,5 @@
 using Circle_Tracker.Analytics;
+using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
 using System;
@@ -139,7 +140,8 @@ namespace Circle_Tracker
         public string TosuHost { get; set; } = "127.0.0.1";
         public int TosuPort { get; set; } = 24050;
         public bool DisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
-        public string DetectedClient { get; private set; } = "Unknown";
+        private readonly IGameStateManager _gameStateManager;
+        public string DetectedClient => _gameStateManager.DetectedClient;
 
         private string _currentBeatmapChecksum = "";
         private int BeatmapID { get; set; }
@@ -153,12 +155,11 @@ namespace Circle_Tracker
 
         public bool SubmitSoundEnabled { get; set; }
 
-        private GameStatus GameState { get; set; } = GameStatus.Menu;
-        private bool IsPlaying => GameState == GameStatus.Playing;
-        private bool IsReplay { get; set; } = false;
-        private bool MemoryReadError { get; set; } = false;
-
-        public string Username { get; set; } = "";
+        public string Username
+        {
+            get => _gameStateManager.Username;
+            set => _gameStateManager.Username = value;
+        }
         private int RawMods { get; set; } = 0;
         private bool Hidden { get; set; } = false;
         private bool Hardrock { get; set; } = false;
@@ -240,6 +241,7 @@ namespace Circle_Tracker
         {
             _form = form;
             _tosuClient = tosuClient;
+            _gameStateManager = new GameStateManager();
 
             var sheetsManager = new GoogleSheetsManager(form, GetFunctionSeparator);
             sheetsManager.OnSettingsChanged = SaveSettings;
@@ -259,7 +261,7 @@ namespace Circle_Tracker
             _tosuClient.Host = TosuHost;
             _tosuClient.Port = TosuPort;
 
-            GameState = GameStatus.Menu;
+            _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
             if (!File.Exists(SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
@@ -275,6 +277,7 @@ namespace Circle_Tracker
         {
             _form = form;
             _tosuClient = tosuClient;
+            _gameStateManager = new GameStateManager();
             _sheetsManager = sheetsSink;
             _sheetsManager.OnSettingsChanged = SaveSettings;
 
@@ -290,14 +293,15 @@ namespace Circle_Tracker
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = new SessionManager(_dbManager);
 
-            GameState = GameStatus.Menu;
+            _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null)
+        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null)
         {
             _form = form;
             _tosuClient = tosuClient;
+            _gameStateManager = gameStateManager ?? new GameStateManager();
             _playSink = playSink;
             _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, GetFunctionSeparator);
             _sheetsManager.OnSettingsChanged = SaveSettings;
@@ -305,7 +309,7 @@ namespace Circle_Tracker
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = sessionManager ?? new SessionManager(_dbManager);
 
-            GameState = GameStatus.Menu;
+            _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
         }
 
@@ -428,18 +432,10 @@ namespace Circle_Tracker
         {
             lock (_snapshotLock)
             {
-                string gameStateLabel = IsReplay
-                    ? "REPLAY"
-                    : GameState == GameStatus.Playing
-                        ? "PLAYING"
-                        : GameState == GameStatus.ResultsScreen
-                            ? "RESULTS"
-                            : "IDLE";
-
                 return new TrackerSnapshot(
-                    IsPlaying: IsPlaying,
-                    IsReplay: IsReplay,
-                    DetectedClient: DetectedClient,
+                    IsPlaying: _gameStateManager.IsPlaying,
+                    IsReplay: _gameStateManager.IsReplay,
+                    DetectedClient: _gameStateManager.DetectedClient,
                     BeatmapString: BeatmapString ?? "",
                     BeatmapTitle: _beatmapTitle,
                     BeatmapArtist: _beatmapArtist,
@@ -462,9 +458,9 @@ namespace Circle_Tracker
                     Accuracy: Accuracy,
                     Time: Time,
                     ModsString: GetModsString(),
-                    GameStateLabel: gameStateLabel,
+                    GameStateLabel: _gameStateManager.GameStateLabel,
                     SheetsApiReady: SheetsApiReady,
-                    MemoryReadError: MemoryReadError,
+                    MemoryReadError: _gameStateManager.MemoryReadError,
                     PlayingSeconds: PlayingSeconds,
                     IdleSeconds: IdleSeconds,
                     PlayCount: _consecutivePlayCount,
@@ -488,64 +484,6 @@ namespace Circle_Tracker
         }
 
         public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
-
-        private static string DetectClient(TosuState state)
-        {
-            string ver = state.Settings?.Client?.Version ?? "";
-            if (string.IsNullOrEmpty(ver))
-                return "osu!lazer";
-
-            if (ver.Contains("cuttingedge", StringComparison.OrdinalIgnoreCase) ||
-                ver.Contains("stable", StringComparison.OrdinalIgnoreCase) ||
-                ver.Contains("beta", StringComparison.OrdinalIgnoreCase) ||
-                ver.StartsWith("b20", StringComparison.OrdinalIgnoreCase))
-            {
-                return "osu!stable";
-            }
-
-            return "osu!lazer";
-        }
-
-        private bool DetectReplay(TosuState state)
-        {
-            string? playName = state.Play?.PlayerName;
-            string? profileName = !string.IsNullOrWhiteSpace(state.Profile?.Name) ? state.Profile.Name : Username;
-            if (!string.IsNullOrWhiteSpace(playName) &&
-                !string.IsNullOrWhiteSpace(profileName) &&
-                !string.Equals(playName.Trim(), profileName.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (DetectedClient == "osu!lazer" && (state.Settings?.ReplayUIVisible ?? false))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private static GameStatus ParseGameState(int stateNumber)
-        {
-            return stateNumber switch
-            {
-                0 => GameStatus.Menu,
-                1 => GameStatus.Edit,
-                2 => GameStatus.Playing,
-                5 => GameStatus.SongSelect,
-                7 => GameStatus.ResultsScreen,
-                11 => GameStatus.MultiplayerRoom,
-                12 => GameStatus.MultiplayerSongSelect,
-                _ => GameStatus.Unknown
-            };
-        }
-
-        private static bool IsSongSelectState(GameStatus gs)
-        {
-            return gs == GameStatus.SongSelect
-                || gs == GameStatus.MultiplayerRoom
-                || gs == GameStatus.MultiplayerSongSelect;
-        }
 
         private void UpdateModsFromBitfield(int rawMods)
         {
@@ -635,26 +573,23 @@ namespace Circle_Tracker
         {
             if (!_tosuClient.IsConnected)
             {
-                lock (_snapshotLock) { DetectedClient = "Disconnected"; }
+                lock (_snapshotLock) { _gameStateManager.DetectedClient = "Disconnected"; }
                 return;
             }
 
             var state = _tosuClient.LatestState;
             if (state == null)
             {
-                lock (_snapshotLock) { DetectedClient = "Connecting..."; }
+                lock (_snapshotLock) { _gameStateManager.DetectedClient = "Connecting..."; }
                 return;
             }
 
             lock (_snapshotLock)
             {
-                DetectedClient = DetectClient(state);
-
-                GameStatus newGameState = ParseGameState(state.State?.Number ?? -1);
-                bool songSelectGameState = IsSongSelectState(newGameState);
-
-                if (!string.IsNullOrEmpty(state.Profile?.Name))
-                    Username = state.Profile.Name;
+                GameStatus previousGameState = _gameStateManager.GameState;
+                _gameStateManager.UpdateFromState(state);
+                GameStatus currentGameState = _gameStateManager.GameState;
+                bool songSelectGameState = _gameStateManager.IsSongSelectState(currentGameState);
 
                 string newChecksum = state.Beatmap?.Checksum ?? "";
                 if (newChecksum != _currentBeatmapChecksum && newChecksum != "")
@@ -665,10 +600,8 @@ namespace Circle_Tracker
                 }
 
                 _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
-                IsReplay = DetectReplay(state);
 
-                MemoryReadError = songSelectGameState && string.IsNullOrEmpty(state.Files?.Beatmap);
-                if (MemoryReadError && string.IsNullOrEmpty(BeatmapString))
+                if (_gameStateManager.MemoryReadError && string.IsNullOrEmpty(BeatmapString))
                     BeatmapString = "";
 
                 if (state.Beatmap?.Stats?.Stars != null)
@@ -679,13 +612,13 @@ namespace Circle_Tracker
                     if (stars.Speed > 0) BeatmapSpeed = stars.Speed;
                 }
 
-                if (newGameState != GameState)
+                if (currentGameState != previousGameState)
                 {
-                    if (GameState == GameStatus.Playing && newGameState != GameStatus.Playing)
+                    if (previousGameState == GameStatus.Playing && currentGameState != GameStatus.Playing)
                     {
-                        bool beatmapCompleted = newGameState == GameStatus.ResultsScreen;
+                        bool beatmapCompleted = currentGameState == GameStatus.ResultsScreen;
                         _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
-                            newGameState, beatmapCompleted, TotalBeatmapHits);
+                            currentGameState, beatmapCompleted, TotalBeatmapHits);
                         TryPostBeatmapEntry(beatmapCompleted);
 
                         Play300c = 0;
@@ -696,7 +629,6 @@ namespace Circle_Tracker
                         TotalBeatmapHits = 0;
                         Time = 0;
                     }
-                    GameState = newGameState;
                 }
 
                 if (songSelectGameState && state.Play?.Mods != null)
@@ -710,7 +642,7 @@ namespace Circle_Tracker
                     }
                 }
 
-                if (newGameState == GameStatus.Playing && state.Play != null)
+                if (currentGameState == GameStatus.Playing && state.Play != null)
                 {
                     var hits = state.Play.Hits;
                     if (hits != null)
@@ -793,12 +725,12 @@ namespace Circle_Tracker
 
         public void TickEverySecond()
         {
-            if (IsPlaying)
+            if (_gameStateManager.IsPlaying)
                 PlayingSeconds++;
             else
                 IdleSeconds++;
 
-            _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, DetectedClient);
+            _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, _gameStateManager.DetectedClient);
             _form.UpdateTime();
         }
 
@@ -841,7 +773,7 @@ namespace Circle_Tracker
 
         private void TryPostBeatmapEntry(bool complete)
         {
-            if (TotalBeatmapHits < MinHitsToSubmit || IsReplay || _currentGameMode != 0)
+            if (TotalBeatmapHits < MinHitsToSubmit || _gameStateManager.IsReplay || _currentGameMode != 0)
                 return;
 
             bool isSameMap = (!string.IsNullOrEmpty(_currentBeatmapChecksum) && _currentBeatmapChecksum == _lastLoggedBeatmapChecksum)
@@ -904,10 +836,10 @@ namespace Circle_Tracker
 
             var context = new PlayContext(
                 SessionId: _sessionManager.SessionId,
-                IsReplay: IsReplay,
+                IsReplay: _gameStateManager.IsReplay,
                 RawMods: RawMods,
                 CurrentGameMode: _currentGameMode,
-                DetectedClient: DetectedClient,
+                DetectedClient: _gameStateManager.DetectedClient,
                 SoundFilePath: SoundFilePath,
                 SubmitSoundEnabled: SubmitSoundEnabled
             );
