@@ -88,7 +88,7 @@ public class TrackerService : ITrackerService, IMainWindow
     public TrackerSnapshot GetSnapshot() => _tracker.GetSnapshot();
     public Task InitializeStorageAsync(bool silent = false, CancellationToken ct = default) => _tracker.InitializeStorageAsync(silent, ct);
     public Task InitGoogleAPIAsync(bool silent = false) => _tracker.InitGoogleAPIAsync(silent);
-    public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.FlushPendingSubmissionsAsync(ct);
+    public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.SubmissionService.FlushPendingSubmissionsAsync(ct);
     public ISessionAnalyticsService? GetSessionAnalyticsService() => _tracker.GetSessionAnalyticsService();
 
     void IMainWindow.SetCredentialsFound(bool found) { }

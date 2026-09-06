@@ -166,22 +166,19 @@ namespace Circle_Tracker
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
         private readonly object _snapshotLock = new();
-        private readonly SemaphoreSlim _sheetsLock = new SemaphoreSlim(1, 1);
-        private readonly object _submissionTasksLock = new();
-        private readonly HashSet<Task> _activeSubmissionTasks = new();
-        private string _lastLoggedBeatmapChecksum = "";
-        private int _lastLoggedBeatmapId = 0;
-        private string _lastLoggedBeatmapString = "";
-        private int _lastLoggedMods = -1;
-        private int _consecutivePlayCount = 0;
-        private bool _lastLoggedComplete = false;
+        private readonly IPlaySubmissionService _submissionService;
+        public IPlaySubmissionService SubmissionService => _submissionService;
 
         public bool DatabaseReady => _dbManager?.IsHealthy ?? false;
         public int LocalPlayCount => _localSqliteSink?.TotalPlaysRecorded ?? 0;
         public SessionManager SessionManager => _sessionManager;
         public IPlaySink PlaySink => _playSink;
         
-        public event EventHandler<(PlayEntryData Data, PlayContext Context)>? PlayLogged;
+        public event EventHandler<(PlayEntryData Data, PlayContext Context)>? PlayLogged
+        {
+            add => _submissionService.PlayLogged += value;
+            remove => _submissionService.PlayLogged -= value;
+        }
 
         public ISessionAnalyticsService? GetSessionAnalyticsService()
         {
@@ -237,6 +234,8 @@ namespace Circle_Tracker
             _tosuClient.Host = TosuHost;
             _tosuClient.Port = TosuPort;
 
+            _submissionService = new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
+
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
@@ -269,12 +268,13 @@ namespace Circle_Tracker
 
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = new SessionManager(_dbManager);
+            _submissionService = new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
 
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null)
+        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null, IPlaySubmissionService? submissionService = null)
         {
             _form = form;
             _tosuClient = tosuClient;
@@ -286,6 +286,7 @@ namespace Circle_Tracker
 
             _dbManager = new SqliteDatabaseManager(":memory:");
             _sessionManager = sessionManager ?? new SessionManager(_dbManager);
+            _submissionService = submissionService ?? new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
 
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
@@ -441,7 +442,7 @@ namespace Circle_Tracker
                     MemoryReadError: _gameStateManager.MemoryReadError,
                     PlayingSeconds: PlayingSeconds,
                     IdleSeconds: IdleSeconds,
-                    PlayCount: _consecutivePlayCount,
+                    PlayCount: _submissionService.ConsecutivePlayCount,
                     DatabaseReady: DatabaseReady,
                     LocalPlayCount: LocalPlayCount
                 );
@@ -500,7 +501,7 @@ namespace Circle_Tracker
                         bool beatmapCompleted = currentGameState == GameStatus.ResultsScreen;
                         _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
                             currentGameState, beatmapCompleted, TotalBeatmapHits);
-                        TryPostBeatmapEntry(beatmapCompleted);
+                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, SoundFilePath, SubmitSoundEnabled);
 
                         Play300c = 0;
                         Play100c = 0;
@@ -568,7 +569,7 @@ namespace Circle_Tracker
                             {
                                 _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
                                     newSongTime, Time, TotalBeatmapHits);
-                                TryPostBeatmapEntry(false);
+                                _submissionService.TryPostBeatmapEntry(false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, SoundFilePath, SubmitSoundEnabled);
                             }
                             Play300c = 0;
                             Play100c = 0;
@@ -615,143 +616,6 @@ namespace Circle_Tracker
             _form.UpdateTime();
         }
 
-        public async Task FlushPendingSubmissionsAsync(CancellationToken ct = default)
-        {
-            while (true)
-            {
-                Task[] tasksToAwait;
-                lock (_submissionTasksLock)
-                {
-                    if (_activeSubmissionTasks.Count == 0)
-                    {
-                        break;
-                    }
-                    tasksToAwait = _activeSubmissionTasks.ToArray();
-                }
-
-                try
-                {
-                    await Task.WhenAll(tasksToAwait).WaitAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
-                {
-                }
-            }
-
-            await _sheetsLock.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-            }
-            finally
-            {
-                _sheetsLock.Release();
-            }
-        }
-
-        private void TryPostBeatmapEntry(bool complete)
-        {
-            if (TotalBeatmapHits < MinHitsToSubmit || _gameStateManager.IsReplay || _currentGameMode != 0)
-                return;
-
-            bool isSameMap = (!string.IsNullOrEmpty(_beatmapState.CurrentBeatmapChecksum) && _beatmapState.CurrentBeatmapChecksum == _lastLoggedBeatmapChecksum)
-                || (_beatmapState.BeatmapID > 0 && _beatmapState.BeatmapID == _lastLoggedBeatmapId)
-                || (!string.IsNullOrEmpty(_beatmapState.BeatmapString) && _beatmapState.BeatmapString == _lastLoggedBeatmapString);
-
-            if (isSameMap && _beatmapState.RawMods == _lastLoggedMods && !_lastLoggedComplete)
-            {
-                _consecutivePlayCount++;
-            }
-            else
-            {
-                _consecutivePlayCount = 1;
-                _lastLoggedBeatmapChecksum = _beatmapState.CurrentBeatmapChecksum;
-                _lastLoggedBeatmapId = _beatmapState.BeatmapID;
-                _lastLoggedBeatmapString = _beatmapState.BeatmapString;
-                _lastLoggedMods = _beatmapState.RawMods;
-            }
-
-            _lastLoggedComplete = complete;
-
-            float clockRate = _beatmapState.LastClockRate > 0 ? _beatmapState.LastClockRate : (_beatmapState.Doubletime ? 1.5f : _beatmapState.Halftime ? 0.75f : 1f);
-            int playTime = (int)(Math.Max(0, Time - _beatmapState.FirstHitObjectTime) / clockRate / 1000f);
-            bool accuracyReliable = Accuracy > 0 && TotalBeatmapHits > 0;
-
-            var data = new PlayEntryData(
-                BeatmapString: _beatmapState.BeatmapString,
-                BeatmapSetID: _beatmapState.BeatmapSetID,
-                BeatmapID: _beatmapState.BeatmapID,
-                Hidden: _beatmapState.Hidden,
-                Hardrock: _beatmapState.Hardrock,
-                Doubletime: _beatmapState.Doubletime,
-                EZ: _beatmapState.EZ,
-                Halftime: _beatmapState.Halftime,
-                Flashlight: _beatmapState.Flashlight,
-                BeatmapBpm: _beatmapState.BeatmapBpm,
-                BeatmapAim: _beatmapState.BeatmapAim,
-                BeatmapSpeed: _beatmapState.BeatmapSpeed,
-                BeatmapStars: _beatmapState.BeatmapStars,
-                BeatmapCs: _beatmapState.BeatmapCs,
-                BeatmapAr: _beatmapState.BeatmapAr,
-                BeatmapOd: _beatmapState.BeatmapOd,
-                TotalBeatmapHits: TotalBeatmapHits,
-                Accuracy: Accuracy,
-                Play300c: Play300c,
-                Play100c: Play100c,
-                Play50c: Play50c,
-                PlayMissc: PlayMissc,
-                Complete: complete,
-                PlayTimeSeconds: playTime,
-                ModsString: _beatmapState.GetModsString(),
-                PlayCount: _consecutivePlayCount,
-                AccuracyReliable: accuracyReliable,
-                BeatmapTitle: _beatmapState.BeatmapTitle,
-                BeatmapArtist: _beatmapState.BeatmapArtist,
-                BeatmapVersion: _beatmapState.BeatmapVersion,
-                BeatmapHp: _beatmapState.BeatmapHp,
-                BeatmapChecksum: _beatmapState.CurrentBeatmapChecksum
-            );
-
-            var context = new PlayContext(
-                SessionId: _sessionManager.SessionId,
-                IsReplay: _gameStateManager.IsReplay,
-                RawMods: _beatmapState.RawMods,
-                CurrentGameMode: _currentGameMode,
-                DetectedClient: _gameStateManager.DetectedClient,
-                SoundFilePath: SoundFilePath,
-                SubmitSoundEnabled: SubmitSoundEnabled
-            );
-
-            Task submissionTask;
-            lock (_submissionTasksLock)
-            {
-                submissionTask = Task.Run(async () =>
-                {
-                    await _sheetsLock.WaitAsync();
-                    try
-                    {
-                        await _sessionManager.IncrementPlaysAsync();
-                        await _playSink.TryLogPlayAsync(data, context);
-                        PlayLogged?.Invoke(this, (data, context));
-                    }
-                    finally
-                    {
-                        _sheetsLock.Release();
-                    }
-                });
-                _activeSubmissionTasks.Add(submissionTask);
-            }
-
-            _ = submissionTask.ContinueWith(t =>
-            {
-                lock (_submissionTasksLock)
-                {
-                    _activeSubmissionTasks.Remove(t);
-                }
-            }, TaskScheduler.Default);
-        }
+        public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _submissionService.FlushPendingSubmissionsAsync(ct);
     }
 }
