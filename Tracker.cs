@@ -142,16 +142,8 @@ namespace Circle_Tracker
         public bool DisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
         private readonly IGameStateManager _gameStateManager;
         public string DetectedClient => _gameStateManager.DetectedClient;
-
-        private string _currentBeatmapChecksum = "";
-        private int BeatmapID { get; set; }
-        private int BeatmapSetID { get; set; }
-        private string BeatmapString { get; set; } = "";
-        private string _beatmapTitle = "";
-        private string _beatmapArtist = "";
-        private string _beatmapVersion = "";
-        private decimal _beatmapHp;
-        private int BeatmapBpm { get; set; }
+        private readonly IBeatmapStateTracker _beatmapState;
+        public IBeatmapStateTracker BeatmapState => _beatmapState;
 
         public bool SubmitSoundEnabled { get; set; }
 
@@ -160,21 +152,7 @@ namespace Circle_Tracker
             get => _gameStateManager.Username;
             set => _gameStateManager.Username = value;
         }
-        private int RawMods { get; set; } = 0;
-        private bool Hidden { get; set; } = false;
-        private bool Hardrock { get; set; } = false;
-        private bool Doubletime { get; set; } = false;
-        private bool EZ { get; set; } = false;
-        private bool Halftime { get; set; } = false;
-        private bool Flashlight { get; set; } = false;
-        private bool Auto { get; set; } = false;
 
-        private decimal BeatmapStars { get; set; }
-        private decimal BeatmapAim { get; set; }
-        private decimal BeatmapSpeed { get; set; }
-        private decimal BeatmapCs { get; set; }
-        private decimal BeatmapAr { get; set; }
-        private decimal BeatmapOd { get; set; }
         private int Play300c { get; set; } = 0;
         private int Play100c { get; set; } = 0;
         private int Play50c { get; set; } = 0;
@@ -183,8 +161,6 @@ namespace Circle_Tracker
         private decimal Accuracy { get; set; } = 0;
         private int Time { get; set; } = 0;
 
-        private int _firstHitObjectTime = 0;
-        private float _lastClockRate = 1f;
         private int _currentGameMode = 0;
 
         private DateTime LastPostTime { get; set; }
@@ -199,7 +175,6 @@ namespace Circle_Tracker
         private int _lastLoggedMods = -1;
         private int _consecutivePlayCount = 0;
         private bool _lastLoggedComplete = false;
-        private CancellationTokenSource? _ppApiCts;
 
         public bool DatabaseReady => _dbManager?.IsHealthy ?? false;
         public int LocalPlayCount => _localSqliteSink?.TotalPlaysRecorded ?? 0;
@@ -242,6 +217,7 @@ namespace Circle_Tracker
             _form = form;
             _tosuClient = tosuClient;
             _gameStateManager = new GameStateManager();
+            _beatmapState = new BeatmapStateTracker(tosuClient);
 
             var sheetsManager = new GoogleSheetsManager(form, GetFunctionSeparator);
             sheetsManager.OnSettingsChanged = SaveSettings;
@@ -278,6 +254,7 @@ namespace Circle_Tracker
             _form = form;
             _tosuClient = tosuClient;
             _gameStateManager = new GameStateManager();
+            _beatmapState = new BeatmapStateTracker(tosuClient);
             _sheetsManager = sheetsSink;
             _sheetsManager.OnSettingsChanged = SaveSettings;
 
@@ -297,11 +274,12 @@ namespace Circle_Tracker
             LastPostTime = DateTime.Now;
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null)
+        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null)
         {
             _form = form;
             _tosuClient = tosuClient;
             _gameStateManager = gameStateManager ?? new GameStateManager();
+            _beatmapState = beatmapState ?? new BeatmapStateTracker(tosuClient);
             _playSink = playSink;
             _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, GetFunctionSeparator);
             _sheetsManager.OnSettingsChanged = SaveSettings;
@@ -436,20 +414,20 @@ namespace Circle_Tracker
                     IsPlaying: _gameStateManager.IsPlaying,
                     IsReplay: _gameStateManager.IsReplay,
                     DetectedClient: _gameStateManager.DetectedClient,
-                    BeatmapString: BeatmapString ?? "",
-                    BeatmapTitle: _beatmapTitle,
-                    BeatmapArtist: _beatmapArtist,
-                    BeatmapVersion: _beatmapVersion,
-                    BeatmapId: BeatmapID,
-                    BeatmapSetId: BeatmapSetID,
-                    BeatmapHp: _beatmapHp,
-                    BeatmapStars: BeatmapStars,
-                    BeatmapAim: BeatmapAim,
-                    BeatmapSpeed: BeatmapSpeed,
-                    BeatmapCs: BeatmapCs,
-                    BeatmapAr: BeatmapAr,
-                    BeatmapOd: BeatmapOd,
-                    BeatmapBpm: BeatmapBpm,
+                    BeatmapString: _beatmapState.BeatmapString ?? "",
+                    BeatmapTitle: _beatmapState.BeatmapTitle,
+                    BeatmapArtist: _beatmapState.BeatmapArtist,
+                    BeatmapVersion: _beatmapState.BeatmapVersion,
+                    BeatmapId: _beatmapState.BeatmapID,
+                    BeatmapSetId: _beatmapState.BeatmapSetID,
+                    BeatmapHp: _beatmapState.BeatmapHp,
+                    BeatmapStars: _beatmapState.BeatmapStars,
+                    BeatmapAim: _beatmapState.BeatmapAim,
+                    BeatmapSpeed: _beatmapState.BeatmapSpeed,
+                    BeatmapCs: _beatmapState.BeatmapCs,
+                    BeatmapAr: _beatmapState.BeatmapAr,
+                    BeatmapOd: _beatmapState.BeatmapOd,
+                    BeatmapBpm: _beatmapState.BeatmapBpm,
                     TotalBeatmapHits: TotalBeatmapHits,
                     Play300c: Play300c,
                     Play100c: Play100c,
@@ -457,7 +435,7 @@ namespace Circle_Tracker
                     PlayMissc: PlayMissc,
                     Accuracy: Accuracy,
                     Time: Time,
-                    ModsString: GetModsString(),
+                    ModsString: _beatmapState.GetModsString(),
                     GameStateLabel: _gameStateManager.GameStateLabel,
                     SheetsApiReady: SheetsApiReady,
                     MemoryReadError: _gameStateManager.MemoryReadError,
@@ -470,104 +448,7 @@ namespace Circle_Tracker
             }
         }
 
-        private string GetModsString()
-        {
-            string mods = "";
-            if (Auto) mods += "AT";
-            if (EZ) mods += "EZ";
-            if (Halftime) mods += "HT";
-            if (Hidden) mods += "HD";
-            if (Hardrock) mods += "HR";
-            if (Doubletime) mods += "DT";
-            if (Flashlight) mods += "FL";
-            return mods;
-        }
-
         public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
-
-        private void UpdateModsFromBitfield(int rawMods)
-        {
-            RawMods = rawMods;
-            var mods = (OsuMods)rawMods;
-            Hidden = mods.HasFlag(OsuMods.Hidden);
-            Hardrock = mods.HasFlag(OsuMods.HardRock);
-            Doubletime = mods.HasFlag(OsuMods.DoubleTime) || mods.HasFlag(OsuMods.Nightcore);
-            EZ = mods.HasFlag(OsuMods.Easy);
-            Halftime = mods.HasFlag(OsuMods.HalfTime);
-            Flashlight = mods.HasFlag(OsuMods.Flashlight);
-            Auto = mods.HasFlag(OsuMods.Autoplay);
-        }
-
-        private void UpdateBeatmapFromState(TosuState state)
-        {
-            var bm = state.Beatmap;
-            if (bm == null) return;
-
-            BeatmapID = bm.Id;
-            BeatmapSetID = bm.Set;
-            _beatmapTitle = bm.Title ?? "";
-            _beatmapArtist = bm.Artist ?? "";
-            _beatmapVersion = bm.Version ?? "";
-            _beatmapHp = bm.Stats?.Hp?.Converted ?? bm.Stats?.Hp?.Original ?? 0;
-            BeatmapString = $"{bm.Artist} - {bm.Title} [{bm.Version}]";
-            BeatmapBpm = (int)Math.Round((double)(bm.Stats?.Bpm?.Common ?? 0));
-
-            _firstHitObjectTime = bm.Time?.FirstObject ?? 0;
-
-            decimal totalStars = bm.Stats?.Stars?.Total ?? 0;
-            decimal liveStars = bm.Stats?.Stars?.Live ?? 0;
-            BeatmapStars = totalStars > 0 ? totalStars : liveStars;
-            BeatmapAim = bm.Stats?.Stars?.Aim ?? 0;
-            BeatmapSpeed = bm.Stats?.Stars?.Speed ?? 0;
-
-            BeatmapCs = bm.Stats?.Cs?.Converted ?? bm.Stats?.Cs?.Original ?? 0;
-            BeatmapAr = bm.Stats?.Ar?.Converted ?? bm.Stats?.Ar?.Original ?? 0;
-            BeatmapOd = bm.Stats?.Od?.Converted ?? bm.Stats?.Od?.Original ?? 0;
-        }
-
-        private void FireUpdateDifficultyFromPpApi(int modNumber)
-        {
-            _ppApiCts?.Cancel();
-            _ppApiCts = new CancellationTokenSource();
-            _ = UpdateDifficultyFromPpApi(modNumber, _ppApiCts.Token);
-        }
-
-        private async Task UpdateDifficultyFromPpApi(int modNumber, CancellationToken ct = default)
-        {
-            try
-            {
-                var ppResult = await _tosuClient.CalculatePpAsync(modNumber, ct);
-                var diff = ppResult?.Difficulty ?? ppResult?.Performance?.Difficulty;
-                if (diff != null)
-                {
-                    if (BeatmapAim == 0 && diff.Aim > 0) BeatmapAim = diff.Aim;
-                    if (BeatmapSpeed == 0 && diff.Speed > 0) BeatmapSpeed = diff.Speed;
-                    if (BeatmapStars == 0 && diff.Stars > 0) BeatmapStars = diff.Stars;
-                    if (BeatmapAr == 0 && diff.Ar > 0) BeatmapAr = diff.Ar;
-                    if (BeatmapOd == 0 && diff.Od > 0) BeatmapOd = diff.Od;
-                    if (BeatmapCs == 0 && diff.Cs > 0) BeatmapCs = diff.Cs;
-                    if (_beatmapHp == 0 && diff.Hp > 0) _beatmapHp = diff.Hp;
-                    if (BeatmapBpm == 0 && diff.Bpm > 0) BeatmapBpm = (int)Math.Round((double)diff.Bpm);
-                    if (diff.ClockRate > 0)
-                        _lastClockRate = (float)diff.ClockRate;
-                }
-                if (ppResult?.Attributes != null)
-                {
-                    var attr = ppResult.Attributes;
-                    if (BeatmapAr == 0 && attr.Ar > 0) BeatmapAr = attr.Ar;
-                    if (BeatmapOd == 0 && attr.Od > 0) BeatmapOd = attr.Od;
-                    if (BeatmapCs == 0 && attr.Cs > 0) BeatmapCs = attr.Cs;
-                    if (_beatmapHp == 0 && attr.Hp > 0) _beatmapHp = attr.Hp;
-                    if (BeatmapBpm == 0 && attr.Bpm > 0) BeatmapBpm = (int)Math.Round((double)attr.Bpm);
-                    if (attr.ClockRate > 0)
-                        _lastClockRate = (float)attr.ClockRate;
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "Failed to update difficulty from PP API");
-            }
-        }
 
         public void Tick()
         {
@@ -592,24 +473,24 @@ namespace Circle_Tracker
                 bool songSelectGameState = _gameStateManager.IsSongSelectState(currentGameState);
 
                 string newChecksum = state.Beatmap?.Checksum ?? "";
-                if (newChecksum != _currentBeatmapChecksum && newChecksum != "")
+                if (newChecksum != _beatmapState.CurrentBeatmapChecksum && newChecksum != "")
                 {
-                    _currentBeatmapChecksum = newChecksum;
-                    UpdateBeatmapFromState(state);
-                    FireUpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
+                    _beatmapState.CurrentBeatmapChecksum = newChecksum;
+                    _beatmapState.UpdateBeatmapFromState(state);
+                    _beatmapState.FireUpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
                 }
 
                 _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
 
-                if (_gameStateManager.MemoryReadError && string.IsNullOrEmpty(BeatmapString))
-                    BeatmapString = "";
+                if (_gameStateManager.MemoryReadError && string.IsNullOrEmpty(_beatmapState.BeatmapString))
+                    _beatmapState.BeatmapString = "";
 
                 if (state.Beatmap?.Stats?.Stars != null)
                 {
                     var stars = state.Beatmap.Stats.Stars;
-                    if (stars.Total > 0) BeatmapStars = stars.Total;
-                    if (stars.Aim > 0) BeatmapAim = stars.Aim;
-                    if (stars.Speed > 0) BeatmapSpeed = stars.Speed;
+                    if (stars.Total > 0) _beatmapState.BeatmapStars = stars.Total;
+                    if (stars.Aim > 0) _beatmapState.BeatmapAim = stars.Aim;
+                    if (stars.Speed > 0) _beatmapState.BeatmapSpeed = stars.Speed;
                 }
 
                 if (currentGameState != previousGameState)
@@ -634,11 +515,11 @@ namespace Circle_Tracker
                 if (songSelectGameState && state.Play?.Mods != null)
                 {
                     int newMods = state.Play.Mods.Number;
-                    if (newMods != RawMods)
+                    if (newMods != _beatmapState.RawMods)
                     {
-                        UpdateModsFromBitfield(newMods);
-                        UpdateBeatmapFromState(state);
-                        FireUpdateDifficultyFromPpApi(newMods);
+                        _beatmapState.UpdateModsFromBitfield(newMods);
+                        _beatmapState.UpdateBeatmapFromState(state);
+                        _beatmapState.FireUpdateDifficultyFromPpApi(newMods);
                     }
                 }
 
@@ -704,7 +585,7 @@ namespace Circle_Tracker
                     }
 
                     if (state.Play.Mods != null)
-                        UpdateModsFromBitfield(state.Play.Mods.Number);
+                        _beatmapState.UpdateModsFromBitfield(state.Play.Mods.Number);
                 }
             }
         }
@@ -776,46 +657,46 @@ namespace Circle_Tracker
             if (TotalBeatmapHits < MinHitsToSubmit || _gameStateManager.IsReplay || _currentGameMode != 0)
                 return;
 
-            bool isSameMap = (!string.IsNullOrEmpty(_currentBeatmapChecksum) && _currentBeatmapChecksum == _lastLoggedBeatmapChecksum)
-                || (BeatmapID > 0 && BeatmapID == _lastLoggedBeatmapId)
-                || (!string.IsNullOrEmpty(BeatmapString) && BeatmapString == _lastLoggedBeatmapString);
+            bool isSameMap = (!string.IsNullOrEmpty(_beatmapState.CurrentBeatmapChecksum) && _beatmapState.CurrentBeatmapChecksum == _lastLoggedBeatmapChecksum)
+                || (_beatmapState.BeatmapID > 0 && _beatmapState.BeatmapID == _lastLoggedBeatmapId)
+                || (!string.IsNullOrEmpty(_beatmapState.BeatmapString) && _beatmapState.BeatmapString == _lastLoggedBeatmapString);
 
-            if (isSameMap && RawMods == _lastLoggedMods && !_lastLoggedComplete)
+            if (isSameMap && _beatmapState.RawMods == _lastLoggedMods && !_lastLoggedComplete)
             {
                 _consecutivePlayCount++;
             }
             else
             {
                 _consecutivePlayCount = 1;
-                _lastLoggedBeatmapChecksum = _currentBeatmapChecksum;
-                _lastLoggedBeatmapId = BeatmapID;
-                _lastLoggedBeatmapString = BeatmapString;
-                _lastLoggedMods = RawMods;
+                _lastLoggedBeatmapChecksum = _beatmapState.CurrentBeatmapChecksum;
+                _lastLoggedBeatmapId = _beatmapState.BeatmapID;
+                _lastLoggedBeatmapString = _beatmapState.BeatmapString;
+                _lastLoggedMods = _beatmapState.RawMods;
             }
 
             _lastLoggedComplete = complete;
 
-            float clockRate = _lastClockRate > 0 ? _lastClockRate : (Doubletime ? 1.5f : Halftime ? 0.75f : 1f);
-            int playTime = (int)(Math.Max(0, Time - _firstHitObjectTime) / clockRate / 1000f);
+            float clockRate = _beatmapState.LastClockRate > 0 ? _beatmapState.LastClockRate : (_beatmapState.Doubletime ? 1.5f : _beatmapState.Halftime ? 0.75f : 1f);
+            int playTime = (int)(Math.Max(0, Time - _beatmapState.FirstHitObjectTime) / clockRate / 1000f);
             bool accuracyReliable = Accuracy > 0 && TotalBeatmapHits > 0;
 
             var data = new PlayEntryData(
-                BeatmapString: BeatmapString,
-                BeatmapSetID: BeatmapSetID,
-                BeatmapID: BeatmapID,
-                Hidden: Hidden,
-                Hardrock: Hardrock,
-                Doubletime: Doubletime,
-                EZ: EZ,
-                Halftime: Halftime,
-                Flashlight: Flashlight,
-                BeatmapBpm: BeatmapBpm,
-                BeatmapAim: BeatmapAim,
-                BeatmapSpeed: BeatmapSpeed,
-                BeatmapStars: BeatmapStars,
-                BeatmapCs: BeatmapCs,
-                BeatmapAr: BeatmapAr,
-                BeatmapOd: BeatmapOd,
+                BeatmapString: _beatmapState.BeatmapString,
+                BeatmapSetID: _beatmapState.BeatmapSetID,
+                BeatmapID: _beatmapState.BeatmapID,
+                Hidden: _beatmapState.Hidden,
+                Hardrock: _beatmapState.Hardrock,
+                Doubletime: _beatmapState.Doubletime,
+                EZ: _beatmapState.EZ,
+                Halftime: _beatmapState.Halftime,
+                Flashlight: _beatmapState.Flashlight,
+                BeatmapBpm: _beatmapState.BeatmapBpm,
+                BeatmapAim: _beatmapState.BeatmapAim,
+                BeatmapSpeed: _beatmapState.BeatmapSpeed,
+                BeatmapStars: _beatmapState.BeatmapStars,
+                BeatmapCs: _beatmapState.BeatmapCs,
+                BeatmapAr: _beatmapState.BeatmapAr,
+                BeatmapOd: _beatmapState.BeatmapOd,
                 TotalBeatmapHits: TotalBeatmapHits,
                 Accuracy: Accuracy,
                 Play300c: Play300c,
@@ -824,20 +705,20 @@ namespace Circle_Tracker
                 PlayMissc: PlayMissc,
                 Complete: complete,
                 PlayTimeSeconds: playTime,
-                ModsString: GetModsString(),
+                ModsString: _beatmapState.GetModsString(),
                 PlayCount: _consecutivePlayCount,
                 AccuracyReliable: accuracyReliable,
-                BeatmapTitle: _beatmapTitle,
-                BeatmapArtist: _beatmapArtist,
-                BeatmapVersion: _beatmapVersion,
-                BeatmapHp: _beatmapHp,
-                BeatmapChecksum: _currentBeatmapChecksum
+                BeatmapTitle: _beatmapState.BeatmapTitle,
+                BeatmapArtist: _beatmapState.BeatmapArtist,
+                BeatmapVersion: _beatmapState.BeatmapVersion,
+                BeatmapHp: _beatmapState.BeatmapHp,
+                BeatmapChecksum: _beatmapState.CurrentBeatmapChecksum
             );
 
             var context = new PlayContext(
                 SessionId: _sessionManager.SessionId,
                 IsReplay: _gameStateManager.IsReplay,
-                RawMods: RawMods,
+                RawMods: _beatmapState.RawMods,
                 CurrentGameMode: _currentGameMode,
                 DetectedClient: _gameStateManager.DetectedClient,
                 SoundFilePath: SoundFilePath,
