@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Net.Http;
@@ -165,13 +164,6 @@ namespace Circle_Tracker
             IsConnected = false;
         }
 
-        private static readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore,
-            MissingMemberHandling = MissingMemberHandling.Ignore,
-            Error = (_, args) => { args.ErrorContext.Handled = true; }
-        };
-
         public static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -295,7 +287,7 @@ namespace Circle_Tracker
                 if (response.IsSuccessStatusCode)
                 {
                     string json = await response.Content.ReadAsStringAsync(ct);
-                    return JsonConvert.DeserializeObject<PpCalcResult>(json);
+                    return System.Text.Json.JsonSerializer.Deserialize<PpCalcResult>(json, SerializerOptions);
                 }
             }
             catch (OperationCanceledException)

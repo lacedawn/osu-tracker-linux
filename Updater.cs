@@ -1,18 +1,19 @@
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
     public class Release
     {
-        [JsonProperty("tag_name")] public string? TagName { get; set; }
-        [JsonProperty("html_url")] public string? HtmlUrl { get; set; }
-        [JsonProperty("body")] public string? Body { get; set; }
+        [JsonPropertyName("tag_name")] public string? TagName { get; set; }
+        [JsonPropertyName("html_url")] public string? HtmlUrl { get; set; }
+        [JsonPropertyName("body")] public string? Body { get; set; }
     }
 
     public class Updater
@@ -115,7 +116,8 @@ namespace Circle_Tracker
                 if (response.IsSuccessStatusCode)
                 {
                     string responseJson = await response.Content.ReadAsStringAsync();
-                    latestRelease = JsonConvert.DeserializeObject<Release>(responseJson);
+                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    latestRelease = JsonSerializer.Deserialize<Release>(responseJson, options);
                 }
             }
             catch (Exception e)

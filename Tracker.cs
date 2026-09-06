@@ -1,12 +1,12 @@
 using Circle_Tracker.Analytics;
 using Circle_Tracker.Storage;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -343,7 +343,7 @@ namespace Circle_Tracker
                     TosuPort = TosuPort,
                     DisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused
                 };
-                string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+                string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
             }
             catch (Exception ex)
@@ -378,7 +378,7 @@ namespace Circle_Tracker
             try
             {
                 string json = File.ReadAllText(SettingsFilePath);
-                var settings = JsonConvert.DeserializeObject<UserSettings>(json);
+                var settings = JsonSerializer.Deserialize<UserSettings>(json);
                 if (settings != null)
                 {
                     EnableLocalLogging = settings.EnableLocalLogging;
