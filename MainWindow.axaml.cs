@@ -107,7 +107,7 @@ namespace Circle_Tracker
             try
             {
                 IsEnabled = false;
-                if (_viewModel != null && _viewModel.LiveSessionCardVisible)
+                if (_viewModel != null && _viewModel.SessionLive.LiveSessionCardVisible)
                 {
                     await ShowSessionSummaryDialogAsync();
                 }

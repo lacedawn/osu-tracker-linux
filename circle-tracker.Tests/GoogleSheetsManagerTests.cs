@@ -197,5 +197,24 @@ namespace CircleTracker.Tests
 
             row[13].Should().Be(0m);
         }
+
+        [Fact]
+        public void GetSkipReason_WhenCircuitBreakerOpen_ReturnsCircuitBreakerReason()
+        {
+            var manager = MakeManager();
+            var data = MakeData();
+            var circuitBreakerField = typeof(GoogleSheetsManager)
+                .GetField("_circuitBreaker", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var circuitBreaker = circuitBreakerField!.GetValue(manager) as Circle_Tracker.Services.CircuitBreaker;
+
+            circuitBreaker!.RecordFailure();
+            circuitBreaker!.RecordFailure();
+            circuitBreaker!.RecordFailure();
+
+            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.Now.AddSeconds(-10));
+
+            reason.Should().Contain("Circuit breaker");
+            reason.Should().Contain("temporarily unavailable");
+        }
     }
 }

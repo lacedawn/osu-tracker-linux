@@ -30,6 +30,68 @@ public class MainWindowViewModelTests
     }
 
     [AvaloniaFact]
+    public void SubViewModels_AreNotNull_AfterConstruction()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.Hud.Should().NotBeNull();
+        viewModel.Banner.Should().NotBeNull();
+        viewModel.Settings.Should().NotBeNull();
+        viewModel.SessionLive.Should().NotBeNull();
+    }
+
+    [AvaloniaFact]
+    public void Hud_PropertyChange_NotifiesCorrectly()
+    {
+        var viewModel = CreateViewModel();
+        var propertyChanged = false;
+        viewModel.Hud.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(GameplayHudViewModel.GameState))
+                propertyChanged = true;
+        };
+
+        viewModel.Hud.GameState = "TEST_STATE";
+
+        propertyChanged.Should().BeTrue();
+        viewModel.Hud.GameState.Should().Be("TEST_STATE");
+    }
+
+    [AvaloniaFact]
+    public void Banner_PropertyChange_NotifiesCorrectly()
+    {
+        var viewModel = CreateViewModel();
+        var propertyChanged = false;
+        viewModel.Banner.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(BeatmapBannerViewModel.BeatmapTitle))
+                propertyChanged = true;
+        };
+
+        viewModel.Banner.BeatmapTitle = "TEST_TITLE";
+
+        propertyChanged.Should().BeTrue();
+        viewModel.Banner.BeatmapTitle.Should().Be("TEST_TITLE");
+    }
+
+    [AvaloniaFact]
+    public void StatusText_SetValue_NotifiesPropertyChanged()
+    {
+        var viewModel = CreateViewModel();
+        var propertyChanged = false;
+        viewModel.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.StatusText))
+                propertyChanged = true;
+        };
+
+        viewModel.StatusText = "Test Status";
+
+        propertyChanged.Should().BeTrue();
+        viewModel.StatusText.Should().Be("Test Status");
+    }
+
+    [AvaloniaFact]
     public async Task MainWindowViewModel_OnTrackerPlayProcessed_UpdatesObservablePropertiesOnUIThread()
     {
         var viewModel = CreateViewModel();
@@ -80,12 +142,12 @@ public class MainWindowViewModelTests
     {
         var viewModel = CreateViewModel();
 
-        viewModel.BeatmapTitle.Should().Be("No beatmap detected");
-        viewModel.BeatmapArtist.Should().Be("-");
-        viewModel.BeatmapVersion.Should().Be("-");
-        viewModel.GameState.Should().Be("IDLE");
-        viewModel.LiveSessionCardVisible.Should().BeFalse();
-        viewModel.AchievementBannerVisible.Should().BeFalse();
+        viewModel.Banner.BeatmapTitle.Should().Be("No beatmap detected");
+        viewModel.Banner.BeatmapArtist.Should().Be("-");
+        viewModel.Banner.BeatmapVersion.Should().Be("-");
+        viewModel.Hud.GameState.Should().Be("IDLE");
+        viewModel.SessionLive.LiveSessionCardVisible.Should().BeFalse();
+        viewModel.SessionLive.AchievementBannerVisible.Should().BeFalse();
     }
 
     [AvaloniaFact]
@@ -141,9 +203,9 @@ public class MainWindowViewModelTests
 
         await Task.Delay(50);
 
-        viewModel.BeatmapTitle.Should().Be("Test Beatmap");
-        viewModel.BeatmapArtist.Should().Be("Test Artist");
-        viewModel.GameState.Should().Be("PLAYING");
+        viewModel.Banner.BeatmapTitle.Should().Be("Test Beatmap");
+        viewModel.Banner.BeatmapArtist.Should().Be("Test Artist");
+        viewModel.Hud.GameState.Should().Be("PLAYING");
     }
 
     [AvaloniaFact]

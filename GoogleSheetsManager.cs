@@ -1,3 +1,4 @@
+using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Google;
 using Google.Apis.Auth.OAuth2;
@@ -128,6 +129,7 @@ namespace Circle_Tracker
 
         private readonly IMainWindow _form;
         private readonly Func<string> _getFunctionSeparator;
+        private readonly CircuitBreaker _circuitBreaker = new(failureThreshold: 3, openDuration: TimeSpan.FromSeconds(60));
 
         private SheetsService? _sheetsService;
         private Spreadsheet? _userSpreadsheet;
@@ -371,6 +373,8 @@ namespace Circle_Tracker
             int currentGameMode, DateTime lastPostTime)
         {
             if (!SheetsApiReady) return "Sheets API not connected";
+            if (_circuitBreaker.CurrentState == CircuitState.Open)
+                return "Circuit breaker open (Google Sheets temporarily unavailable)";
             if (isReplay) return "Replay detected";
             if (currentGameMode != 0) return $"Non-standard game mode ({currentGameMode})";
             var mods = (OsuMods)rawMods;
@@ -426,30 +430,50 @@ namespace Circle_Tracker
 
         private async Task<AppendValuesResponse> SubmitRowAsync(List<object> rowData, CancellationToken ct)
         {
+            if (!_circuitBreaker.AllowRequest())
+            {
+                _log.LogWarning("Circuit breaker prevented Google Sheets submission (state: {State})", _circuitBreaker.CurrentState);
+                throw new InvalidOperationException("Circuit breaker is open");
+            }
+
             string range = $"'{SheetName}'!A:X";
             var valueRange = new ValueRange { Values = new List<IList<object>> { rowData } };
             var appendRequest = _sheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
             appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
             _log.LogInformation("Appending row to Google Sheets ({Range})...", range);
+
+            bool allAttemptsFailed = true;
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
                 try
                 {
-                    return await appendRequest.ExecuteAsync(ct);
+                    var response = await appendRequest.ExecuteAsync(ct);
+                    _circuitBreaker.RecordSuccess();
+                    return response;
                 }
                 catch (GoogleApiException ex) when ((int)ex.HttpStatusCode is 429 or 503)
                 {
-                    if (i == MaxSubmitAttempts - 1) throw;
+                    if (i == MaxSubmitAttempts - 1)
+                    {
+                        _circuitBreaker.RecordFailure();
+                        throw;
+                    }
                     int delayMs = BaseRetryDelayMs * (1 << i);
                     _log.LogWarning("Transient error ({StatusCode}), retrying in {DelayMs}ms...", ex.HttpStatusCode, delayMs);
                     await Task.Delay(delayMs, ct);
                 }
                 catch (Exception ex)
                 {
-                    if (i == MaxSubmitAttempts - 1) throw;
+                    if (i == MaxSubmitAttempts - 1)
+                    {
+                        _circuitBreaker.RecordFailure();
+                        throw;
+                    }
                     _log.LogError(ex, "Submit attempt {Attempt} failed", i + 1);
                 }
             }
+
+            _circuitBreaker.RecordFailure();
             throw new InvalidOperationException("Unreachable");
         }
 
