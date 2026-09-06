@@ -98,4 +98,57 @@ public class SoundHelperTests
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public async Task PlaySoundAsync_EmptyPath_LogsWarningAndReturns()
+    {
+        Func<Task> act = async () => await SoundHelper.PlaySoundAsync("");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task PlaySoundAsync_NullPath_LogsWarningAndReturns()
+    {
+        Func<Task> act = async () => await SoundHelper.PlaySoundAsync(null!);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void PreloadSound_NonexistentFile_DoesNotThrow()
+    {
+        Action act = () => SoundHelper.PreloadSound("/path/to/nonexistent/preload.wav");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Shutdown_CalledMultipleTimes_DoesNotThrow()
+    {
+        Action act = () =>
+        {
+            SoundHelper.Shutdown();
+            SoundHelper.Shutdown();
+            SoundHelper.Shutdown();
+        };
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void PlaySound_EmptyPath_DoesNotThrow()
+    {
+        Action act = () => SoundHelper.PlaySound("");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void PlaySound_NullPath_DoesNotThrow()
+    {
+        Action act = () => SoundHelper.PlaySound(null!);
+
+        act.Should().NotThrow();
+    }
 }

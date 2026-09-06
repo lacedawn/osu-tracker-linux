@@ -265,12 +265,13 @@ namespace Circle_Tracker
             await writeRequest.ExecuteAsync(ct);
         }
 
-        private void PromptTimezone(Spreadsheet spreadsheet)
+        private void PromptTimezone(Spreadsheet spreadsheet, CancellationToken ct = default)
         {
             if (!SpreadsheetTimezoneVerified)
             {
                 _ = Task.Run(async () =>
                 {
+                    if (ct.IsCancellationRequested) return;
                     bool confirmed = await _form.ShowYesNoDialog(
                         $"Your spreadsheet timezone is set to {spreadsheet.Properties.TimeZone}.\n\nIs this correct?",
                         "Confirm Timezone");
@@ -279,7 +280,7 @@ namespace Circle_Tracker
                         SpreadsheetTimezoneVerified = true;
                         OnSettingsChanged?.Invoke();
                     }
-                });
+                }, ct);
             }
         }
 

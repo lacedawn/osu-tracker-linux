@@ -26,6 +26,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     private readonly IPlayQueryEngine _queryEngine;
     private readonly ITosuClient? _tosuClient;
 
+    private readonly CancellationTokenSource _shutdownCts = new();
     private DateTime _sessionStartTime = DateTime.UtcNow;
 
     private DispatcherTimer? _gameTickTimer;
@@ -95,13 +96,14 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             {
                 try
                 {
-                    await _tracker.InitializeStorageAsync(silent: true);
+                    await _tracker.InitializeStorageAsync(silent: true, _shutdownCts.Token);
                 }
+                catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Failed to initialize storage");
                 }
-            });
+            }, _shutdownCts.Token);
         }
 
         if (_tosuClient != null)
@@ -115,11 +117,12 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
                 {
                     await _tosuClient.ConnectAsync();
                 }
+                catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Failed to connect to tosu");
                 }
-            });
+            }, _shutdownCts.Token);
         }
     }
 
@@ -474,6 +477,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public async Task ShutdownAsync()
     {
+        _shutdownCts.Cancel();
+
         _gameTickTimer?.Stop();
         _uiUpdateTimer?.Stop();
         _secondsTimer?.Stop();
@@ -535,6 +540,9 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             }
             catch { }
         }
+
+        SoundHelper.Shutdown();
+        _shutdownCts.Dispose();
     }
 
     void IMainWindow.SetCredentialsFound(bool found)

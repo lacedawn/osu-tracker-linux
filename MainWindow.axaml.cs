@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -15,6 +16,7 @@ namespace Circle_Tracker
     {
         private static readonly ILogger<MainWindow> _log = AppLogger.For<MainWindow>();
         private readonly MainWindowViewModel? _viewModel;
+        private readonly CancellationTokenSource _updateCheckCts = new();
         private bool _isExplicitShutdownComplete;
 
         public MainWindow() : this(null!)
@@ -46,11 +48,12 @@ namespace Circle_Tracker
                 {
                     await Updater.CheckForUpdates();
                 }
+                catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Update check failed");
                 }
-            });
+            }, _updateCheckCts.Token);
         }
 
         private void OpenAnalyticsWindow()
@@ -103,6 +106,8 @@ namespace Circle_Tracker
             }
 
             e.Cancel = true;
+
+            _updateCheckCts.Cancel();
 
             try
             {

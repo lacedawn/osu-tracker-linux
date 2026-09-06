@@ -211,7 +211,7 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
 
         Task submissionTask = Task.Run(async () =>
         {
-            await _sheetsLock.WaitAsync();
+            await _sheetsLock.WaitAsync(CancellationToken.None);
             try
             {
                 await _sessionManager.IncrementPlaysAsync();
@@ -222,7 +222,7 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             {
                 _sheetsLock.Release();
             }
-        });
+        }, CancellationToken.None);
 
         _activeSubmissionTasks.TryAdd(submissionTask, 0);
 

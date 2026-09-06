@@ -50,6 +50,21 @@ namespace Circle_Tracker
             _ = Task.Run(() => PlaySoundAsync(path));
         }
 
+        public static void Shutdown()
+        {
+            if (OpenAlAudioEngine.IsAvailable && OpenAlAudioEngine._instance.IsValueCreated)
+            {
+                try
+                {
+                    OpenAlAudioEngine.Instance.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Error disposing OpenAL audio engine during shutdown");
+                }
+            }
+        }
+
         public static async Task PlaySoundAsync(string path, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -234,7 +249,7 @@ namespace Circle_Tracker
         private sealed class OpenAlAudioEngine : IDisposable
         {
             private const int MaxConcurrentSources = 16;
-            private static readonly Lazy<OpenAlAudioEngine?> _instance = new(CreateEngine);
+            internal static readonly Lazy<OpenAlAudioEngine?> _instance = new(CreateEngine);
 
             private readonly ALContext _alc;
             private readonly AL _al;
@@ -329,7 +344,20 @@ namespace Circle_Tracker
                     lock (_lock)
                     {
                         _al.SetSourceProperty(source, SourceInteger.Buffer, (int)bufferId);
+                        var error = _al.GetError();
+                        if (error != AudioError.NoError)
+                        {
+                            _log.LogWarning("OpenAL SetSourceProperty failed with error {Error} for path {Path}", error, path);
+                            return false;
+                        }
+
                         _al.SourcePlay(source);
+                        error = _al.GetError();
+                        if (error != AudioError.NoError)
+                        {
+                            _log.LogWarning("OpenAL SourcePlay failed with error {Error} for path {Path}", error, path);
+                            return false;
+                        }
                     }
 
                     int waitMs = Math.Clamp(durationMs, 50, 10000);

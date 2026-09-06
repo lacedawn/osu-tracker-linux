@@ -108,6 +108,7 @@ namespace Circle_Tracker
 
         private const int MinHitsToSubmit = 40;
         private const int MaxHitJumpPerTick = 50;
+        private const int MaxTimeBetweenHitsMs = 30000;
 
         private readonly IMainWindow _form;
         private readonly ITosuClient _tosuClient;
@@ -416,10 +417,20 @@ namespace Circle_Tracker
                         if (newMissc > PlayMissc)
                             PlayMissc = newMissc;
 
+                        if (newHits < TotalBeatmapHits && newSongTime >= Time)
+                        {
+                            _log.LogWarning("Hit count regression detected: {NewHits} < {TotalHits} without time rewind", newHits, TotalBeatmapHits);
+                        }
+
                         if (newHits > TotalBeatmapHits)
                         {
                             int hitDelta = newHits - TotalBeatmapHits;
                             int timeDelta = newSongTime - Time;
+
+                            if (timeDelta > MaxTimeBetweenHitsMs && hitDelta > 0)
+                            {
+                                _log.LogInformation("Large time jump detected: {TimeDelta}ms with {HitDelta} hits (potential intro skip)", timeDelta, hitDelta);
+                            }
 
                             if (hitDelta < MaxHitJumpPerTick)
                             {

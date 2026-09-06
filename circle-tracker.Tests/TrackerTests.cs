@@ -477,6 +477,169 @@ namespace CircleTracker.Tests
             var count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays;");
             count.Should().Be(2);
         }
+
+        [Fact]
+        public async Task Tick_QuickDoubleRetry_DoesNotDoubleSubmit()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 30000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 0, songTimeMs: 500));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 0, songTimeMs: 100));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.IsAny<PlayEntryData>(), false, It.IsAny<int>(), 0,
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Once);
+        }
+
+        [Fact]
+        public void Tick_HitRegression_StateUnchanged()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 15000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 40));
+            tracker.Tick();
+        }
+
+        [Fact]
+        public async Task Tick_LargeTimeJump_AcceptsHits()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 40000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 50 && d.Complete),
+                false, It.IsAny<int>(), 0,
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Once);
+        }
+
+        [Fact]
+        public async Task Tick_NoNewHits_StateUnchanged()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 10000, accuracy: 95m));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 50, songTimeMs: 15000, accuracy: 95m));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 50),
+                false, It.IsAny<int>(), 0,
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Once);
+        }
+
+        [Fact]
+        public async Task Tick_ExactlyMinHitsOnRetry_SubmitsPlay()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, songTimeMs: 30000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 0, songTimeMs: 500));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 40 && d.Complete == false),
+                false, It.IsAny<int>(), 0,
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Once);
+        }
+
+        [Fact]
+        public async Task Tick_BelowMinHitsOnRetry_DoesNotSubmit()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 39, songTimeMs: 10000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 0, songTimeMs: 500));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Never);
+        }
+
+        [Fact]
+        public void Tick_ModChangeDuringPlay_UpdatesModFlags()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 20, songTimeMs: 5000, mods: 0));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, songTimeMs: 10000, mods: 8));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 50, checksum: "abc123"));
+            tracker.Tick();
+        }
+
+        [Fact]
+        public async Task Tick_MissCountOnlyIncreases_NeverDecreases()
+        {
+            var (tracker, client, sink) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 30, misses: 3, songTimeMs: 10000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 35, misses: 5, songTimeMs: 15000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 40, misses: 2, songTimeMs: 20000));
+            tracker.Tick();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 45, checksum: "abc123"));
+            tracker.Tick();
+            await Task.Delay(100);
+
+            sink.Verify(s => s.TryAppendPlayEntry(
+                It.Is<PlayEntryData>(d => d.PlayMissc == 5),
+                false, It.IsAny<int>(), 0,
+                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            ), Times.Once);
+        }
     }
 }
-
