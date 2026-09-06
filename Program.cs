@@ -60,9 +60,6 @@ namespace Circle_Tracker
 
             services.AddSingleton<ISettingsService, SettingsService>();
             services.AddSingleton<ITosuClient, TosuClient>();
-            services.AddSingleton<IGameStateManager, GameStateManager>();
-            services.AddSingleton<IBeatmapStateTracker, BeatmapStateTracker>();
-            services.AddSingleton<IPlaySubmissionService, PlaySubmissionService>();
             services.AddSingleton<ITrackerService, TrackerService>();
             services.AddSingleton<ISessionManager>(sp => sp.GetRequiredService<ITrackerService>().SessionManager);
             services.AddSingleton<IDatabaseManager>(sp => sp.GetRequiredService<ISessionManager>().GetDatabaseManager());

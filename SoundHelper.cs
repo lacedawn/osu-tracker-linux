@@ -351,6 +351,9 @@ namespace Circle_Tracker
                             return false;
                         }
 
+                        // Set consistent volume (1.0 = 100%)
+                        _al.SetSourceProperty(source, SourceFloat.Gain, 1.0f);
+                        
                         _al.SourcePlay(source);
                         error = _al.GetError();
                         if (error != AudioError.NoError)
