@@ -98,7 +98,7 @@ namespace CircleTracker.Tests
                     It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
-            var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: mockSink.Object));
             return (tracker, mockClient, mockSink);
         }
     }

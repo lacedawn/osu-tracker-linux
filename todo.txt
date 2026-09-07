@@ -14,7 +14,7 @@
 [DONE] ignore non-std game modes
 [DONE] ignore relax, autopilot
 [DONE] Calculate accuracy manually from 300s, 100s, 50s, misses (accuracy reading sometimes takes a while to update)
-[] Store plays in local buffer while internet unavailable
+[DONE] Store plays in local buffer while internet unavailable
 [] Add collection to spreadsheet
 [DONE] Store "#ERROR! fix" user setting
 [DONE] Automatically extend named ranges to bottom of sheet

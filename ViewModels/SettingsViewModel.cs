@@ -53,6 +53,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
     private string _spreadsheetId = "";
     private string _sheetName = "Raw Data";
     private bool _useAltFuncSeparator;
+    private int _pendingSyncCount;
 
     public SettingsViewModel(
         ITrackerService? tracker = null,
@@ -119,6 +120,23 @@ public class SettingsViewModel : ViewModelBase, IDisposable
         get => _localPlayCount;
         set => SetProperty(ref _localPlayCount, value);
     }
+
+    public int PendingSyncCount
+    {
+        get => _pendingSyncCount;
+        private set
+        {
+            if (SetProperty(ref _pendingSyncCount, value))
+            {
+                OnPropertyChanged(nameof(PendingSyncText));
+                OnPropertyChanged(nameof(HasPendingSync));
+            }
+        }
+    }
+
+    public string PendingSyncText => _pendingSyncCount > 0 ? $"{_pendingSyncCount} plays pending sync" : "";
+
+    public bool HasPendingSync => _pendingSyncCount > 0;
 
     public bool SheetsConnected
     {
@@ -350,6 +368,20 @@ public class SettingsViewModel : ViewModelBase, IDisposable
         CredentialsStatusBrush = CredentialsFound ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
     }
 
+    public async Task RefreshPendingSyncCountAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            if (_tracker == null)
+                return;
+
+            PendingSyncCount = await _tracker.GetPendingSyncCountAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
     private void SetOperationStatus(string message, IBrush brush)
     {
         SheetsOperationStatus = message;
@@ -473,6 +505,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
 
             SetOperationStatus("Syncing to Sheets...", AppBrushes.MutedBrush);
             await _tracker.SyncOfflinePlaysToSheetsAsync();
+            await RefreshPendingSyncCountAsync().ConfigureAwait(false);
             SetOperationStatus("✓ Sync completed", AppBrushes.GreenBrush);
         }
         catch (Exception ex)

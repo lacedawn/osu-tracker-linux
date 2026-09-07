@@ -236,6 +236,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
                 try
                 {
                     _tracker.TickEverySecond();
+                    _ = Settings.RefreshPendingSyncCountAsync();
                 }
                 catch (Exception ex)
                 {
@@ -531,6 +532,16 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
             catch (Exception ex)
             {
                 _log.LogError(ex, "Failed to flush submissions and end session cleanly during shutdown");
+            }
+
+            try
+            {
+                using var syncCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _tracker.StopOfflineSyncAsync(syncCts.Token);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to stop offline sync cleanly during shutdown");
             }
 
             if (_tracker.PlaySink is CompositePlaySink composite)

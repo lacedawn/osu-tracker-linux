@@ -162,26 +162,37 @@ namespace Circle_Tracker
             LastPostTime = DateTime.Now;
         }
 
-        public Tracker(IMainWindow form, ITosuClient tosuClient, IPlaySink playSink, SessionManager? sessionManager = null, ISheetsSink? sheetsSink = null, IGameStateManager? gameStateManager = null, IBeatmapStateTracker? beatmapState = null, IPlaySubmissionService? submissionService = null, ISettingsService? settings = null)
+        public Tracker(IMainWindow form, TrackerOptions options)
         {
             _form = form;
-            _tosuClient = tosuClient;
-            _settings = settings ?? new SettingsService();
-            _gameStateManager = gameStateManager ?? new GameStateManager();
+            _tosuClient = options.TosuClient;
+            _settings = options.Settings ?? new SettingsService();
+            _gameStateManager = options.GameStateManager ?? new GameStateManager();
             _gameStateManager.Username = _settings.Username;
-            _beatmapState = beatmapState ?? new BeatmapStateTracker(tosuClient);
-            _playSink = playSink;
-            _sheetsManager = sheetsSink ?? (playSink as ISheetsSink) ?? new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
+            _beatmapState = options.BeatmapStateTracker ?? new BeatmapStateTracker(options.TosuClient);
+            _playSink = ResolvePlaySink(options);
+            _sheetsManager = options.SheetsSink ?? (_playSink as ISheetsSink) ?? new GoogleSheetsManager(form, _settings.GetFunctionSeparator);
             _sheetsManager.OnSettingsChanged = _settings.SaveSettings;
             SyncSheetsSettings();
             _settings.SettingsChanged += SyncSheetsSettings;
 
             _dbManager = new SqliteDatabaseManager(":memory:");
-            _sessionManager = sessionManager ?? new SessionManager(_dbManager);
-            _submissionService = submissionService ?? new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
+            _sessionManager = options.SessionManager ?? new SessionManager(_dbManager);
+            _submissionService = options.PlaySubmissionService ?? new PlaySubmissionService(_playSink, _sessionManager, _beatmapState, _gameStateManager);
 
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
+        }
+
+        private static IPlaySink ResolvePlaySink(TrackerOptions options)
+        {
+            if (options.PlaySink is not null)
+                return options.PlaySink;
+            if (options.SheetsSink is IPlaySink sheetsPlaySink)
+                return sheetsPlaySink;
+            if (options.SheetsSink is not null)
+                return new SheetsSinkAdapter(options.SheetsSink);
+            return new CompositePlaySink();
         }
 
         public Task InitGoogleAPIAsync(bool silent = false) => _sheetsManager.InitGoogleAPIAsync(silent);

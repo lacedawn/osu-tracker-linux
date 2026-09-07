@@ -42,7 +42,7 @@ namespace CircleTracker.Tests.IntegrationTests
                 Port = _server.Port
             };
 
-            _tracker = new Tracker(_mockWindow.Object, _client, _playSink, _sessionManager);
+            _tracker = new Tracker(_mockWindow.Object, new TrackerOptions(_client, PlaySink: _playSink, SessionManager: _sessionManager));
             _client.StateUpdated += (_, _) => _tracker.Tick();
 
             await _client.ConnectAsync();

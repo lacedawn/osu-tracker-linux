@@ -436,7 +436,7 @@ namespace CircleTracker.Tests
                     Interlocked.Increment(ref callCount);
                 });
 
-            var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object, null, null);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: mockSink.Object));
             await tracker.InitializeStorageAsync(true);
 
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map1"));
@@ -477,7 +477,7 @@ namespace CircleTracker.Tests
             var localSink = new LocalSqlitePlaySink(dbManager);
             await localSink.InitializeAsync(true);
 
-            var tracker = new Tracker(mockWindow.Object, mockClient.Object, localSink, sessionManager, null);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: localSink, SessionManager: sessionManager));
 
             mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "map1"));
             tracker.Tick();

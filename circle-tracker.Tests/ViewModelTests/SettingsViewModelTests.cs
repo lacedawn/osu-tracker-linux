@@ -153,4 +153,53 @@ public class SettingsViewModelTests
         viewModel.SheetsOperationStatus.Should().Be("Sheets API not connected");
         viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
     }
+
+    [AvaloniaFact]
+    public async Task RefreshPendingSyncCountAsync_WithPendingPlays_UpdatesCount()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.GetPendingSyncCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.RefreshPendingSyncCountAsync();
+
+        viewModel.PendingSyncCount.Should().Be(3);
+    }
+
+    [AvaloniaFact]
+    public async Task PendingSyncText_WithPendingPlays_ShowsPendingMessage()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.GetPendingSyncCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.RefreshPendingSyncCountAsync();
+
+        viewModel.PendingSyncText.Should().Be("3 plays pending sync");
+    }
+
+    [AvaloniaFact]
+    public async Task RefreshPendingSyncCountAsync_WhenNoPendingPlays_ClearsText()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.GetPendingSyncCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.RefreshPendingSyncCountAsync();
+
+        viewModel.PendingSyncText.Should().Be("");
+    }
+
+    [AvaloniaFact]
+    public async Task RefreshPendingSyncCountAsync_WhenTrackerThrows_KeepsPreviousCount()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.GetPendingSyncCountAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("DB error"));
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.RefreshPendingSyncCountAsync();
+
+        viewModel.PendingSyncCount.Should().Be(0);
+    }
 }

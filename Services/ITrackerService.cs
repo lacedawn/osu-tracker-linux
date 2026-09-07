@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Circle_Tracker.Storage;
+using Circle_Tracker.Sync;
 
 namespace Circle_Tracker.Services;
 
@@ -34,5 +35,10 @@ public interface ITrackerService
     Task InitGoogleAPIAsync(bool silent = false);
     Task FlushPendingSubmissionsAsync(CancellationToken ct = default);
     Task SyncOfflinePlaysToSheetsAsync(CancellationToken ct = default);
+    IOfflinePlaySyncQueue? OfflineSyncQueue { get; }
+    Task FlushOfflineSyncAsync(CancellationToken ct = default);
+    Task<int> GetPendingSyncCountAsync(CancellationToken ct = default);
+    Task StopOfflineSyncAsync(CancellationToken ct = default);
+    void RefreshOfflineSyncState();
     Analytics.ISessionAnalyticsService? GetSessionAnalyticsService();
 }
