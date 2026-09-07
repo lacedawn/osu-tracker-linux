@@ -17,6 +17,7 @@ namespace Circle_Tracker.Storage
         private readonly CancellationTokenSource _cts = new();
         private readonly Task _workerTask;
         private int _totalPlaysRecorded = 0;
+        private int _disposed = 0;
 
         public string SinkName => "Local SQLite";
         public bool IsReady => _dbManager.IsHealthy;
@@ -171,32 +172,28 @@ namespace Circle_Tracker.Storage
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _channel.Writer.TryComplete();
-            try 
-            { 
-                if (!_workerTask.Wait(TimeSpan.FromSeconds(5))) 
-                {
-                    _cts.Cancel();
-                    _workerTask.Wait(TimeSpan.FromSeconds(2));
-                }
-            } 
-            catch { }
+            _cts.Cancel();
+            try
+            {
+                _workerTask.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException) { }
             _cts.Dispose();
         }
 
         public async ValueTask DisposeAsync()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _channel.Writer.TryComplete();
-            try 
-            { 
-                await _workerTask.WaitAsync(TimeSpan.FromSeconds(5));
-            } 
-            catch (TimeoutException)
+            _cts.Cancel();
+            try
             {
-                _cts.Cancel();
-                try { await _workerTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+                await _workerTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             }
-            catch { }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException) { }
             _cts.Dispose();
         }
     }

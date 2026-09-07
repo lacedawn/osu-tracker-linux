@@ -417,5 +417,107 @@ namespace CircleTracker.Tests.StorageTests
             int count = await verifyConn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sessions WHERE id = 'tx_test';");
             count.Should().Be(0);
         }
+        [Fact]
+        public async Task Dispose_WithPendingPlay_DoesNotThrow()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            var data = new PlayEntryData(
+                BeatmapString: "Song [Hard]", BeatmapSetID: 1, BeatmapID: 1,
+                Hidden: false, Hardrock: false, Doubletime: false, EZ: false, Halftime: false, Flashlight: false,
+                BeatmapBpm: 120, BeatmapAim: 1m, BeatmapSpeed: 1m, BeatmapStars: 3m,
+                BeatmapCs: 4m, BeatmapAr: 8m, BeatmapOd: 7m,
+                TotalBeatmapHits: 100, Accuracy: 98m,
+                Play300c: 100, Play100c: 0, Play50c: 0, PlayMissc: 0,
+                Complete: true, PlayTimeSeconds: 60, ModsString: "", PlayCount: 1, AccuracyReliable: true
+            );
+            var context = new PlayContext(
+                SessionId: "s1", IsReplay: false, RawMods: 0, CurrentGameMode: 0,
+                DetectedClient: "test", SoundFilePath: null, SubmitSoundEnabled: false
+            );
+
+            _ = Task.Run(() => sink.TryLogPlayAsync(data, context));
+
+            var act = () => sink.Dispose();
+
+            act.Should().NotThrow();
+            await dbManager.DisposeAsync();
+        }
+
+        [Fact]
+        public async Task DisposeAsync_WithNoPendingPlays_CompletesQuickly()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+
+            var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            await sink.DisposeAsync();
+
+            sw.Stop();
+            sw.Elapsed.TotalMilliseconds.Should().BeLessThan(1000);
+        }
+
+        [Fact]
+        public async Task Dispose_CalledTwice_DoesNotThrow()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+
+            var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            var act = () =>
+            {
+                sink.Dispose();
+                sink.Dispose();
+            };
+
+            act.Should().NotThrow();
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_AfterDispose_DoesNotHang()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+
+            var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+            sink.Dispose();
+
+            var data = new PlayEntryData(
+                BeatmapString: "Song [Hard]", BeatmapSetID: 1, BeatmapID: 1,
+                Hidden: false, Hardrock: false, Doubletime: false, EZ: false, Halftime: false, Flashlight: false,
+                BeatmapBpm: 120, BeatmapAim: 1m, BeatmapSpeed: 1m, BeatmapStars: 3m,
+                BeatmapCs: 4m, BeatmapAr: 8m, BeatmapOd: 7m,
+                TotalBeatmapHits: 100, Accuracy: 98m,
+                Play300c: 100, Play100c: 0, Play50c: 0, PlayMissc: 0,
+                Complete: true, PlayTimeSeconds: 60, ModsString: "", PlayCount: 1, AccuracyReliable: true
+            );
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            var context = new PlayContext(
+                SessionId: "s1", IsReplay: false, RawMods: 0, CurrentGameMode: 0,
+                DetectedClient: "test", SoundFilePath: null, SubmitSoundEnabled: false
+            );
+
+            var act = async () => await sink.TryLogPlayAsync(data, context, cts.Token);
+
+            await act.Should().ThrowAsync<Exception>();
+        }
     }
 }

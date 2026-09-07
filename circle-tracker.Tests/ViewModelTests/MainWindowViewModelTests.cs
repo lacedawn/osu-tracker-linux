@@ -294,6 +294,13 @@ public class MainWindowViewModelTests
         viewModel.SessionLive.SessionElapsedText.Should().Be("4m session");
     }
 
+    [AvaloniaFact]
+    public void SyncToSheetsCommand_DelegatesToSettingsViewModel()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.SyncToSheetsCommand.Should().BeSameAs(viewModel.Settings.SyncToSheetsCommand);
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         return new MainWindowViewModel(

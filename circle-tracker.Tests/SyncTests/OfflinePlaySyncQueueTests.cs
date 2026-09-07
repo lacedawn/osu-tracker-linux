@@ -430,4 +430,128 @@ public class OfflinePlaySyncQueueTests
             "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
         pendingCount.Should().Be(10);
     }
+    private static async Task SeedPlayWithModsAsync(SqliteDatabaseManager dbManager, int modsBitfield)
+    {
+        await using var conn = await dbManager.CreateConnectionAsync();
+        var sessionId = Guid.NewGuid().ToString();
+        var timestampStr = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+        await conn.ExecuteAsync(
+            "INSERT INTO sessions (id, start_time, total_plays, playing_seconds, idle_seconds, efficiency_percent) VALUES (@Id, @Start, 0, 0, 0, 0.0);",
+            new { Id = sessionId, Start = timestampStr });
+
+        const string insertSql = @"
+            INSERT INTO plays (
+                session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_checksum,
+                beatmap_string, beatmap_title, beatmap_artist, beatmap_version,
+                mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
+                total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
+                is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client,
+                sync_status
+            ) VALUES (
+                @SessionId, @Timestamp, 20001, 2001, '',
+                'Mod Test Map', '', '', '',
+                @ModsBitfield, 'NM', 180, 5.5, 2.5, 2.8, 4.0, 9.0, 8.0, 6.0,
+                500, 450, 40, 10, 0, 98.5, 1,
+                1, 120, 1, 0, 0, 'Test',
+                'Pending'
+            );";
+
+        await conn.ExecuteAsync(insertSql, new { SessionId = sessionId, Timestamp = timestampStr, ModsBitfield = modsBitfield });
+    }
+
+    [Fact]
+    public async Task BuildRowData_HiddenModSet_RowContainsHdFlag()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPlayWithModsAsync(dbManager, (int)Circle_Tracker.OsuMods.Hidden);
+
+        IList<object>? capturedRow = null;
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            capturedRow = rows[0];
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
+
+        await queue.FlushPendingQueueAsync();
+
+        capturedRow.Should().NotBeNull();
+        capturedRow![2].Should().Be("1");
+    }
+
+    [Fact]
+    public async Task BuildRowData_NoModsSet_AllModColumnsEmpty()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPlayWithModsAsync(dbManager, 0);
+
+        IList<object>? capturedRow = null;
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            capturedRow = rows[0];
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
+
+        await queue.FlushPendingQueueAsync();
+
+        capturedRow.Should().NotBeNull();
+        capturedRow![2].Should().Be("");
+        capturedRow[3].Should().Be("");
+        capturedRow[4].Should().Be("");
+        capturedRow[18].Should().Be("");
+        capturedRow[19].Should().Be("");
+        capturedRow[20].Should().Be("");
+    }
+
+    [Fact]
+    public async Task BuildRowData_MultipleModsSet_CorrectFlags()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        int bitfield = (int)(Circle_Tracker.OsuMods.Hidden | Circle_Tracker.OsuMods.HardRock | Circle_Tracker.OsuMods.DoubleTime);
+        await SeedPlayWithModsAsync(dbManager, bitfield);
+
+        IList<object>? capturedRow = null;
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            capturedRow = rows[0];
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
+
+        await queue.FlushPendingQueueAsync();
+
+        capturedRow.Should().NotBeNull();
+        capturedRow![2].Should().Be("1");
+        capturedRow[3].Should().Be("1");
+        capturedRow[4].Should().Be("1");
+        capturedRow[18].Should().Be("");
+        capturedRow[19].Should().Be("");
+        capturedRow[20].Should().Be("");
+    }
+
+    [Fact]
+    public async Task BuildRowData_NightcoreSet_DtColumnIsEmpty()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPlayWithModsAsync(dbManager, (int)Circle_Tracker.OsuMods.Nightcore);
+
+        IList<object>? capturedRow = null;
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            capturedRow = rows[0];
+            return Task.CompletedTask;
+        });
+
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
+
+        await queue.FlushPendingQueueAsync();
+
+        capturedRow.Should().NotBeNull();
+        capturedRow![4].Should().Be("");
+    }
 }

@@ -40,6 +40,9 @@ public class SettingsViewModel : ViewModelBase, IDisposable
     private string _credentialsStatusText = "Missing";
     private IBrush _credentialsStatusBrush = AppBrushes.RedBrush;
 
+    private string _sheetsOperationStatus = "";
+    private IBrush _sheetsOperationStatusBrush = AppBrushes.MutedBrush;
+
     private bool _enableLocalLogging = true;
     private string _localDatabasePath = "";
     private bool _submitSoundEnabled = true;
@@ -64,6 +67,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
 
         ConnectSheetsCommand = new RelayCommand(async () => await ConnectSheetsAsync());
         ImportSheetsCommand = new RelayCommand(async () => await ImportSheetsAsync());
+        SyncToSheetsCommand = new RelayCommand(async () => await SyncToSheetsAsync());
 
         LoadSettingsFromTracker();
         CheckCredentials();
@@ -150,6 +154,26 @@ public class SettingsViewModel : ViewModelBase, IDisposable
     {
         get => _credentialsStatusBrush;
         set => SetProperty(ref _credentialsStatusBrush, value);
+    }
+
+    public string SheetsOperationStatus
+    {
+        get => _sheetsOperationStatus;
+        set
+        {
+            if (SetProperty(ref _sheetsOperationStatus, value))
+            {
+                OnPropertyChanged(nameof(HasSheetsOperationStatus));
+            }
+        }
+    }
+
+    public bool HasSheetsOperationStatus => !string.IsNullOrWhiteSpace(_sheetsOperationStatus);
+
+    public IBrush SheetsOperationStatusBrush
+    {
+        get => _sheetsOperationStatusBrush;
+        set => SetProperty(ref _sheetsOperationStatusBrush, value);
     }
 
     public bool EnableLocalLogging
@@ -300,6 +324,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
 
     public ICommand ConnectSheetsCommand { get; }
     public ICommand ImportSheetsCommand { get; }
+    public ICommand SyncToSheetsCommand { get; }
 
     public void UpdateFromSnapshot(TrackerSnapshot snapshot)
     {
@@ -325,24 +350,38 @@ public class SettingsViewModel : ViewModelBase, IDisposable
         CredentialsStatusBrush = CredentialsFound ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
     }
 
+    private void SetOperationStatus(string message, IBrush brush)
+    {
+        SheetsOperationStatus = message;
+        SheetsOperationStatusBrush = brush;
+        _statusCallback?.Invoke(message);
+    }
+
     public async Task ConnectSheetsAsync()
     {
         try
         {
-            _statusCallback?.Invoke("Connecting to Sheets...");
+            SetOperationStatus("Connecting to Sheets...", AppBrushes.MutedBrush);
             if (_tracker != null)
             {
                 await _tracker.InitGoogleAPIAsync();
                 SheetsConnected = _tracker.SheetsApiReady;
                 SheetsStatusText = _tracker.SheetsApiReady ? "Sheets: Connected" : "Sheets: Not connected";
                 SheetsStatusBrush = _tracker.SheetsApiReady ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
-                _statusCallback?.Invoke(_tracker.SheetsApiReady ? "Sheets connected" : "Sheets connection failed");
+                if (_tracker.SheetsApiReady)
+                {
+                    SetOperationStatus("✓ Sheets connected", AppBrushes.GreenBrush);
+                }
+                else
+                {
+                    SetOperationStatus("✗ Sheets connection failed", AppBrushes.RedBrush);
+                }
             }
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "Failed to connect to Sheets");
-            _statusCallback?.Invoke("Sheets connection failed");
+            SetOperationStatus("✗ Sheets connection failed", AppBrushes.RedBrush);
         }
     }
 
@@ -358,7 +397,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
 
             if (!_tracker.SheetsApiReady)
             {
-                _statusCallback?.Invoke("Sheets API not connected");
+                SetOperationStatus("Sheets API not connected", AppBrushes.RedBrush);
                 return;
             }
 
@@ -366,40 +405,80 @@ public class SettingsViewModel : ViewModelBase, IDisposable
             string sheetName = _tracker.SheetName;
             if (string.IsNullOrWhiteSpace(spreadsheetId))
             {
-                _statusCallback?.Invoke("Missing Spreadsheet ID");
+                SetOperationStatus("Missing Spreadsheet ID", AppBrushes.RedBrush);
                 return;
             }
 
             var sheetsService = GoogleSheetsManager.CreateSheetsService();
             if (sheetsService == null)
             {
-                _statusCallback?.Invoke("Failed to create Google Sheets service");
+                SetOperationStatus("Failed to create Google Sheets service", AppBrushes.RedBrush);
                 return;
             }
 
             if (_dbManager == null)
             {
-                _statusCallback?.Invoke("Database manager not available");
+                SetOperationStatus("Database manager not available", AppBrushes.RedBrush);
                 return;
             }
 
-            _statusCallback?.Invoke("Importing sheets data...");
+            SetOperationStatus("Importing sheets data...", AppBrushes.MutedBrush);
             var importer = new GoogleSheetsHistoricalImporter(sheetsService, _dbManager);
             var result = await importer.ImportFromSpreadsheetAsync(spreadsheetId, sheetName, null, CancellationToken.None);
 
             if (result.Success)
             {
-                _statusCallback?.Invoke($"Imported {result.SyncedCount} plays");
+                SetOperationStatus($"✓ Imported {result.SyncedCount} plays", AppBrushes.GreenBrush);
             }
             else
             {
-                _statusCallback?.Invoke("Import failed");
+                SetOperationStatus("✗ Import failed", AppBrushes.RedBrush);
             }
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "Failed to import from Sheets");
-            _statusCallback?.Invoke("Import error");
+            SetOperationStatus("✗ Import error", AppBrushes.RedBrush);
+        }
+    }
+
+    public async Task SyncToSheetsAsync()
+    {
+        try
+        {
+            if (_tracker == null) return;
+            if (!_tracker.SheetsApiReady)
+            {
+                await _tracker.InitGoogleAPIAsync();
+            }
+
+            if (!_tracker.SheetsApiReady)
+            {
+                SetOperationStatus("Sheets API not connected", AppBrushes.RedBrush);
+                return;
+            }
+
+            string spreadsheetId = _tracker.SpreadsheetId;
+            if (string.IsNullOrWhiteSpace(spreadsheetId))
+            {
+                SetOperationStatus("Missing Spreadsheet ID", AppBrushes.RedBrush);
+                return;
+            }
+
+            if (_dbManager == null)
+            {
+                SetOperationStatus("Database manager not available", AppBrushes.RedBrush);
+                return;
+            }
+
+            SetOperationStatus("Syncing to Sheets...", AppBrushes.MutedBrush);
+            await _tracker.SyncOfflinePlaysToSheetsAsync();
+            SetOperationStatus("✓ Sync completed", AppBrushes.GreenBrush);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to sync to Sheets");
+            SetOperationStatus("✗ Sync failed", AppBrushes.RedBrush);
         }
     }
 

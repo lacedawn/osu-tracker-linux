@@ -18,7 +18,7 @@ namespace Circle_Tracker
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
 
-        private const int MinHitsToSubmit = 40;
+
         private const int MaxHitJumpPerTick = 50;
         private const int MaxTimeBetweenHitsMs = 30000;
 
@@ -380,7 +380,7 @@ namespace Circle_Tracker
 
                         if (newSongTime < Time && Time > 0 && previousGameState == GameStatus.Playing)
                         {
-                            if (TotalBeatmapHits >= MinHitsToSubmit)
+                            if (TotalBeatmapHits >= PlaySubmissionService.MinHitsToSubmit)
                             {
                                 _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
                                     newSongTime, Time, TotalBeatmapHits);

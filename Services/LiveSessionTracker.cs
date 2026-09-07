@@ -248,6 +248,10 @@ public class LiveSessionTracker : ILiveSessionTracker
             deltaBpm = _baseline30Day != null ? avgBpm - _baseline30Day.MeanBpm : 0;
         }
 
+        decimal passAccuracy = passes.Count > 0
+            ? passes.Average(p => p.Accuracy)
+            : 0m;
+
         var bestPlay = GetBestPlay();
 
         return new SessionSummaryReport(
@@ -263,7 +267,7 @@ public class LiveSessionTracker : ILiveSessionTracker
             PassRatePercent: passRate,
             BaselineDeltaPassRate: deltaPassRate,
             BestPlay: bestPlay,
-            PassAccuracy: hitWeightedAcc
+            PassAccuracy: passAccuracy
         );
     }
 

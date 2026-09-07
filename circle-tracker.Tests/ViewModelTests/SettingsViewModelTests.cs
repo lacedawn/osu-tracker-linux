@@ -1,9 +1,13 @@
 using Avalonia.Headless.XUnit;
 using Circle_Tracker.Services;
+using Circle_Tracker.Storage;
 using Circle_Tracker.ViewModels;
 using FluentAssertions;
 using Moq;
+using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace Circle_Tracker.Tests.ViewModelTests;
@@ -58,5 +62,95 @@ public class SettingsViewModelTests
         viewModel.TosuHost = "192.168.1.100";
         viewModel.TosuHost.Should().Be("192.168.1.100");
         mockTracker.VerifySet(t => t.TosuHost = "192.168.1.100", Times.Once);
+    }
+
+    [AvaloniaFact]
+    public async Task SyncToSheetsAsync_WhenSheetsApiNotConnected_SetsErrorStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(false);
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.SyncToSheetsAsync();
+
+        viewModel.SheetsOperationStatus.Should().Be("Sheets API not connected");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
+        viewModel.HasSheetsOperationStatus.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public async Task SyncToSheetsAsync_WhenSpreadsheetIdEmpty_SetsErrorStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(true);
+        mockTracker.Setup(t => t.SpreadsheetId).Returns("");
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.SyncToSheetsAsync();
+
+        viewModel.SheetsOperationStatus.Should().Be("Missing Spreadsheet ID");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
+    }
+
+    [AvaloniaFact]
+    public async Task SyncToSheetsAsync_WhenDatabaseManagerNull_SetsErrorStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(true);
+        mockTracker.Setup(t => t.SpreadsheetId).Returns("test-sheet-id");
+        var viewModel = new SettingsViewModel(mockTracker.Object, dbManager: null);
+
+        await viewModel.SyncToSheetsAsync();
+
+        viewModel.SheetsOperationStatus.Should().Be("Database manager not available");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
+    }
+
+    [AvaloniaFact]
+    public async Task SyncToSheetsAsync_WhenSuccessful_CallsSyncAndSetsCompletedStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(true);
+        mockTracker.Setup(t => t.SpreadsheetId).Returns("test-sheet-id");
+        var mockDb = new Mock<IDatabaseManager>();
+        string? reportedStatus = null;
+        var viewModel = new SettingsViewModel(mockTracker.Object, dbManager: mockDb.Object, statusCallback: msg => reportedStatus = msg);
+
+        await viewModel.SyncToSheetsAsync();
+
+        mockTracker.Verify(t => t.SyncOfflinePlaysToSheetsAsync(It.IsAny<CancellationToken>()), Times.Once);
+        viewModel.SheetsOperationStatus.Should().Be("✓ Sync completed");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.GreenBrush);
+        reportedStatus.Should().Be("✓ Sync completed");
+    }
+
+    [AvaloniaFact]
+    public async Task SyncToSheetsAsync_WhenThrows_SetsFailedStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(true);
+        mockTracker.Setup(t => t.SpreadsheetId).Returns("test-sheet-id");
+        mockTracker.Setup(t => t.SyncOfflinePlaysToSheetsAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("API error"));
+        var mockDb = new Mock<IDatabaseManager>();
+        var viewModel = new SettingsViewModel(mockTracker.Object, dbManager: mockDb.Object);
+
+        await viewModel.SyncToSheetsAsync();
+
+        viewModel.SheetsOperationStatus.Should().Be("✗ Sync failed");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
+    }
+
+    [AvaloniaFact]
+    public async Task ImportSheetsAsync_WhenSheetsApiNotReady_SetsErrorStatus()
+    {
+        var mockTracker = new Mock<ITrackerService>();
+        mockTracker.Setup(t => t.SheetsApiReady).Returns(false);
+        var viewModel = new SettingsViewModel(mockTracker.Object);
+
+        await viewModel.ImportSheetsAsync();
+
+        viewModel.SheetsOperationStatus.Should().Be("Sheets API not connected");
+        viewModel.SheetsOperationStatusBrush.Should().Be(AppBrushes.RedBrush);
     }
 }

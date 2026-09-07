@@ -1,3 +1,4 @@
+using Circle_Tracker;
 using Dapper;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
@@ -80,10 +81,17 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             await using var conn = await _dbManager.CreateConnectionAsync(ct);
 
             const string selectSql = @"
-                SELECT id, timestamp, beatmap_id, beatmap_set_id, beatmap_string,
-                       mods_bitfield, mods_string, bpm, aim, speed, stars, cs, ar, od,
-                       total_hits, accuracy, hit_300, hit_100, hit_50, hit_miss,
-                       is_complete, play_time_seconds, consecutive_play_count
+                SELECT id AS Id, timestamp AS Timestamp,
+                       beatmap_id AS BeatmapId, beatmap_set_id AS BeatmapSetId,
+                       beatmap_string AS BeatmapString,
+                       mods_bitfield AS ModsBitfield, mods_string AS ModsString,
+                       bpm AS Bpm, aim AS Aim, speed AS Speed, stars AS Stars,
+                       cs AS Cs, ar AS Ar, od AS Od,
+                       total_hits AS TotalHits, accuracy AS Accuracy,
+                       hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50, hit_miss AS HitMiss,
+                       is_complete AS IsComplete,
+                       play_time_seconds AS PlayTimeSeconds,
+                       consecutive_play_count AS ConsecutivePlayCount
                 FROM plays
                 WHERE sync_status = 'Pending'
                 ORDER BY id ASC;";
@@ -246,12 +254,13 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
         string dateTimeFormat = "yyyy'-'MM'-'dd h':'mm tt";
         string escapedName = (play.BeatmapString ?? "").Replace("\"", "\"\"");
 
-        bool hd = (play.ModsBitfield & (1 << 3)) != 0;
-        bool hr = (play.ModsBitfield & (1 << 4)) != 0;
-        bool dt = (play.ModsBitfield & (1 << 6)) != 0;
-        bool ez = (play.ModsBitfield & (1 << 1)) != 0;
-        bool ht = (play.ModsBitfield & (1 << 8)) != 0;
-        bool fl = (play.ModsBitfield & (1 << 10)) != 0;
+        var mods = (OsuMods)play.ModsBitfield;
+        bool hd = mods.HasFlag(OsuMods.Hidden);
+        bool hr = mods.HasFlag(OsuMods.HardRock);
+        bool dt = mods.HasFlag(OsuMods.DoubleTime);
+        bool ez = mods.HasFlag(OsuMods.Easy);
+        bool ht = mods.HasFlag(OsuMods.HalfTime);
+        bool fl = mods.HasFlag(OsuMods.Flashlight);
 
         string modsLabel = !string.IsNullOrWhiteSpace(play.ModsString) && play.ModsString != "NM"
             ? $" +{play.ModsString}"

@@ -163,6 +163,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     public ICommand RefreshCommand { get; }
     public ICommand ConnectSheetsCommand => Settings.ConnectSheetsCommand;
     public ICommand ImportSheetsCommand => Settings.ImportSheetsCommand;
+    public ICommand SyncToSheetsCommand => Settings.SyncToSheetsCommand;
 
     public void SetOpenAnalyticsAction(Func<Task> action) => _openAnalyticsAction = action;
     public void SetShowSessionSummaryAction(Func<Task> action) => _showSessionSummaryAction = action;
@@ -459,6 +460,11 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     public async Task ImportSheetsAsync()
     {
         await Settings.ImportSheetsAsync();
+    }
+
+    public async Task SyncToSheetsAsync()
+    {
+        await Settings.SyncToSheetsAsync();
     }
 
     public async Task<SessionSummaryReport> GenerateSessionSummaryAsync(CancellationToken ct = default)

@@ -219,14 +219,30 @@
                   </StackPanel>
                 </Grid>
 
-                <Button Classes="osu-action-blue"
-                        Command="{Binding Settings.ImportSheetsCommand}"
-                        HorizontalAlignment="Stretch"
-                        Padding="10,6"
-                        Margin="0,6,0,0"
-                        ToolTip.Tip="Import all existing plays from your Google Sheets into local database for analytics">
-                  <TextBlock Text="📥 IMPORT SHEETS DATA" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                </Button>
+                <Grid ColumnDefinitions="*,8,*" Margin="0,6,0,0">
+                  <Button Grid.Column="0" Classes="osu-action-blue"
+                          Command="{Binding Settings.ImportSheetsCommand}"
+                          HorizontalAlignment="Stretch"
+                          Padding="8,6"
+                          ToolTip.Tip="Import all existing plays from your Google Sheets into local database for analytics">
+                    <TextBlock Text="📥 IMPORT SHEETS" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  </Button>
+                  <Button Grid.Column="2" Classes="osu-action-pink"
+                          Command="{Binding Settings.SyncToSheetsCommand}"
+                          HorizontalAlignment="Stretch"
+                          Padding="8,6"
+                          ToolTip.Tip="Sync offline/pending plays from local database to Google Sheets">
+                    <TextBlock Text="📤 SYNC TO SHEETS" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  </Button>
+                </Grid>
+
+                <TextBlock Text="{Binding Settings.SheetsOperationStatus}"
+                           Foreground="{Binding Settings.SheetsOperationStatusBrush}"
+                           FontSize="11" FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           IsVisible="{Binding Settings.HasSheetsOperationStatus}"
+                           Margin="0,2,0,0"
+                           TextWrapping="Wrap"/>
 
                 <CheckBox Classes="osu-check" Content="Use ';' formula separator" IsChecked="{Binding Settings.UseAltFuncSeparator}"/>
               </StackPanel>

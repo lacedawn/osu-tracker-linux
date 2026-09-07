@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Circle_Tracker.Analytics;
 using Circle_Tracker.Storage;
 using Circle_Tracker.Sync;
+using Google.Apis.Sheets.v4.Data;
 using Microsoft.Extensions.Logging;
 
 namespace Circle_Tracker.Services;
@@ -93,6 +95,35 @@ public class TrackerService : ITrackerService, IMainWindow
     public Task InitGoogleAPIAsync(bool silent = false) => _tracker.InitGoogleAPIAsync(silent);
     public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.SubmissionService.FlushPendingSubmissionsAsync(ct);
     public ISessionAnalyticsService? GetSessionAnalyticsService() => _tracker.GetSessionAnalyticsService();
+
+    public async Task SyncOfflinePlaysToSheetsAsync(CancellationToken ct = default)
+    {
+        if (_tracker.SessionManager.GetDatabaseManager() is not SqliteDatabaseManager sqliteDb)
+            return;
+
+        var sheetsService = GoogleSheetsManager.CreateSheetsService();
+        if (sheetsService == null)
+            return;
+
+        string spreadsheetId = _settings.SpreadsheetId;
+        string sheetName = _settings.SheetName;
+        string separator = _settings.UseAltFuncSeparator ? ";" : ",";
+
+        async Task AppendBatchAsync(IList<IList<object>> rows, CancellationToken innerCt)
+        {
+            string range = $"{sheetName}!A:A";
+            var valueRange = new ValueRange { Values = rows };
+            var request = sheetsService.Spreadsheets.Values.Append(valueRange, spreadsheetId, range);
+            request.ValueInputOption = Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            await request.ExecuteAsync(innerCt).ConfigureAwait(false);
+        }
+
+        await using var queue = new OfflinePlaySyncQueue(
+            sqliteDb, sheetsService, spreadsheetId, sheetName,
+            () => separator, () => _tracker.SheetsApiReady, AppendBatchAsync);
+
+        await queue.FlushPendingQueueAsync(ct).ConfigureAwait(false);
+    }
 
     void IMainWindow.SetCredentialsFound(bool found) { }
     void IMainWindow.SetSheetsApiReady(bool val) { }
