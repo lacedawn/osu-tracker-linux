@@ -1291,4 +1291,172 @@ public class LiveSessionTrackerTests
         var metrics = tracker.GetCurrentMetrics();
         metrics.SessionPlayCount.Should().Be(10);
     }
+
+    private static PlayEntryData CreateStarPlay(decimal stars, bool complete = true)
+    {
+        return new PlayEntryData(
+            BeatmapString: $"Star Play {stars}",
+            BeatmapSetID: 1,
+            BeatmapID: 1,
+            Hidden: false,
+            Hardrock: false,
+            Doubletime: false,
+            EZ: false,
+            Halftime: false,
+            Flashlight: false,
+            BeatmapBpm: 180,
+            BeatmapAim: 2.5m,
+            BeatmapSpeed: 2.5m,
+            BeatmapStars: stars,
+            BeatmapCs: 4.0m,
+            BeatmapAr: 9.0m,
+            BeatmapOd: 8.0m,
+            TotalBeatmapHits: 500,
+            Accuracy: 95.0m,
+            Play300c: 475,
+            Play100c: 20,
+            Play50c: 3,
+            PlayMissc: 2,
+            Complete: complete,
+            PlayTimeSeconds: 120,
+            ModsString: "NM",
+            PlayCount: 1,
+            AccuracyReliable: true,
+            BeatmapTitle: $"Title {stars}",
+            BeatmapArtist: "Artist",
+            BeatmapVersion: "Hard",
+            BeatmapHp: 5.0m,
+            BeatmapChecksum: ""
+        );
+    }
+
+    private static void ExpireAchievementCooldown(LiveSessionTracker tracker, string key)
+    {
+        var dictField = typeof(LiveSessionTracker).GetField("_lastAchievementTimes",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (Dictionary<string, DateTime>)dictField!.GetValue(tracker)!;
+        dict[key] = DateTime.UtcNow.AddSeconds(-60);
+    }
+
+    private static decimal GetSessionMaxPassStars(LiveSessionTracker tracker)
+    {
+        var field = typeof(LiveSessionTracker).GetField("_sessionMaxPassStars",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return (decimal)field!.GetValue(tracker)!;
+    }
+
+    [Fact]
+    public async Task StarRecordPass_FirstPassOfSession_FiresAchievement()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play = CreateStarPlay(3.5m);
+
+        await tracker.ProcessPlay(play);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star") || a.Title.Contains("Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task StarRecordPass_SecondPassSameStars_DoesNotFireAgainWithinCooldown()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play1 = CreateStarPlay(3.5m);
+        var play2 = CreateStarPlay(3.5m);
+
+        await tracker.ProcessPlay(play1);
+        await tracker.ProcessPlay(play2);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star") || a.Title.Contains("Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task StarRecordPass_HigherStarsAfterCooldown_Fires()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play1 = CreateStarPlay(3.5m);
+        var play2 = CreateStarPlay(4.0m);
+
+        await tracker.ProcessPlay(play1);
+
+        ExpireAchievementCooldown(tracker, "StarRecordPass");
+
+        await tracker.ProcessPlay(play2);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star") || a.Title.Contains("Record")).ToList();
+        starAchievements.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task StarRecordPass_LowerStarsAfterCooldown_DoesNotFire()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var achievements = new List<PostPlayAchievement>();
+        tracker.AchievementUnlocked += (sender, achievement) => achievements.Add(achievement);
+
+        var play1 = CreateStarPlay(4.0m);
+        var play2 = CreateStarPlay(3.0m);
+
+        await tracker.ProcessPlay(play1);
+
+        ExpireAchievementCooldown(tracker, "StarRecordPass");
+
+        await tracker.ProcessPlay(play2);
+
+        var starAchievements = achievements.Where(a => a.Title.Contains("Star") || a.Title.Contains("Record")).ToList();
+        starAchievements.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ResetSession_ClearsMaxPassStars()
+    {
+        var sessionService = new Mock<ISessionAnalyticsService>();
+        sessionService.Setup(s => s.GetRollingAveragesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, RollingPeriodStats>());
+
+        var tracker = new LiveSessionTracker(sessionService.Object);
+
+        var play1 = CreateStarPlay(5.0m);
+
+        await tracker.ProcessPlay(play1);
+
+        tracker.ResetSession();
+
+        var play2 = CreateStarPlay(1.0m);
+
+        await tracker.ProcessPlay(play2);
+
+        var maxStars = GetSessionMaxPassStars(tracker);
+        maxStars.Should().Be(1.0m);
+    }
 }

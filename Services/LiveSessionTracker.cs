@@ -92,6 +92,7 @@ public class LiveSessionTracker : ILiveSessionTracker
     private readonly object _playsLock = new();
     private readonly Dictionary<string, DateTime> _lastAchievementTimes = new();
     private DateTime _sessionStartTime = DateTime.UtcNow;
+    private decimal _sessionMaxPassStars = 0m;
     
     private RollingPeriodStats? _baseline30Day;
 
@@ -281,6 +282,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         _sessionStartTime = DateTime.UtcNow;
         SessionAccuracy = 0m;
         BaselineDeltaAccuracy = 0m;
+        _sessionMaxPassStars = 0m;
     }
 
     private async Task LoadBaselineAsync(CancellationToken ct = default)
@@ -297,7 +299,7 @@ public class LiveSessionTracker : ILiveSessionTracker
         const int CooldownSeconds = 30;
         var now = DateTime.UtcNow;
 
-        if (play.Complete && play.BeatmapStars > 0)
+        if (play.Complete && play.BeatmapStars > _sessionMaxPassStars)
         {
             string starAchievementKey = "StarRecordPass";
             if (ShouldFireAchievement(starAchievementKey, now, CooldownSeconds))
@@ -312,6 +314,9 @@ public class LiveSessionTracker : ILiveSessionTracker
                 _lastAchievementTimes[starAchievementKey] = now;
             }
         }
+
+        if (play.Complete && play.BeatmapStars > _sessionMaxPassStars)
+            _sessionMaxPassStars = play.BeatmapStars;
 
         if (play.Complete && play.Accuracy >= 95m && play.BeatmapStars >= 5.0m && play.BeatmapStars <= 6.0m)
         {
