@@ -81,8 +81,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
         OpenAnalyticsCommand = new RelayCommand(async () => await OpenAnalyticsAsync());
         ResetSessionCommand = new RelayCommand(async () => await ResetSessionAsync());
-        ExportSessionCommand = new RelayCommand(async () => await ExportSessionAsync());
-        AuthenticateOsuCommand = new RelayCommand(async () => await AuthenticateOsuAsync());
         RefreshCommand = new RelayCommand(async () => await RefreshDataAsync());
 
         _liveSessionTracker.MetricsUpdated += OnLiveSessionMetricsUpdated;
@@ -172,8 +170,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public ICommand OpenAnalyticsCommand { get; }
     public ICommand ResetSessionCommand { get; }
-    public ICommand ExportSessionCommand { get; }
-    public ICommand AuthenticateOsuCommand { get; }
     public ICommand RefreshCommand { get; }
     public ICommand ConnectSheetsCommand => Settings.ConnectSheetsCommand;
     public ICommand ImportSheetsCommand => Settings.ImportSheetsCommand;
@@ -436,36 +432,6 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         {
             _log.LogError(ex, "Failed to reset session");
             StatusText = "Failed to reset session";
-        }
-    }
-
-    public async Task ExportSessionAsync()
-    {
-        try
-        {
-            StatusText = "Exporting session...";
-            await Task.CompletedTask;
-            StatusText = "Ready";
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Failed to export session");
-            StatusText = "Export failed";
-        }
-    }
-
-    public async Task AuthenticateOsuAsync()
-    {
-        try
-        {
-            StatusText = "Authenticating...";
-            await Task.CompletedTask;
-            StatusText = "Ready";
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Failed to authenticate");
-            StatusText = "Authentication failed";
         }
     }
 

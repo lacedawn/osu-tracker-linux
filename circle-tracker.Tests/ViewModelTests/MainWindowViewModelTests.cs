@@ -209,14 +209,33 @@ public class MainWindowViewModelTests
     }
 
     [AvaloniaFact]
-    public void MainWindowViewModel_ExportAndAuthCommands_ExecuteSuccessfully()
+    public void ResetSessionCommand_Execute_ResetsSessionPlaysCountToZero()
     {
         var viewModel = CreateViewModel();
 
-        viewModel.ExportSessionCommand.Execute(null);
-        viewModel.StatusText.Should().Be("Ready");
+        viewModel.ResetSessionCommand.Execute(null);
 
-        viewModel.AuthenticateOsuCommand.Execute(null);
+        viewModel.SessionPlaysCount.Should().Be(0);
+    }
+
+    [AvaloniaFact]
+    public void ResetSessionCommand_Execute_ResetsSessionAccuracyText()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.ResetSessionCommand.Execute(null);
+
+        viewModel.SessionAccuracyText.Should().Be("0.00%");
+    }
+
+    [AvaloniaFact]
+    public void RefreshCommand_Execute_SetsStatusTextToReady()
+    {
+        _mockLiveSessionTracker.Setup(t => t.GetCurrentMetrics()).Returns(new LiveSessionMetrics(0, 0, 0.0, 0m, 0m, 0m, 0m, 0.0, 0.0));
+        var viewModel = CreateViewModel();
+
+        viewModel.RefreshCommand.Execute(null);
+
         viewModel.StatusText.Should().Be("Ready");
     }
 

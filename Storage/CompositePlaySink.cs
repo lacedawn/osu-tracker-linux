@@ -78,7 +78,7 @@ namespace Circle_Tracker.Storage
             var sheetsSink = activeSinks.FirstOrDefault(s => s.SinkName == "Google Sheets" || s.SinkName == "Google Sheets Adapter");
             var sqliteSink = activeSinks.FirstOrDefault(s => s.SinkName == "Local SQLite");
 
-            bool? sheetsSyncSucceeded = null;
+            bool? sheetsSyncSucceeded = false;
 
             if (sheetsSink != null && sheetsSink.IsReady)
             {

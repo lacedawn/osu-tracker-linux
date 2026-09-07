@@ -1,3 +1,4 @@
+using Circle_Tracker.Services;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System;
@@ -15,7 +16,7 @@ namespace Circle_Tracker
                 .MinimumLevel.Debug()
                 .WriteTo.Console()
                 .WriteTo.File(
-                    Path.Combine(AppContext.BaseDirectory, "circle-tracker.log"),
+                    AppPaths.LogPath,
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 3)
                 .CreateLogger();

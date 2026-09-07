@@ -66,12 +66,9 @@ namespace Circle_Tracker.Storage
 
             try
             {
-                string baseDir = AppContext.BaseDirectory;
-                string candidate = Path.Combine(baseDir, "circle_tracker.db");
-                string testFile = Path.Combine(baseDir, $".write_test_{Guid.NewGuid():N}");
-                File.WriteAllText(testFile, "test");
-                File.Delete(testFile);
-                return candidate;
+                Services.AppPaths.MigrateLegacyFiles();
+                Services.AppPaths.EnsureDirectories();
+                return Services.AppPaths.DatabasePath;
             }
             catch
             {

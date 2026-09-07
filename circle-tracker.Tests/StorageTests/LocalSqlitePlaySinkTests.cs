@@ -388,7 +388,8 @@ namespace CircleTracker.Tests.StorageTests
 
             await composite.TryLogPlayAsync(data, context);
 
-            enabledSink.Verify(s => s.TryLogPlayAsync(data, context, It.IsAny<CancellationToken>()), Times.Once);
+            var expectedContext = context with { SheetsSyncSucceeded = false };
+            enabledSink.Verify(s => s.TryLogPlayAsync(data, expectedContext, It.IsAny<CancellationToken>()), Times.Once);
             disabledSink.Verify(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
@@ -518,6 +519,128 @@ namespace CircleTracker.Tests.StorageTests
             var act = async () => await sink.TryLogPlayAsync(data, context, cts.Token);
 
             await act.Should().ThrowAsync<Exception>();
+        }
+
+        private static PlayEntryData BuildSyncStatusPlayData(int beatmapId)
+        {
+            return new PlayEntryData(
+                BeatmapString: "Song [Hard]", BeatmapSetID: 1, BeatmapID: beatmapId,
+                Hidden: false, Hardrock: false, Doubletime: false, EZ: false, Halftime: false, Flashlight: false,
+                BeatmapBpm: 120, BeatmapAim: 1m, BeatmapSpeed: 1m, BeatmapStars: 3m,
+                BeatmapCs: 4m, BeatmapAr: 8m, BeatmapOd: 7m,
+                TotalBeatmapHits: 100, Accuracy: 98m,
+                Play300c: 100, Play100c: 0, Play50c: 0, PlayMissc: 0,
+                Complete: true, PlayTimeSeconds: 60, ModsString: "", PlayCount: 1, AccuracyReliable: true
+            );
+        }
+
+        private static PlayContext BuildSyncStatusContext(string sessionId, bool? sheetsSyncSucceeded)
+        {
+            return new PlayContext(
+                SessionId: sessionId, IsReplay: false, RawMods: 0, CurrentGameMode: 0,
+                DetectedClient: "test", SoundFilePath: null, SubmitSoundEnabled: false,
+                SheetsSyncSucceeded: sheetsSyncSucceeded
+            );
+        }
+
+        [Fact]
+        public async Task InsertPlay_WithoutSheetsContext_StoresPendingStatus()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            await sink.TryLogPlayAsync(BuildSyncStatusPlayData(901), BuildSyncStatusContext(session.SessionId, null));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 901;");
+
+            status.Should().Be("Pending");
+        }
+
+        [Fact]
+        public async Task InsertPlay_WithSheetsSyncSucceededTrue_StoresSyncedStatus()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            await sink.TryLogPlayAsync(BuildSyncStatusPlayData(902), BuildSyncStatusContext(session.SessionId, true));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 902;");
+
+            status.Should().Be("Synced");
+        }
+
+        [Fact]
+        public async Task InsertPlay_WithSheetsSyncSucceededTrue_StoresSyncedTimestamp()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            await sink.TryLogPlayAsync(BuildSyncStatusPlayData(903), BuildSyncStatusContext(session.SessionId, true));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? syncedAt = await conn.ExecuteScalarAsync<string?>("SELECT synced_at FROM plays WHERE beatmap_id = 903;");
+
+            syncedAt.Should().NotBeNullOrEmpty();
+        }
+
+        [Fact]
+        public async Task InsertPlay_WithSheetsSyncSucceededFalse_StoresPendingStatus()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            await sink.TryLogPlayAsync(BuildSyncStatusPlayData(904), BuildSyncStatusContext(session.SessionId, false));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 904;");
+
+            status.Should().Be("Pending");
+        }
+
+        [Fact]
+        public async Task InsertPlay_WithoutSheetsContext_LeavesSyncedTimestampNull()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            await sink.TryLogPlayAsync(BuildSyncStatusPlayData(905), BuildSyncStatusContext(session.SessionId, null));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? syncedAt = await conn.ExecuteScalarAsync<string?>("SELECT synced_at FROM plays WHERE beatmap_id = 905;");
+
+            syncedAt.Should().BeNull();
         }
     }
 }

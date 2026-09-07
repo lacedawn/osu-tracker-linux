@@ -363,7 +363,7 @@ public class SettingsViewModel : ViewModelBase, IDisposable
 
     public void CheckCredentials()
     {
-        CredentialsFound = File.Exists(Path.Combine(AppContext.BaseDirectory, "credentials.json"));
+        CredentialsFound = AppPaths.CredentialsExist();
         CredentialsStatusText = CredentialsFound ? "Found" : "Missing";
         CredentialsStatusBrush = CredentialsFound ? AppBrushes.GreenBrush : AppBrushes.RedBrush;
     }

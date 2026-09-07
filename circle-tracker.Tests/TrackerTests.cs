@@ -732,5 +732,17 @@ namespace CircleTracker.Tests
 
             snapshotValue.Should().NotBeNull();
         }
+
+        [Fact]
+        public void ConcurrentTicks_PlayingSecondsMatchesExpectedCount()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+
+            System.Threading.Tasks.Parallel.For(0, 100, _ => tracker.TickEverySecond());
+
+            tracker.PlayingSeconds.Should().Be(100);
+        }
     }
 }

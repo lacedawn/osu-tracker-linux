@@ -257,6 +257,35 @@ public class SettingsServiceTests
     }
 
     [Fact]
+    public void SettingsService_DefaultConstructor_UsesAppDataSettingsPath()
+    {
+        var service = new SettingsService();
+
+        service.SettingsFilePath.Should().Be(AppPaths.SettingsPath);
+    }
+
+    [Fact]
+    public void SettingsService_SaveThenLoad_RoundTripsViaNewPath()
+    {
+        string freshDir = Path.Combine(Path.GetTempPath(), $"ct_newpath_{Guid.NewGuid():N}");
+        string settingsPath = Path.Combine(freshDir, "user_settings.json");
+        try
+        {
+            var writer = new SettingsService(settingsPath);
+            writer.SpreadsheetId = "new_path_sheet";
+            writer.SaveSettings();
+
+            var reader = new SettingsService(settingsPath);
+
+            reader.SpreadsheetId.Should().Be("new_path_sheet");
+        }
+        finally
+        {
+            try { Directory.Delete(freshDir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void SettingsService_LoadSettings_DoesNotDependOnCWD()
     {
         string previousCwd = Environment.CurrentDirectory;

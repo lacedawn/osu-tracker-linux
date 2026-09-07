@@ -163,11 +163,7 @@ namespace Circle_Tracker.Storage
 
         private static string DetermineSyncStatus(PlayContext context)
         {
-            if (context.SheetsSyncSucceeded.HasValue)
-            {
-                return context.SheetsSyncSucceeded.Value ? "Synced" : "Pending";
-            }
-            return "Synced";
+            return context.SheetsSyncSucceeded == true ? "Synced" : "Pending";
         }
 
         public void Dispose()

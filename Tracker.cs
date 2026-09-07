@@ -31,8 +31,11 @@ namespace Circle_Tracker
         private readonly CompositePlaySink? _compositeSink;
         private readonly SessionManager _sessionManager;
 
-        public int IdleSeconds { get; private set; } = 0;
-        public int PlayingSeconds { get; private set; } = 0;
+        private int _idleSeconds = 0;
+        private int _playingSeconds = 0;
+
+        public int IdleSeconds => Volatile.Read(ref _idleSeconds);
+        public int PlayingSeconds => Volatile.Read(ref _playingSeconds);
 
         private readonly ISettingsService _settings;
         public ISettingsService Settings => _settings;
@@ -123,7 +126,7 @@ namespace Circle_Tracker
             _gameStateManager.GameState = GameStatus.Menu;
             LastPostTime = DateTime.Now;
 
-            if (!File.Exists(_settings.SettingsFilePath) && !File.Exists(Path.Combine(AppContext.BaseDirectory, "user_settings.txt")))
+            if (!File.Exists(_settings.SettingsFilePath) && !File.Exists(AppPaths.LegacyTxtPath) && !File.Exists(AppPaths.OldLegacyTxtPath))
             {
                 string welcomeMsg = "Welcome to circle tracker!\n\n" +
                     "This app connects to 'tosu' running alongside osu!.\n\n" +
@@ -454,9 +457,9 @@ namespace Circle_Tracker
             if (snap == null) return;
 
             if (snap.IsPlaying)
-                PlayingSeconds++;
+                Interlocked.Increment(ref _playingSeconds);
             else
-                IdleSeconds++;
+                Interlocked.Increment(ref _idleSeconds);
 
             _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, snap.DetectedClient);
             _form.UpdateTime();

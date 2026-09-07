@@ -1,3 +1,4 @@
+using Circle_Tracker;
 using Circle_Tracker.Storage;
 using Circle_Tracker.Sync;
 using Dapper;
@@ -553,5 +554,57 @@ public class OfflinePlaySyncQueueTests
 
         capturedRow.Should().NotBeNull();
         capturedRow![4].Should().Be("");
+    }
+
+    private static PlayEntryData BuildReconnectPlayData(int beatmapId)
+    {
+        return new PlayEntryData(
+            BeatmapString: "Song [Hard]", BeatmapSetID: 1, BeatmapID: beatmapId,
+            Hidden: false, Hardrock: false, Doubletime: false, EZ: false, Halftime: false, Flashlight: false,
+            BeatmapBpm: 120, BeatmapAim: 1m, BeatmapSpeed: 1m, BeatmapStars: 3m,
+            BeatmapCs: 4m, BeatmapAr: 8m, BeatmapOd: 7m,
+            TotalBeatmapHits: 100, Accuracy: 98m,
+            Play300c: 100, Play100c: 0, Play50c: 0, PlayMissc: 0,
+            Complete: true, PlayTimeSeconds: 60, ModsString: "", PlayCount: 1, AccuracyReliable: true
+        );
+    }
+
+    private static async Task LogPlayWithSheetsAbsentAsync(SqliteDatabaseManager dbManager, int beatmapId)
+    {
+        var session = new SessionManager(dbManager);
+        await session.InitializeAsync();
+        await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+        await sqliteSink.InitializeAsync();
+        var composite = new CompositePlaySink();
+        composite.AddSink(sqliteSink, () => true);
+        var context = new PlayContext(session.SessionId, false, 0, 0, "test", null, false);
+
+        await composite.TryLogPlayAsync(BuildReconnectPlayData(beatmapId), context);
+    }
+
+    [Fact]
+    public async Task EndToEnd_PlayLoggedWhileSheetsDisabled_AppearsInPendingQueue()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+
+        await LogPlayWithSheetsAbsentAsync(dbManager, 910);
+
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => false, null);
+        int pending = await queue.GetPendingCountAsync();
+
+        pending.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EndToEnd_PendingPlay_FlushesOnReconnectAndMarksSynced()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await LogPlayWithSheetsAbsentAsync(dbManager, 911);
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) => Task.CompletedTask);
+        using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.SyncedCount.Should().Be(1);
     }
 }

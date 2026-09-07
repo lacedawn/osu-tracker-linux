@@ -11,6 +11,7 @@ public class BeatmapStateTracker : IBeatmapStateTracker
 
     private readonly ITosuClient? _tosuClient;
     private CancellationTokenSource? _ppApiCts;
+    private readonly object _difficultyLock = new();
 
     public string CurrentBeatmapChecksum { get; set; } = "";
     public int BeatmapID { get; set; }
@@ -59,21 +60,26 @@ public class BeatmapStateTracker : IBeatmapStateTracker
 
     public void UpdateModsFromBitfield(int rawMods)
     {
-        RawMods = rawMods;
-        var mods = (OsuMods)rawMods;
-        Hidden = mods.HasFlag(OsuMods.Hidden);
-        Hardrock = mods.HasFlag(OsuMods.HardRock);
-        Doubletime = mods.HasFlag(OsuMods.DoubleTime) || mods.HasFlag(OsuMods.Nightcore);
-        EZ = mods.HasFlag(OsuMods.Easy);
-        Halftime = mods.HasFlag(OsuMods.HalfTime);
-        Flashlight = mods.HasFlag(OsuMods.Flashlight);
-        Auto = mods.HasFlag(OsuMods.Autoplay);
+        lock (_difficultyLock)
+        {
+            RawMods = rawMods;
+            var mods = (OsuMods)rawMods;
+            Hidden = mods.HasFlag(OsuMods.Hidden);
+            Hardrock = mods.HasFlag(OsuMods.HardRock);
+            Doubletime = mods.HasFlag(OsuMods.DoubleTime) || mods.HasFlag(OsuMods.Nightcore);
+            EZ = mods.HasFlag(OsuMods.Easy);
+            Halftime = mods.HasFlag(OsuMods.HalfTime);
+            Flashlight = mods.HasFlag(OsuMods.Flashlight);
+            Auto = mods.HasFlag(OsuMods.Autoplay);
+        }
     }
 
     public void UpdateBeatmapFromState(TosuState state)
     {
-        var bm = state?.Beatmap;
-        if (bm == null) return;
+        lock (_difficultyLock)
+        {
+            var bm = state?.Beatmap;
+            if (bm == null) return;
 
         BeatmapID = bm.Id;
         BeatmapSetID = bm.Set;
@@ -100,13 +106,22 @@ public class BeatmapStateTracker : IBeatmapStateTracker
         {
             CurrentBeatmapChecksum = bm.Checksum;
         }
+        }
     }
 
     public void FireUpdateDifficultyFromPpApi(int modNumber)
     {
-        _ppApiCts?.Cancel();
-        _ppApiCts = new CancellationTokenSource();
-        _ = UpdateDifficultyFromPpApi(modNumber, _ppApiCts.Token);
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _ppApiCts, cts);
+        try
+        {
+            previous?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        previous?.Dispose();
+        _ = UpdateDifficultyFromPpApi(modNumber, cts.Token);
     }
 
     public async Task UpdateDifficultyFromPpApi(int modNumber, CancellationToken ct = default)
@@ -114,38 +129,63 @@ public class BeatmapStateTracker : IBeatmapStateTracker
         if (_tosuClient == null)
             return;
 
+        string checksumAtCall;
+        lock (_difficultyLock)
+        {
+            checksumAtCall = CurrentBeatmapChecksum;
+        }
+
         try
         {
             var ppResult = await _tosuClient.CalculatePpAsync(modNumber, ct);
-            var diff = ppResult?.Difficulty ?? ppResult?.Performance?.Difficulty;
-            if (diff != null)
+            ct.ThrowIfCancellationRequested();
+            lock (_difficultyLock)
             {
-                if (BeatmapAim == 0 && diff.Aim > 0) BeatmapAim = diff.Aim;
-                if (BeatmapSpeed == 0 && diff.Speed > 0) BeatmapSpeed = diff.Speed;
-                if (BeatmapStars == 0 && diff.Stars > 0) BeatmapStars = diff.Stars;
-                if (BeatmapAr == 0 && diff.Ar > 0) BeatmapAr = diff.Ar;
-                if (BeatmapOd == 0 && diff.Od > 0) BeatmapOd = diff.Od;
-                if (BeatmapCs == 0 && diff.Cs > 0) BeatmapCs = diff.Cs;
-                if (BeatmapHp == 0 && diff.Hp > 0) BeatmapHp = diff.Hp;
-                if (BeatmapBpm == 0 && diff.Bpm > 0) BeatmapBpm = (int)Math.Round((double)diff.Bpm);
-                if (diff.ClockRate > 0)
-                    LastClockRate = (float)diff.ClockRate;
+                if (!string.IsNullOrEmpty(checksumAtCall) && CurrentBeatmapChecksum != checksumAtCall)
+                    return;
+                ApplyDifficultyResult(ppResult);
             }
-            if (ppResult?.Attributes != null)
-            {
-                var attr = ppResult.Attributes;
-                if (BeatmapAr == 0 && attr.Ar > 0) BeatmapAr = attr.Ar;
-                if (BeatmapOd == 0 && attr.Od > 0) BeatmapOd = attr.Od;
-                if (BeatmapCs == 0 && attr.Cs > 0) BeatmapCs = attr.Cs;
-                if (BeatmapHp == 0 && attr.Hp > 0) BeatmapHp = attr.Hp;
-                if (BeatmapBpm == 0 && attr.Bpm > 0) BeatmapBpm = (int)Math.Round((double)attr.Bpm);
-                if (attr.ClockRate > 0)
-                    LastClockRate = (float)attr.ClockRate;
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
         }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Failed to update difficulty from PP API");
+        }
+    }
+
+    private void ApplyDifficultyResult(PpCalcResult? ppResult)
+    {
+        var diff = ppResult?.Difficulty ?? ppResult?.Performance?.Difficulty;
+        if (diff != null)
+        {
+            if (BeatmapAim == 0 && diff.Aim > 0) BeatmapAim = diff.Aim;
+            if (BeatmapSpeed == 0 && diff.Speed > 0) BeatmapSpeed = diff.Speed;
+            if (BeatmapStars == 0 && diff.Stars > 0) BeatmapStars = diff.Stars;
+            if (BeatmapAr == 0 && diff.Ar > 0) BeatmapAr = diff.Ar;
+            if (BeatmapOd == 0 && diff.Od > 0) BeatmapOd = diff.Od;
+            if (BeatmapCs == 0 && diff.Cs > 0) BeatmapCs = diff.Cs;
+            if (BeatmapHp == 0 && diff.Hp > 0) BeatmapHp = diff.Hp;
+            if (BeatmapBpm == 0 && diff.Bpm > 0) BeatmapBpm = (int)Math.Round((double)diff.Bpm);
+            if (diff.ClockRate > 0)
+                LastClockRate = (float)diff.ClockRate;
+        }
+        if (ppResult?.Attributes != null)
+        {
+            var attr = ppResult.Attributes;
+            if (BeatmapAr == 0 && attr.Ar > 0) BeatmapAr = attr.Ar;
+            if (BeatmapOd == 0 && attr.Od > 0) BeatmapOd = attr.Od;
+            if (BeatmapCs == 0 && attr.Cs > 0) BeatmapCs = attr.Cs;
+            if (BeatmapHp == 0 && attr.Hp > 0) BeatmapHp = attr.Hp;
+            if (BeatmapBpm == 0 && attr.Bpm > 0) BeatmapBpm = (int)Math.Round((double)attr.Bpm);
+            if (attr.ClockRate > 0)
+                LastClockRate = (float)attr.ClockRate;
         }
     }
 }

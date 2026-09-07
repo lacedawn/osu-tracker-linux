@@ -47,8 +47,12 @@ public class SettingsService : ISettingsService
 
     public SettingsService(string? settingsFilePath = null, string? oldSettingsFilePath = null)
     {
-        SettingsFilePath = settingsFilePath ?? Path.Combine(AppContext.BaseDirectory, "user_settings.json");
-        OldSettingsFilePath = oldSettingsFilePath ?? Path.Combine(AppContext.BaseDirectory, "user_settings.txt");
+        if (settingsFilePath == null && oldSettingsFilePath == null)
+        {
+            AppPaths.MigrateLegacyFiles();
+        }
+        SettingsFilePath = settingsFilePath ?? AppPaths.SettingsPath;
+        OldSettingsFilePath = oldSettingsFilePath ?? AppPaths.LegacyTxtPath;
         LoadSettings();
     }
 
@@ -115,6 +119,10 @@ public class SettingsService : ISettingsService
             if (File.Exists(OldSettingsFilePath))
             {
                 MigrateOldSettings(OldSettingsFilePath);
+            }
+            else if (File.Exists(AppPaths.OldLegacyTxtPath))
+            {
+                MigrateOldSettings(AppPaths.OldLegacyTxtPath);
             }
             return;
         }

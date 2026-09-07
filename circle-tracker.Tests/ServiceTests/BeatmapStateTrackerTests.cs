@@ -178,4 +178,71 @@ public class BeatmapStateTrackerTests
         tracker.BeatmapBpm.Should().Be(190);
         tracker.LastClockRate.Should().Be(1.5f);
     }
+
+    [Fact]
+    public async Task CancelledPpLookup_LeavesPreviousDifficultyIntact()
+    {
+        var mockTosu = new Mock<ITosuClient>();
+        mockTosu.Setup(c => c.CalculatePpAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PpCalcResult
+            {
+                Difficulty = new PpDifficulty { Stars = 5.9m }
+            });
+        var tracker = new BeatmapStateTracker(mockTosu.Object);
+        tracker.BeatmapStars = 4.2m;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await tracker.UpdateDifficultyFromPpApi(0, cts.Token);
+
+        tracker.BeatmapStars.Should().Be(4.2m);
+    }
+
+    [Fact]
+    public async Task StalePpResponse_AfterMapChange_DoesNotOverwriteCurrentMapDifficulty()
+    {
+        var gate = new TaskCompletionSource<PpCalcResult?>();
+        var mockTosu = new Mock<ITosuClient>();
+        mockTosu.Setup(c => c.CalculatePpAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(gate.Task);
+        var tracker = new BeatmapStateTracker(mockTosu.Object);
+        tracker.CurrentBeatmapChecksum = "map-a";
+
+        var pending = tracker.UpdateDifficultyFromPpApi(0);
+
+        tracker.CurrentBeatmapChecksum = "map-b";
+        tracker.BeatmapStars = 7.1m;
+        gate.SetResult(new PpCalcResult
+        {
+            Difficulty = new PpDifficulty { Stars = 5.9m }
+        });
+        await pending;
+
+        tracker.BeatmapStars.Should().Be(7.1m);
+    }
+
+    [Fact]
+    public async Task RapidMapChanges_KeepLatestDifficultyWithoutThrowing()
+    {
+        var mockTosu = new Mock<ITosuClient>();
+        mockTosu.Setup(c => c.CalculatePpAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PpCalcResult
+            {
+                Difficulty = new PpDifficulty { Stars = 5.9m }
+            });
+        var tracker = new BeatmapStateTracker(mockTosu.Object);
+
+        for (int i = 0; i < 20; i++)
+        {
+            tracker.CurrentBeatmapChecksum = $"map-{i}";
+            tracker.FireUpdateDifficultyFromPpApi(0);
+        }
+
+        for (int spin = 0; spin < 1000 && tracker.BeatmapStars == 0; spin++)
+        {
+            await Task.Yield();
+        }
+
+        tracker.BeatmapStars.Should().Be(5.9m);
+    }
 }
