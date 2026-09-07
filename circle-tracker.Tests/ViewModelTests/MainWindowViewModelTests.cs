@@ -415,6 +415,56 @@ public class MainWindowViewModelTests
         viewModel.IsSettingsPanelVisible.Should().BeFalse();
     }
 
+    [AvaloniaFact]
+    public async Task ShowYesNoDialogAsync_WithNoDelegate_ReturnsFalse()
+    {
+        var viewModel = CreateViewModel();
+
+        bool result = await viewModel.ShowYesNoDialogAsync("message", "title");
+
+        result.Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public async Task ShowYesNoDialogAsync_WithDelegateReturningTrue_ReturnsTrue()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.ShowYesNoDialogDelegate = (m, t) => Task.FromResult(true);
+
+        bool result = await viewModel.ShowYesNoDialogAsync("message", "title");
+
+        result.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public async Task ShowYesNoDialogAsync_WithDelegateReturningFalse_ReturnsFalse()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.ShowYesNoDialogDelegate = (m, t) => Task.FromResult(false);
+
+        bool result = await viewModel.ShowYesNoDialogAsync("message", "title");
+
+        result.Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public async Task ShowYesNoDialogAsync_DelegateCalled_WithCorrectMessageAndTitle()
+    {
+        var viewModel = CreateViewModel();
+        string capturedMessage = "";
+        string capturedTitle = "";
+        viewModel.ShowYesNoDialogDelegate = (m, t) =>
+        {
+            capturedMessage = m;
+            capturedTitle = t;
+            return Task.FromResult(true);
+        };
+
+        await viewModel.ShowYesNoDialogAsync("Do you confirm?", "Timezone");
+
+        (capturedMessage, capturedTitle).Should().Be(("Do you confirm?", "Timezone"));
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         return new MainWindowViewModel(

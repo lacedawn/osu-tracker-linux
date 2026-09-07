@@ -613,15 +613,28 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         return await ShowYesNoDialogAsync(message, title);
     }
 
+    public Func<string, string, Task>? ShowMessageDelegate { get; set; }
+
+    public Func<string, string, Task<bool>>? ShowYesNoDialogDelegate { get; set; }
+
     public async Task ShowMessageAsync(string message, string title = "Info")
     {
+        if (ShowMessageDelegate != null)
+        {
+            await ShowMessageDelegate(message, title);
+            return;
+        }
+
         StatusText = $"{title}: {message}";
         await Task.CompletedTask;
     }
 
     public async Task<bool> ShowYesNoDialogAsync(string message, string title = "Confirm")
     {
-        await Task.CompletedTask;
+        if (ShowYesNoDialogDelegate != null)
+            return await ShowYesNoDialogDelegate(message, title);
+
+        _log.LogWarning("ShowYesNoDialogAsync called but no dialog delegate is set. Returning false.");
         return false;
     }
 

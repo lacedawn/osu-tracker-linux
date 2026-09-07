@@ -34,6 +34,8 @@ namespace Circle_Tracker
             {
                 _viewModel.OpenAnalyticsRequested += OpenAnalyticsWindow;
                 _viewModel.SessionSummaryRequested += ShowSessionSummaryDialogAsync;
+                _viewModel.ShowYesNoDialogDelegate = ShowRealYesNoDialogAsync;
+                _viewModel.ShowMessageDelegate = ShowRealMessageAsync;
             }
 
             _ = Task.Run(async () =>
@@ -88,6 +90,33 @@ namespace Circle_Tracker
             {
                 _log.LogError(ex, "Failed to show session summary dialog");
                 return false;
+            }
+        }
+
+        private async Task<bool> ShowRealYesNoDialogAsync(string message, string title)
+        {
+            try
+            {
+                var dialog = new ConfirmDialog(message, title);
+                return await dialog.ShowDialog<bool>(this);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to show confirmation dialog");
+                return false;
+            }
+        }
+
+        private async Task ShowRealMessageAsync(string message, string title)
+        {
+            try
+            {
+                var dialog = new ConfirmDialog(message, title);
+                await dialog.ShowDialog<bool>(this);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to show message dialog");
             }
         }
 
