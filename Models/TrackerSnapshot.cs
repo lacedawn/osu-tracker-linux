@@ -33,7 +33,8 @@ public record TrackerSnapshot(
     int IdleSeconds,
     int PlayCount = 0,
     bool DatabaseReady = false,
-    int LocalPlayCount = 0
+    int LocalPlayCount = 0,
+    bool ProfileIdentityConfirmed = false
 )
 {
     public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";

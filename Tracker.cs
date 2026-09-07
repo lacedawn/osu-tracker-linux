@@ -55,6 +55,8 @@ namespace Circle_Tracker
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
         private readonly object _snapshotLock = new();
+        private volatile TrackerSnapshot? _lastSnapshot;
+        private string? _tosuProfileName;
         private readonly IPlaySubmissionService _submissionService;
         public IPlaySubmissionService SubmissionService => _submissionService;
 
@@ -197,45 +199,51 @@ namespace Circle_Tracker
             await _sessionManager.InitializeAsync(ct);
         }
 
+        private TrackerSnapshot BuildSnapshotLocked()
+        {
+            return new TrackerSnapshot(
+                IsPlaying: _gameStateManager.IsPlaying,
+                IsReplay: _gameStateManager.IsReplay,
+                DetectedClient: _gameStateManager.DetectedClient,
+                BeatmapString: _beatmapState.BeatmapString ?? "",
+                BeatmapTitle: _beatmapState.BeatmapTitle,
+                BeatmapArtist: _beatmapState.BeatmapArtist,
+                BeatmapVersion: _beatmapState.BeatmapVersion,
+                BeatmapId: _beatmapState.BeatmapID,
+                BeatmapSetId: _beatmapState.BeatmapSetID,
+                BeatmapHp: _beatmapState.BeatmapHp,
+                BeatmapStars: _beatmapState.BeatmapStars,
+                BeatmapAim: _beatmapState.BeatmapAim,
+                BeatmapSpeed: _beatmapState.BeatmapSpeed,
+                BeatmapCs: _beatmapState.BeatmapCs,
+                BeatmapAr: _beatmapState.BeatmapAr,
+                BeatmapOd: _beatmapState.BeatmapOd,
+                BeatmapBpm: _beatmapState.BeatmapBpm,
+                TotalBeatmapHits: TotalBeatmapHits,
+                Play300c: Play300c,
+                Play100c: Play100c,
+                Play50c: Play50c,
+                PlayMissc: PlayMissc,
+                Accuracy: Accuracy,
+                Time: Time,
+                ModsString: _beatmapState.GetModsString(),
+                GameStateLabel: _gameStateManager.GameStateLabel,
+                SheetsApiReady: SheetsApiReady,
+                MemoryReadError: _gameStateManager.MemoryReadError,
+                PlayingSeconds: PlayingSeconds,
+                IdleSeconds: IdleSeconds,
+                PlayCount: _submissionService.ConsecutivePlayCount,
+                DatabaseReady: DatabaseReady,
+                LocalPlayCount: LocalPlayCount,
+                ProfileIdentityConfirmed: !string.IsNullOrWhiteSpace(_tosuProfileName ?? _tosuClient.LatestState?.Profile?.Name)
+            );
+        }
+
         public TrackerSnapshot GetSnapshot()
         {
             lock (_snapshotLock)
             {
-                return new TrackerSnapshot(
-                    IsPlaying: _gameStateManager.IsPlaying,
-                    IsReplay: _gameStateManager.IsReplay,
-                    DetectedClient: _gameStateManager.DetectedClient,
-                    BeatmapString: _beatmapState.BeatmapString ?? "",
-                    BeatmapTitle: _beatmapState.BeatmapTitle,
-                    BeatmapArtist: _beatmapState.BeatmapArtist,
-                    BeatmapVersion: _beatmapState.BeatmapVersion,
-                    BeatmapId: _beatmapState.BeatmapID,
-                    BeatmapSetId: _beatmapState.BeatmapSetID,
-                    BeatmapHp: _beatmapState.BeatmapHp,
-                    BeatmapStars: _beatmapState.BeatmapStars,
-                    BeatmapAim: _beatmapState.BeatmapAim,
-                    BeatmapSpeed: _beatmapState.BeatmapSpeed,
-                    BeatmapCs: _beatmapState.BeatmapCs,
-                    BeatmapAr: _beatmapState.BeatmapAr,
-                    BeatmapOd: _beatmapState.BeatmapOd,
-                    BeatmapBpm: _beatmapState.BeatmapBpm,
-                    TotalBeatmapHits: TotalBeatmapHits,
-                    Play300c: Play300c,
-                    Play100c: Play100c,
-                    Play50c: Play50c,
-                    PlayMissc: PlayMissc,
-                    Accuracy: Accuracy,
-                    Time: Time,
-                    ModsString: _beatmapState.GetModsString(),
-                    GameStateLabel: _gameStateManager.GameStateLabel,
-                    SheetsApiReady: SheetsApiReady,
-                    MemoryReadError: _gameStateManager.MemoryReadError,
-                    PlayingSeconds: PlayingSeconds,
-                    IdleSeconds: IdleSeconds,
-                    PlayCount: _submissionService.ConsecutivePlayCount,
-                    DatabaseReady: DatabaseReady,
-                    LocalPlayCount: LocalPlayCount
-                );
+                return BuildSnapshotLocked();
             }
         }
 
@@ -244,19 +252,28 @@ namespace Circle_Tracker
         {
             if (!_tosuClient.IsConnected)
             {
-                lock (_snapshotLock) { _gameStateManager.DetectedClient = "Disconnected"; }
+                lock (_snapshotLock)
+                {
+                    _gameStateManager.DetectedClient = "Disconnected";
+                    _lastSnapshot = BuildSnapshotLocked();
+                }
                 return;
             }
 
             var state = _tosuClient.LatestState;
             if (state == null)
             {
-                lock (_snapshotLock) { _gameStateManager.DetectedClient = "Connecting..."; }
+                lock (_snapshotLock)
+                {
+                    _gameStateManager.DetectedClient = "Connecting...";
+                    _lastSnapshot = BuildSnapshotLocked();
+                }
                 return;
             }
 
             lock (_snapshotLock)
             {
+                _tosuProfileName = state.Profile?.Name;
                 GameStatus previousGameState = _gameStateManager.GameState;
                 _gameStateManager.UpdateFromState(state);
                 GameStatus currentGameState = _gameStateManager.GameState;
@@ -303,9 +320,6 @@ namespace Circle_Tracker
                     }
                     else if (previousGameState != GameStatus.Playing && currentGameState == GameStatus.Playing)
                     {
-                        // Just entered Playing from a non-Playing state (e.g. ResultsScreen → Playing on retry).
-                        // Tosu still reports stale hit data from the previous play for this first tick,
-                        // so skip hit processing to avoid absorbing stale data and triggering a false retry.
                         justEnteredPlaying = true;
                         _log.LogDebug("Entered Playing from {PreviousState}, skipping first tick hit processing (stale data)", previousGameState);
                         Play300c = 0;
@@ -403,6 +417,9 @@ namespace Circle_Tracker
                     if (state.Play.Mods != null)
                         _beatmapState.UpdateModsFromBitfield(state.Play.Mods.Number);
                 }
+
+                var snapshot = BuildSnapshotLocked();
+                _lastSnapshot = snapshot;
             }
         }
 
@@ -422,12 +439,15 @@ namespace Circle_Tracker
 
         public void TickEverySecond()
         {
-            if (_gameStateManager.IsPlaying)
+            var snap = _lastSnapshot;
+            if (snap == null) return;
+
+            if (snap.IsPlaying)
                 PlayingSeconds++;
             else
                 IdleSeconds++;
 
-            _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, _gameStateManager.DetectedClient);
+            _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, snap.DetectedClient);
             _form.UpdateTime();
         }
 

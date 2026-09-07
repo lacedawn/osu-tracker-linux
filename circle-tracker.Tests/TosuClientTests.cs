@@ -1,8 +1,10 @@
 using Circle_Tracker;
 using FluentAssertions;
+using Moq;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -512,6 +514,80 @@ namespace CircleTracker.Tests
             var act = () => client.Dispose();
 
             act.Should().NotThrow();
+        }
+
+        [Fact]
+        public async Task ConnectAsync_CalledConcurrently_StartsOnlyOneRunner()
+        {
+            var mockTransport = new Mock<ITosuTransport>();
+            var runnerCount = 0;
+            mockTransport
+                .Setup(t => t.RunWebSocketSessionAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .Returns(async (byte[] _, CancellationToken ct) =>
+                {
+                    Interlocked.Increment(ref runnerCount);
+                    await Task.Delay(100, ct);
+                    return false;
+                });
+            mockTransport
+                .Setup(t => t.PollHttpSnapshotAsync(It.IsAny<CancellationToken>()))
+                .Returns(async (CancellationToken ct) =>
+                {
+                    await Task.Delay(100, ct);
+                    return null;
+                });
+            using var client = new TosuClient(mockTransport.Object);
+
+            await Task.WhenAll(client.ConnectAsync(), client.ConnectAsync());
+            await Task.Delay(50);
+            await client.DisconnectAsync();
+
+            runnerCount.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task ConnectAsync_AfterDisconnect_CanReconnect()
+        {
+            var mockTransport = new Mock<ITosuTransport>();
+            mockTransport
+                .Setup(t => t.RunWebSocketSessionAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            mockTransport
+                .Setup(t => t.PollHttpSnapshotAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TosuState { State = new TosuGameState { Number = 2 } });
+            using var client = new TosuClient(mockTransport.Object);
+
+            await client.ConnectAsync();
+            await Task.Delay(50);
+            await client.DisconnectAsync();
+            await client.ConnectAsync();
+            await Task.Delay(50);
+            var isConnected = client.IsConnected;
+            await client.DisconnectAsync();
+
+            isConnected.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task ConnectAsync_WhileAlreadyConnected_ReturnsImmediately()
+        {
+            var mockTransport = new Mock<ITosuTransport>();
+            mockTransport
+                .Setup(t => t.RunWebSocketSessionAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .Returns(async (byte[] _, CancellationToken ct) =>
+                {
+                    await Task.Delay(1000, ct);
+                    return false;
+                });
+            using var client = new TosuClient(mockTransport.Object);
+            await client.ConnectAsync();
+            var initialRunner = client.RunnerTask;
+
+            await client.ConnectAsync();
+            var secondRunner = client.RunnerTask;
+            await client.DisconnectAsync();
+
+            secondRunner.Should().BeSameAs(initialRunner);
         }
     }
 }

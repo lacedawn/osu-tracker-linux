@@ -180,4 +180,104 @@ public class GameStateManagerTests
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void DetectReplay_EmptyProfileName_ReturnsTrueInPlayingState()
+    {
+        var manager = new GameStateManager();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Play = new TosuPlay { PlayerName = "SomePlayer" },
+            Profile = new TosuProfile { Name = "" }
+        };
+
+        var result = manager.DetectReplay(state, "");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetectReplay_EmptyProfileName_ReturnsTrueForNullProfileName()
+    {
+        var manager = new GameStateManager();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Play = new TosuPlay { PlayerName = "SomePlayer" },
+            Profile = new TosuProfile { Name = null }
+        };
+
+        var result = manager.DetectReplay(state, "");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetectReplay_PopulatedProfileName_MatchingPlayer_ReturnsFalse()
+    {
+        var manager = new GameStateManager();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Play = new TosuPlay { PlayerName = "lacedawn" },
+            Profile = new TosuProfile { Name = "lacedawn" }
+        };
+
+        var result = manager.DetectReplay(state, "lacedawn");
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DetectReplay_PopulatedProfileName_DifferentPlayer_ReturnsTrue()
+    {
+        var manager = new GameStateManager();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Play = new TosuPlay { PlayerName = "someone_else" },
+            Profile = new TosuProfile { Name = "lacedawn" }
+        };
+
+        var result = manager.DetectReplay(state, "lacedawn");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TrackerSnapshot_EmptyProfile_ProfileIdentityConfirmedIsFalse()
+    {
+        var (tracker, client, _) = TrackerFactory.Create();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Profile = new TosuProfile { Name = "" },
+            Play = new TosuPlay { PlayerName = "SomePlayer" }
+        };
+        client.Setup(c => c.LatestState).Returns(state);
+
+        tracker.Tick();
+        var snapshot = tracker.GetSnapshot();
+
+        snapshot.ProfileIdentityConfirmed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TrackerSnapshot_PopulatedProfile_ProfileIdentityConfirmedIsTrue()
+    {
+        var (tracker, client, _) = TrackerFactory.Create();
+        var state = new TosuState
+        {
+            State = new TosuGameState { Number = 2 },
+            Profile = new TosuProfile { Name = "lacedawn" },
+            Play = new TosuPlay { PlayerName = "lacedawn" }
+        };
+        client.Setup(c => c.LatestState).Returns(state);
+
+        tracker.Tick();
+        var snapshot = tracker.GetSnapshot();
+
+        snapshot.ProfileIdentityConfirmed.Should().BeTrue();
+    }
 }

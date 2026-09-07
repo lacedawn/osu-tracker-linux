@@ -298,7 +298,100 @@ public class MainWindowViewModelTests
     public void SyncToSheetsCommand_DelegatesToSettingsViewModel()
     {
         var viewModel = CreateViewModel();
+
         viewModel.SyncToSheetsCommand.Should().BeSameAs(viewModel.Settings.SyncToSheetsCommand);
+    }
+
+    [AvaloniaFact]
+    public void UpdateFromSnapshot_WhenProfileIdentityUnconfirmedAndConnected_ShowsProfileWarning()
+    {
+        var viewModel = CreateViewModel();
+        var snapshot = new TrackerSnapshot(
+            IsPlaying: false,
+            IsReplay: false,
+            DetectedClient: "osu!stable",
+            BeatmapString: "test",
+            BeatmapTitle: "title",
+            BeatmapArtist: "artist",
+            BeatmapVersion: "insane",
+            BeatmapId: 1,
+            BeatmapSetId: 1,
+            BeatmapHp: 5,
+            BeatmapStars: 5,
+            BeatmapAim: 2,
+            BeatmapSpeed: 2,
+            BeatmapCs: 4,
+            BeatmapAr: 9,
+            BeatmapOd: 8,
+            BeatmapBpm: 180,
+            TotalBeatmapHits: 0,
+            Play300c: 0,
+            Play100c: 0,
+            Play50c: 0,
+            PlayMissc: 0,
+            Accuracy: 100,
+            Time: 0,
+            ModsString: "NM",
+            GameStateLabel: "IDLE",
+            SheetsApiReady: false,
+            MemoryReadError: false,
+            PlayingSeconds: 0,
+            IdleSeconds: 0,
+            PlayCount: 0,
+            DatabaseReady: true,
+            LocalPlayCount: 0,
+            ProfileIdentityConfirmed: false
+        );
+
+        viewModel.UpdateFromSnapshot(snapshot);
+
+        viewModel.ProfileWarningVisible.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public void UpdateFromSnapshot_WhenProfileIdentityConfirmedAndConnected_HidesProfileWarning()
+    {
+        var viewModel = CreateViewModel();
+        var snapshot = new TrackerSnapshot(
+            IsPlaying: false,
+            IsReplay: false,
+            DetectedClient: "osu!stable",
+            BeatmapString: "test",
+            BeatmapTitle: "title",
+            BeatmapArtist: "artist",
+            BeatmapVersion: "insane",
+            BeatmapId: 1,
+            BeatmapSetId: 1,
+            BeatmapHp: 5,
+            BeatmapStars: 5,
+            BeatmapAim: 2,
+            BeatmapSpeed: 2,
+            BeatmapCs: 4,
+            BeatmapAr: 9,
+            BeatmapOd: 8,
+            BeatmapBpm: 180,
+            TotalBeatmapHits: 0,
+            Play300c: 0,
+            Play100c: 0,
+            Play50c: 0,
+            PlayMissc: 0,
+            Accuracy: 100,
+            Time: 0,
+            ModsString: "NM",
+            GameStateLabel: "IDLE",
+            SheetsApiReady: false,
+            MemoryReadError: false,
+            PlayingSeconds: 0,
+            IdleSeconds: 0,
+            PlayCount: 0,
+            DatabaseReady: true,
+            LocalPlayCount: 0,
+            ProfileIdentityConfirmed: true
+        );
+
+        viewModel.UpdateFromSnapshot(snapshot);
+
+        viewModel.ProfileWarningVisible.Should().BeFalse();
     }
 
     private MainWindowViewModel CreateViewModel()

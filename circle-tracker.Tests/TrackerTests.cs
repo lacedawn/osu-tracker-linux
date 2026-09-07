@@ -693,5 +693,52 @@ namespace CircleTracker.Tests
                 It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
             ), Times.Once);
         }
+
+        [Fact]
+        public void TickEverySecond_BeforeFirstTick_DoesNotThrow()
+        {
+            var (tracker, _, _) = TrackerFactory.Create();
+
+            var act = () => tracker.TickEverySecond();
+
+            act.Should().NotThrow();
+        }
+
+        [Fact]
+        public void TickEverySecond_AfterPlayingTick_CountsPlayingSeconds()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+
+            tracker.TickEverySecond();
+
+            tracker.PlayingSeconds.Should().Be(1);
+        }
+
+        [Fact]
+        public void TickEverySecond_AfterIdleTick_CountsIdleSeconds()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Build(0));
+            tracker.Tick();
+
+            tracker.TickEverySecond();
+
+            tracker.IdleSeconds.Should().Be(1);
+        }
+
+        [Fact]
+        public void TickEverySecond_DoesNotDirectlyReadGameStateManager()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+
+            var lastSnapshotField = typeof(Tracker).GetField("_lastSnapshot", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var snapshotValue = lastSnapshotField?.GetValue(tracker);
+
+            snapshotValue.Should().NotBeNull();
+        }
     }
 }

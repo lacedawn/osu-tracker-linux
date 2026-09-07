@@ -24,6 +24,9 @@
               <Ellipse Width="6" Height="6" Fill="{Binding Settings.TosuStatusBrush}" VerticalAlignment="Center"/>
               <TextBlock Text="{Binding Settings.TosuStatusText}" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding ProfileWarningVisible}">
+              <TextBlock Text="⚠ Unconfirmed Profile" Foreground="#facc15" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
               <Ellipse Width="6" Height="6" Fill="{Binding Settings.DbStatusBrush}" VerticalAlignment="Center"/>
               <TextBlock Text="{Binding Settings.DbStatusText}" Foreground="#8f87a3" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>

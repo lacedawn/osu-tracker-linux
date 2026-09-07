@@ -1,9 +1,17 @@
+using Microsoft.Extensions.Logging;
 using System;
 
 namespace Circle_Tracker.Services;
 
 public class GameStateManager : IGameStateManager
 {
+    private readonly ILogger<GameStateManager> _log;
+
+    public GameStateManager(ILogger<GameStateManager>? log = null)
+    {
+        _log = log ?? AppLogger.For<GameStateManager>();
+    }
+
     public GameStatus GameState { get; set; } = GameStatus.Menu;
     public bool IsPlaying => GameState == GameStatus.Playing;
     public bool IsReplay { get; private set; }
@@ -65,6 +73,14 @@ public class GameStateManager : IGameStateManager
 
         string? playName = state.Play?.PlayerName;
         string? profileName = !string.IsNullOrWhiteSpace(state.Profile?.Name) ? state.Profile.Name : username;
+
+        bool isPlaying = (state.State != null ? ParseGameState(state.State.Number) : GameState) == GameStatus.Playing;
+        if (string.IsNullOrWhiteSpace(profileName) && isPlaying)
+        {
+            _log.LogWarning("Profile name is empty while in Playing state. Replay detection may be unreliable. Treating as potential replay: {PlayerName}", state.Play?.PlayerName);
+            return true;
+        }
+
         if (!string.IsNullOrWhiteSpace(playName) &&
             !string.IsNullOrWhiteSpace(profileName) &&
             !string.Equals(playName.Trim(), profileName.Trim(), StringComparison.OrdinalIgnoreCase))

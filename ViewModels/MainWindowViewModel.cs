@@ -38,6 +38,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     private string _sessionAccuracyText = "0.00%";
     private string _sessionPassRateText = "0%";
     private string _currentPpText = "0 PP";
+    private bool _profileWarningVisible;
 
     private Func<Task>? _openAnalyticsAction;
     private Func<Task>? _showSessionSummaryAction;
@@ -156,6 +157,12 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         set => SetProperty(ref _currentPpText, value);
     }
 
+    public bool ProfileWarningVisible
+    {
+        get => _profileWarningVisible;
+        set => SetProperty(ref _profileWarningVisible, value);
+    }
+
     public ICommand OpenAnalyticsCommand { get; }
     public ICommand ResetSessionCommand { get; }
     public ICommand ExportSessionCommand { get; }
@@ -249,6 +256,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
                 Banner.UpdateFromSnapshot(snapshot);
                 Settings.UpdateFromSnapshot(snapshot);
                 SessionLive.UpdateFromSnapshot(snapshot);
+                bool isConnected = _tosuClient?.IsConnected ?? (!snapshot.MemoryReadError && snapshot.DetectedClient != "Disconnected" && snapshot.DetectedClient != "Connecting...");
+                ProfileWarningVisible = !snapshot.ProfileIdentityConfirmed && isConnected;
             }
 
             if (Dispatcher.UIThread.CheckAccess())
