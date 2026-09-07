@@ -58,34 +58,20 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
 
     public async Task FlushPendingSubmissionsAsync(CancellationToken ct = default)
     {
-        while (!_activeSubmissionTasks.IsEmpty)
-        {
-            Task[] tasksToAwait = _activeSubmissionTasks.Keys.ToArray();
-            if (tasksToAwait.Length == 0)
-            {
-                break;
-            }
+        var pending = _activeSubmissionTasks.Keys.ToArray();
 
+        if (pending.Length > 0)
+        {
             try
             {
-                await Task.WhenAll(tasksToAwait).WaitAsync(ct).ConfigureAwait(false);
+                await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                throw;
             }
-            catch
+            catch (TimeoutException)
             {
             }
-        }
-
-        await _sheetsLock.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-        }
-        finally
-        {
-            _sheetsLock.Release();
         }
     }
 

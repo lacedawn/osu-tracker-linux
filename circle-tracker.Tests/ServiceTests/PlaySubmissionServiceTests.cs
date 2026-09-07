@@ -3,6 +3,8 @@ using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using FluentAssertions;
 using Moq;
+using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -225,5 +227,71 @@ public class PlaySubmissionServiceTests
         loggedEvent.Should().NotBeNull();
         loggedEvent!.Value.Data.Complete.Should().BeTrue();
         loggedEvent!.Value.Data.TotalBeatmapHits.Should().Be(50);
+    }
+
+    [Fact]
+    public async Task FlushPendingSubmissionsAsync_WaitsForInFlightSubmission_BeforeReturning()
+    {
+        var sink = new Mock<IPlaySink>();
+        sink.Setup(s => s.TryLogPlayAsync(
+            It.IsAny<PlayEntryData>(),
+            It.IsAny<PlayContext>(),
+            It.IsAny<CancellationToken>()))
+            .Returns(() => Task.Delay(TimeSpan.FromMilliseconds(200)));
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        service.TryPostBeatmapEntry(complete: true, totalBeatmapHits: 50);
+        var stopwatch = Stopwatch.StartNew();
+        await service.FlushPendingSubmissionsAsync();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(150));
+    }
+
+    [Fact]
+    public async Task FlushPendingSubmissionsAsync_WithNoActiveTasks_ReturnsImmediately()
+    {
+        var sink = new Mock<IPlaySink>();
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        var stopwatch = Stopwatch.StartNew();
+        await service.FlushPendingSubmissionsAsync();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task FlushPendingSubmissionsAsync_CancellationRequested_DoesNotThrow()
+    {
+        var sink = new Mock<IPlaySink>();
+        sink.Setup(s => s.TryLogPlayAsync(
+            It.IsAny<PlayEntryData>(),
+            It.IsAny<PlayContext>(),
+            It.IsAny<CancellationToken>()))
+            .Returns(() => Task.Delay(TimeSpan.FromSeconds(5)));
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+        service.TryPostBeatmapEntry(complete: true, totalBeatmapHits: 50);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => service.FlushPendingSubmissionsAsync(cts.Token);
+
+        await act.Should().NotThrowAsync();
     }
 }
