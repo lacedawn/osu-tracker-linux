@@ -5,8 +5,6 @@ using Circle_Tracker.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
-using System.IO;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,6 +13,8 @@ namespace Circle_Tracker
     public partial class MainWindow : Window
     {
         private static readonly ILogger<MainWindow> _log = AppLogger.For<MainWindow>();
+        private const string ShowLessText = "▼ Less";
+        private const string ShowMoreText = "► More!";
         private readonly MainWindowViewModel? _viewModel;
         private readonly CancellationTokenSource _updateCheckCts = new();
         private bool _isExplicitShutdownComplete;
@@ -25,12 +25,6 @@ namespace Circle_Tracker
 
         public MainWindow(MainWindowViewModel viewModel)
         {
-            string? exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (exeDir != null)
-            {
-                Directory.SetCurrentDirectory(exeDir);
-            }
-
             InitializeComponent();
 
             _viewModel = viewModel;
@@ -135,17 +129,10 @@ namespace Circle_Tracker
 
         private void SettingsToggleButton_Click(object? sender, RoutedEventArgs e)
         {
-            SettingsPanel.IsVisible = !SettingsPanel.IsVisible;
-            if (SettingsPanel.IsVisible)
-            {
-                SettingsToggleText.Text = "▼ Less";
-                if (Height < 560) Height = 560;
-            }
-            else
-            {
-                SettingsToggleText.Text = "► More!";
-                Height = 400;
-            }
+            if (_viewModel == null) return;
+            _viewModel.IsSettingsPanelVisible = !_viewModel.IsSettingsPanelVisible;
+            SettingsToggleText.Text = _viewModel.IsSettingsPanelVisible ? ShowLessText : ShowMoreText;
+            SizeToContent = SizeToContent.Height;
         }
     }
 }

@@ -39,6 +39,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     private string _sessionPassRateText = "0%";
     private string _currentPpText = "0 PP";
     private bool _profileWarningVisible;
+    private bool _isSettingsPanelVisible;
 
     private Func<Task>? _openAnalyticsAction;
     private Func<Task>? _showSessionSummaryAction;
@@ -161,6 +162,12 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
     {
         get => _profileWarningVisible;
         set => SetProperty(ref _profileWarningVisible, value);
+    }
+
+    public bool IsSettingsPanelVisible
+    {
+        get => _isSettingsPanelVisible;
+        set => SetProperty(ref _isSettingsPanelVisible, value);
     }
 
     public ICommand OpenAnalyticsCommand { get; }

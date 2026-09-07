@@ -222,4 +222,57 @@ public class SettingsServiceTests
 
         service.GetFunctionSeparator().Should().Be(",");
     }
+
+    [Fact]
+    public void FindFile_ExistsInBaseDirectory_ReturnsAbsolutePath()
+    {
+        string fileName = $"test_{Guid.NewGuid():N}.tmp";
+        string filePath = Path.Combine(AppContext.BaseDirectory, fileName);
+        File.WriteAllText(filePath, "test");
+        try
+        {
+            var result = SettingsService.FindFile(fileName);
+
+            Path.IsPathRooted(result).Should().BeTrue();
+            result.Should().Be(filePath);
+        }
+        finally
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+    }
+
+    [Fact]
+    public void FindFile_NotInBaseDirectory_ReturnsExpectedFallback()
+    {
+        string fileName = $"nonexistent_{Guid.NewGuid():N}.tmp";
+        string expected = Path.Combine(AppContext.BaseDirectory, fileName);
+
+        var result = SettingsService.FindFile(fileName);
+
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void SettingsService_LoadSettings_DoesNotDependOnCWD()
+    {
+        string previousCwd = Environment.CurrentDirectory;
+        string tempDir = Path.GetTempPath();
+        Environment.CurrentDirectory = tempDir;
+        string nonExistentFile = Path.Combine(tempDir, $"nonexistent_{Guid.NewGuid():N}.json");
+        try
+        {
+            var service = new SettingsService(nonExistentFile);
+
+            service.EnableLocalLogging.Should().BeTrue();
+            service.EnableGoogleSheetsLogging.Should().BeFalse();
+        }
+        finally
+        {
+            Environment.CurrentDirectory = previousCwd;
+        }
+    }
 }

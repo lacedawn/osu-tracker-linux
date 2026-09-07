@@ -27,7 +27,13 @@ namespace Circle_Tracker.Storage
         public string SinkName => "Composite";
         public IReadOnlyList<SinkRegistration> Registrations => _registrations.AsReadOnly();
 
-        public bool IsReady => _registrations.Where(r => r.IsEnabled()).All(r => r.Sink.IsReady);
+        public bool IsReady => _registrations
+            .Where(r => r.IsEnabled())
+            .Any(r => r.Sink.IsReady);
+
+        public bool AllSinksReady => _registrations
+            .Where(r => r.IsEnabled())
+            .All(r => r.Sink.IsReady);
 
         public CompositePlaySink(IEnumerable<SinkRegistration>? registrations = null)
         {

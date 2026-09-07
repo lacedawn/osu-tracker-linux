@@ -1,4 +1,3 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,10 +16,7 @@ internal class SheetsSinkAdapter : IPlaySink
     }
     
     public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
-    {
-        return _sink.TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
-            DateTime.MinValue, _ => { }, context.SoundFilePath, context.SubmitSoundEnabled, ct);
-    }
+        => Task.CompletedTask;
     
     public SheetsSinkAdapter(ISheetsSink sink) => _sink = sink;
 }

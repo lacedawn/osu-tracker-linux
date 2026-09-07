@@ -26,11 +26,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.Complete == true && d.TotalBeatmapHits >= 40),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -48,11 +47,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.Complete == false),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -69,10 +67,10 @@ namespace CircleTracker.Tests
             client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 10));
             tracker.Tick();
 
-            sink.Verify(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            sink.Verify(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Never);
         }
 
@@ -92,10 +90,10 @@ namespace CircleTracker.Tests
                 playerName: "SomeOtherPlayer", profileName: "testplayer"));
             tracker.Tick();
 
-            sink.Verify(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            sink.Verify(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Never);
         }
 
@@ -129,11 +127,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.PlayCount == 2),
-                It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -159,7 +156,7 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d =>
                     d.Hidden == expectedHD &&
                     d.Hardrock == expectedHR &&
@@ -167,9 +164,8 @@ namespace CircleTracker.Tests
                     d.EZ == expectedEZ &&
                     d.Halftime == expectedHT &&
                     d.Flashlight == expectedFL),
-                It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -189,10 +185,10 @@ namespace CircleTracker.Tests
             client.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 10));
             tracker.Tick();
 
-            sink.Verify(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            sink.Verify(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Never);
         }
 
@@ -532,10 +528,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            sink.Verify(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -573,11 +569,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 50 && d.Complete),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -598,11 +593,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 50),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -620,11 +614,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.TotalBeatmapHits == 40 && d.Complete == false),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 
@@ -642,10 +635,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+            sink.Verify(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Never);
         }
 
@@ -686,11 +679,10 @@ namespace CircleTracker.Tests
             tracker.Tick();
             await Task.Delay(100);
 
-            sink.Verify(s => s.TryAppendPlayEntry(
+            sink.Verify(s => s.TryLogPlayAsync(
                 It.Is<PlayEntryData>(d => d.PlayMissc == 5),
-                false, It.IsAny<int>(), 0,
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()
             ), Times.Once);
         }
 

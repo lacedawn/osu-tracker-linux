@@ -34,8 +34,6 @@ namespace Circle_Tracker
         {
             string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
             if (File.Exists(p1)) return p1;
-            string p2 = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-            if (File.Exists(p2)) return p2;
             return p1;
         }
 
@@ -326,17 +324,12 @@ namespace Circle_Tracker
             return InitGoogleAPIAsync(silent);
         }
 
-        public Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
-        {
-            return TryAppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
-                _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
-        }
-
-        public async Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode, DateTime lastPostTime, Action<DateTime> setLastPostTime, string? soundFilePath, bool submitSoundEnabled, CancellationToken ct = default)
+        public async Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
         {
             try
             {
-                await AppendPlayEntry(data, isReplay, rawMods, currentGameMode, lastPostTime, setLastPostTime, soundFilePath, submitSoundEnabled, ct);
+                await AppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
+                    _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
             }
             catch (Exception ex)
             {

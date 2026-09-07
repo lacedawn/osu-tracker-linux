@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -15,10 +14,5 @@ namespace Circle_Tracker
         Action? OnSettingsChanged { get; set; }
 
         Task InitGoogleAPIAsync(bool silent = false);
-
-        Task TryAppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
-            DateTime lastPostTime, Action<DateTime> setLastPostTime,
-            string? soundFilePath, bool submitSoundEnabled,
-            CancellationToken ct = default);
     }
 }

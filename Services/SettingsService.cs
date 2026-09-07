@@ -56,8 +56,6 @@ public class SettingsService : ISettingsService
     {
         string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
         if (File.Exists(p1)) return p1;
-        string p2 = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-        if (File.Exists(p2)) return p2;
         return p1;
     }
 

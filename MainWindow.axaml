@@ -7,7 +7,7 @@
         Title="Circle Tracker"
         Width="600"
         MinWidth="560"
-        Height="380"
+        SizeToContent="Height"
         MinHeight="360"
         CanResize="True"
         WindowStartupLocation="CenterScreen"
@@ -189,7 +189,7 @@
             <TextBlock x:Name="SettingsToggleText" Text="► More Settings" Foreground="#8f87a3" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
           </Button>
 
-          <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="False" Margin="0,4,0,0">
+          <Border x:Name="SettingsPanel" Classes="hud-card" IsVisible="{Binding IsSettingsPanelVisible}" Margin="0,4,0,0">
             <Grid ColumnDefinitions="*,*" Margin="4">
               <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,10,0">
                 <TextBlock Classes="stat-label" Text="DATA PERSISTENCE &amp; STORAGE" FontSize="10" FontWeight="Bold" Foreground="#8f87a3"/>

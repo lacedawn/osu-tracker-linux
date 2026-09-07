@@ -394,6 +394,27 @@ public class MainWindowViewModelTests
         viewModel.ProfileWarningVisible.Should().BeFalse();
     }
 
+    [AvaloniaFact]
+    public void IsSettingsPanelVisible_WhenSetToTrue_IsTrue()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.IsSettingsPanelVisible = true;
+
+        viewModel.IsSettingsPanelVisible.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public void IsSettingsPanelVisible_WhenToggledFalseAfterTrue_IsFalse()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsSettingsPanelVisible = true;
+
+        viewModel.IsSettingsPanelVisible = false;
+
+        viewModel.IsSettingsPanelVisible.Should().BeFalse();
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         return new MainWindowViewModel(

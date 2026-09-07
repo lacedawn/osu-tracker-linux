@@ -1,6 +1,5 @@
 using Circle_Tracker;
 using Moq;
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -69,11 +68,6 @@ namespace CircleTracker.Tests
             };
         }
 
-        /// <summary>
-        /// Returns a Playing state with zero hits/time, used to warm up the tracker
-        /// past the first-tick stale-data skip when transitioning into Playing state.
-        /// Call tracker.Tick() with this state before providing actual play data.
-        /// </summary>
         internal static TosuState WarmUpPlaying(string checksum = "abc123", int mods = 0)
             => Build(2, h300: 0, h100: 0, h50: 0, misses: 0, songTimeMs: 0, accuracy: 0,
                      checksum: checksum, mods: mods);
@@ -81,7 +75,7 @@ namespace CircleTracker.Tests
 
     internal static class TrackerFactory
     {
-        internal static (Tracker tracker, Mock<ITosuClient> client, Mock<ISheetsSink> sink)
+        internal static (Tracker tracker, Mock<ITosuClient> client, Mock<Circle_Tracker.Storage.IPlaySink> sink)
             Create(bool connected = true)
         {
             var mockWindow = new Mock<IMainWindow>();
@@ -93,12 +87,15 @@ namespace CircleTracker.Tests
             mockClient.Setup(c => c.CalculatePpAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
                       .ReturnsAsync((PpCalcResult?)null);
 
-            var mockSink = new Mock<ISheetsSink>();
-            mockSink.Setup(s => s.SheetsApiReady).Returns(true);
-            mockSink.Setup(s => s.TryAppendPlayEntry(
-                It.IsAny<PlayEntryData>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<DateTime>(), It.IsAny<Action<DateTime>>(),
-                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            var mockSink = new Mock<Circle_Tracker.Storage.IPlaySink>();
+            mockSink.Setup(s => s.IsReady).Returns(true);
+            mockSink.Setup(s => s.SinkName).Returns("Mock Sink");
+            mockSink.Setup(s => s.InitializeAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                    .Returns(Task.CompletedTask);
+            mockSink.Setup(s => s.TryLogPlayAsync(
+                    It.IsAny<Circle_Tracker.PlayEntryData>(),
+                    It.IsAny<Circle_Tracker.Storage.PlayContext>(),
+                    It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
             var tracker = new Tracker(mockWindow.Object, mockClient.Object, mockSink.Object);
