@@ -1,9 +1,16 @@
 using Circle_Tracker;
 using Circle_Tracker.Storage;
 using FluentAssertions;
+using Google.Apis.Http;
+using Google.Apis.Services;
+using Google.Apis.Sheets.v4;
 using Moq;
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -94,7 +101,7 @@ namespace CircleTracker.Tests
             var manager = MakeManager();
             var data = MakeData();
 
-            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.Now);
+            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.UtcNow);
 
             reason.Should().Contain("Rate limited");
         }
@@ -105,7 +112,7 @@ namespace CircleTracker.Tests
             var manager = MakeManager();
             var data = MakeData(hits: 5, h300: 5);
 
-            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.Now.AddSeconds(-10));
+            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.UtcNow.AddSeconds(-10));
 
             reason.Should().Contain("below minimum");
         }
@@ -116,7 +123,7 @@ namespace CircleTracker.Tests
             var manager = MakeManager();
             var data = MakeData(hits: 50, h300: 50);
 
-            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.Now.AddSeconds(-10));
+            string? reason = manager.GetSkipReason(data, false, 0, 0, DateTime.UtcNow.AddSeconds(-10));
 
             reason.Should().BeNull();
         }
@@ -253,6 +260,124 @@ namespace CircleTracker.Tests
             bool result = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: true), CancellationToken.None);
 
             result.Should().BeTrue();
+        }
+
+        private sealed class ScriptedSheetsHandler : HttpMessageHandler
+        {
+            private readonly Func<int, HttpResponseMessage> _script;
+            private int _calls;
+
+            public int Calls => Volatile.Read(ref _calls);
+
+            public ScriptedSheetsHandler(Func<int, HttpResponseMessage> script) => _script = script;
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                int call = Interlocked.Increment(ref _calls);
+                return Task.FromResult(_script(call));
+            }
+        }
+
+        private sealed class ScriptedClientFactory : HttpClientFactory
+        {
+            private readonly HttpMessageHandler _handler;
+
+            public ScriptedClientFactory(HttpMessageHandler handler) => _handler = handler;
+
+            protected override HttpMessageHandler CreateHandler(CreateHttpClientArgs args) => _handler;
+        }
+
+        private static SheetsService CreateScriptedSheetsService(ScriptedSheetsHandler handler)
+        {
+            return new SheetsService(new BaseClientService.Initializer
+            {
+                HttpClientFactory = new ScriptedClientFactory(handler),
+                ApplicationName = "CircleTrackerTests"
+            });
+        }
+
+        private static HttpResponseMessage SheetsErrorResponse(HttpStatusCode status, int code)
+        {
+            return new HttpResponseMessage
+            {
+                StatusCode = status,
+                Content = new StringContent(
+                    $"{{\"error\":{{\"code\":{code},\"message\":\"Sheets failure\",\"status\":\"ERROR\"}}}}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
+
+        private static HttpResponseMessage SheetsAppendSuccessResponse()
+        {
+            return new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(
+                    "{\"spreadsheetId\":\"test-id\",\"tableRange\":\"Sheet1!A1:X1\",\"updates\":{}}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
+
+        private static GoogleSheetsManager MakeApiManager(ScriptedSheetsHandler handler)
+        {
+            var manager = MakeManager(apiReady: true);
+            manager.SpreadsheetId = "test-spreadsheet-id";
+            manager.SheetName = "Sheet1";
+            manager.TestSheetsService = CreateScriptedSheetsService(handler);
+            manager.RetryDelayProvider = (_, _) => Task.CompletedTask;
+            return manager;
+        }
+
+        private static DateTime ReadManagerLastPostTime(GoogleSheetsManager manager)
+        {
+            var field = typeof(GoogleSheetsManager).GetField("_lastPostTime", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (DateTime)field!.GetValue(manager)!;
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_TransientError_RetriesWithDelay()
+        {
+            var handler = new ScriptedSheetsHandler(call => call <= 2
+                ? SheetsErrorResponse(HttpStatusCode.InternalServerError, 500)
+                : SheetsAppendSuccessResponse());
+            var manager = MakeApiManager(handler);
+            var delays = new List<int>();
+            manager.RetryDelayProvider = (attempt, ct) =>
+            {
+                delays.Add(attempt);
+                return Task.CompletedTask;
+            };
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            _ = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: false), CancellationToken.None);
+
+            delays.Should().Equal(0, 1);
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_NonTransientError_DoesNotHammer()
+        {
+            var handler = new ScriptedSheetsHandler(_ => SheetsErrorResponse(HttpStatusCode.BadRequest, 400));
+            var manager = MakeApiManager(handler);
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            _ = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: false), CancellationToken.None);
+
+            handler.Calls.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_FailedSubmit_DoesNotBurnRateWindow()
+        {
+            var handler = new ScriptedSheetsHandler(_ => SheetsErrorResponse(HttpStatusCode.BadRequest, 400));
+            var manager = MakeApiManager(handler);
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            _ = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: false), CancellationToken.None);
+
+            ReadManagerLastPostTime(manager).Should().Be(DateTime.MinValue);
         }
     }
 }

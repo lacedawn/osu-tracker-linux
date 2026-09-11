@@ -569,25 +569,32 @@ public class OfflinePlaySyncQueueTests
         );
     }
 
-    private static async Task LogPlayWithSheetsAbsentAsync(SqliteDatabaseManager dbManager, int beatmapId)
+    private static async Task LogPlayWithSheetsFailingAsync(SqliteDatabaseManager dbManager, int beatmapId)
     {
         var session = new SessionManager(dbManager);
         await session.InitializeAsync();
         await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
         await sqliteSink.InitializeAsync();
+        var sheets = new Mock<ISheetsSink>();
+        var sheetsPlay = sheets.As<IPlaySink>();
+        sheetsPlay.Setup(s => s.SinkName).Returns("Google Sheets");
+        sheetsPlay.Setup(s => s.IsReady).Returns(true);
+        sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var composite = new CompositePlaySink();
         composite.AddSink(sqliteSink, () => true);
+        composite.AddSink(sheetsPlay.Object, () => true);
         var context = new PlayContext(session.SessionId, false, 0, 0, "test", null, false);
 
         await composite.TryLogPlayAsync(BuildReconnectPlayData(beatmapId), context);
     }
 
     [Fact]
-    public async Task EndToEnd_PlayLoggedWhileSheetsDisabled_AppearsInPendingQueue()
+    public async Task EndToEnd_PlayLoggedWhileSheetsSyncFails_AppearsInPendingQueue()
     {
         using var dbManager = await CreateInitializedDbManagerAsync();
 
-        await LogPlayWithSheetsAbsentAsync(dbManager, 910);
+        await LogPlayWithSheetsFailingAsync(dbManager, 910);
 
         using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => false, null);
         int pending = await queue.GetPendingCountAsync();
@@ -599,12 +606,104 @@ public class OfflinePlaySyncQueueTests
     public async Task EndToEnd_PendingPlay_FlushesOnReconnectAndMarksSynced()
     {
         using var dbManager = await CreateInitializedDbManagerAsync();
-        await LogPlayWithSheetsAbsentAsync(dbManager, 911);
+        await LogPlayWithSheetsFailingAsync(dbManager, 911);
         var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) => Task.CompletedTask);
         using var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender);
 
         var result = await queue.FlushPendingQueueAsync();
 
         result.SyncedCount.Should().Be(1);
+    }
+
+    private sealed class ScriptedQueueHandler : HttpMessageHandler
+    {
+        private readonly Func<int, HttpResponseMessage> _script;
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ScriptedQueueHandler(Func<int, HttpResponseMessage> script) => _script = script;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            int call = Interlocked.Increment(ref _calls);
+            return Task.FromResult(_script(call));
+        }
+    }
+
+    private sealed class ScriptedQueueClientFactory : Google.Apis.Http.HttpClientFactory
+    {
+        private readonly HttpMessageHandler _handler;
+
+        public ScriptedQueueClientFactory(HttpMessageHandler handler) => _handler = handler;
+
+        protected override HttpMessageHandler CreateHandler(CreateHttpClientArgs args) => _handler;
+    }
+
+    private static SheetsService CreateScriptedQueueSheetsService(ScriptedQueueHandler handler)
+    {
+        return new SheetsService(new BaseClientService.Initializer
+        {
+            HttpClientFactory = new ScriptedQueueClientFactory(handler),
+            ApplicationName = "CircleTrackerTests"
+        });
+    }
+
+    private static HttpResponseMessage QueueErrorResponse(HttpStatusCode status, int code)
+    {
+        return new HttpResponseMessage
+        {
+            StatusCode = status,
+            Content = new StringContent(
+                $"{{\"error\":{{\"code\":{code},\"message\":\"Sheets failure\",\"status\":\"ERROR\"}}}}",
+                Encoding.UTF8,
+                "application/json")
+        };
+    }
+
+    private static HttpResponseMessage QueueAppendSuccessResponse()
+    {
+        return new HttpResponseMessage
+        {
+            StatusCode = HttpStatusCode.OK,
+            Content = new StringContent(
+                "{\"spreadsheetId\":\"test-id\",\"tableRange\":\"Sheet1!A1:X1\",\"updates\":{}}",
+                Encoding.UTF8,
+                "application/json")
+        };
+    }
+
+    [Fact]
+    public async Task FlushPendingQueueAsync_Transient503_RetriesBatch()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 5);
+        var handler = new ScriptedQueueHandler(call => call == 1
+            ? QueueErrorResponse(HttpStatusCode.ServiceUnavailable, 503)
+            : QueueAppendSuccessResponse());
+        var sheetsService = CreateScriptedQueueSheetsService(handler);
+        using var queue = new OfflinePlaySyncQueue(dbManager, sheetsService, "id", "Sheet1", () => ",", () => true);
+        queue.RetryDelayProvider = (_, _) => Task.CompletedTask;
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.SyncedCount.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task FlushPendingQueueAsync_Permanent400_SkipsBatchAndContinues()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 60);
+        var handler = new ScriptedQueueHandler(call => call == 1
+            ? QueueErrorResponse(HttpStatusCode.BadRequest, 400)
+            : QueueAppendSuccessResponse());
+        var sheetsService = CreateScriptedQueueSheetsService(handler);
+        using var queue = new OfflinePlaySyncQueue(dbManager, sheetsService, "id", "Sheet1", () => ",", () => true);
+        queue.RetryDelayProvider = (_, _) => Task.CompletedTask;
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        result.SyncedCount.Should().Be(10);
     }
 }

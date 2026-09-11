@@ -23,15 +23,18 @@ namespace Circle_Tracker.Storage
     {
         private static readonly ILogger<CompositePlaySink> _log = AppLogger.For<CompositePlaySink>();
         private readonly List<SinkRegistration> _registrations = new();
+        private readonly object _registrationsLock = new();
+
+        internal TimeSpan SheetsAttemptTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
         public string SinkName => "Composite";
-        public IReadOnlyList<SinkRegistration> Registrations => _registrations.AsReadOnly();
+        public IReadOnlyList<SinkRegistration> Registrations => SnapshotRegistrations();
 
-        public bool IsReady => _registrations
+        public bool IsReady => SnapshotRegistrations()
             .Where(r => r.IsEnabled())
             .Any(r => r.Sink.IsReady);
 
-        public bool AllSinksReady => _registrations
+        public bool AllSinksReady => SnapshotRegistrations()
             .Where(r => r.IsEnabled())
             .All(r => r.Sink.IsReady);
 
@@ -39,23 +42,38 @@ namespace Circle_Tracker.Storage
         {
             if (registrations != null)
             {
-                _registrations.AddRange(registrations);
+                lock (_registrationsLock)
+                {
+                    _registrations.AddRange(registrations);
+                }
             }
         }
 
         public void AddSink(IPlaySink sink, Func<bool>? isEnabled = null)
         {
-            _registrations.Add(new SinkRegistration(sink, isEnabled));
+            lock (_registrationsLock)
+            {
+                _registrations.Add(new SinkRegistration(sink, isEnabled));
+            }
         }
 
         public T? GetSink<T>() where T : class, IPlaySink
         {
-            return _registrations.Select(r => r.Sink).OfType<T>().FirstOrDefault();
+            return SnapshotRegistrations().Select(r => r.Sink).OfType<T>().FirstOrDefault();
+        }
+
+        private SinkRegistration[] SnapshotRegistrations()
+        {
+            lock (_registrationsLock)
+            {
+                return _registrations.ToArray();
+            }
         }
 
         public async Task InitializeAsync(bool silent = false, CancellationToken ct = default)
         {
-            var tasks = _registrations.Select(async r =>
+            var snapshot = SnapshotRegistrations();
+            var tasks = snapshot.Select(async r =>
             {
                 try
                 {
@@ -70,57 +88,104 @@ namespace Circle_Tracker.Storage
             await Task.WhenAll(tasks);
         }
 
+        private static bool IsSheetsSink(IPlaySink sink)
+        {
+            return sink.SinkName == "Google Sheets" || sink.SinkName == "Google Sheets Adapter";
+        }
+
+        private static async Task<bool> TrySheetsSinkAsync(IPlaySink sheetsSink, PlayEntryData data, PlayContext context, CancellationToken ct)
+        {
+            try
+            {
+                if (sheetsSink is ISheetsSink sheetsSyncSink)
+                {
+                    return await sheetsSyncSink.TryLogPlayAsync(data, context, ct);
+                }
+
+                await sheetsSink.TryLogPlayAsync(data, context, ct);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Error logging play to sink {SinkName}", sheetsSink.SinkName);
+                return false;
+            }
+        }
+
+        private async Task<bool> AttemptSheetsSyncAsync(IReadOnlyList<IPlaySink> readySheetsSinks, PlayEntryData data, PlayContext context, CancellationToken ct)
+        {
+            var sheetsTasks = readySheetsSinks.Select(s => TrySheetsSinkAsync(s, data, context, ct)).ToList();
+            var allSheets = Task.WhenAll(sheetsTasks);
+            var completed = await Task.WhenAny(allSheets, Task.Delay(SheetsAttemptTimeout, ct));
+            if (!ReferenceEquals(completed, allSheets))
+            {
+                _log.LogWarning("Sheets sync timed out after {Timeout}, continuing with local write", SheetsAttemptTimeout);
+                _ = allSheets.ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        _log.LogError(t.Exception, "Late sheets sync failure");
+                    }
+                }, TaskScheduler.Default);
+                return false;
+            }
+
+            try
+            {
+                return (await allSheets).All(succeeded => succeeded);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Error logging play to sheets sinks");
+                return false;
+            }
+        }
+
+        private static async Task WriteToSinkAsync(IPlaySink sink, PlayEntryData data, PlayContext context, CancellationToken ct)
+        {
+            try
+            {
+                await sink.TryLogPlayAsync(data, context, ct);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Error logging play to sink {SinkName}", sink.SinkName);
+            }
+        }
+
         public async Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
         {
-            var activeSinks = _registrations.Where(r => r.IsEnabled()).Select(r => r.Sink).ToList();
+            var activeSinks = SnapshotRegistrations().Where(r => r.IsEnabled()).Select(r => r.Sink).ToList();
             if (activeSinks.Count == 0) return;
 
-            var sheetsSink = activeSinks.FirstOrDefault(s => s.SinkName == "Google Sheets" || s.SinkName == "Google Sheets Adapter");
+            var sheetsSinks = activeSinks.Where(IsSheetsSink).ToList();
             var sqliteSink = activeSinks.FirstOrDefault(s => s.SinkName == "Local SQLite");
+            var otherSinks = activeSinks.Where(s => s != sqliteSink && !IsSheetsSink(s)).ToList();
 
-            bool? sheetsSyncSucceeded = false;
-
-            if (sheetsSink != null && sheetsSink.IsReady)
+            bool sheetsSyncSucceeded;
+            var readySheetsSinks = sheetsSinks.Where(s => s.IsReady).ToList();
+            if (readySheetsSinks.Count == 0)
             {
-                try
-                {
-                    if (sheetsSink is ISheetsSink sheetsSyncSink)
-                    {
-                        sheetsSyncSucceeded = await sheetsSyncSink.TryLogPlayAsync(data, context, ct);
-                    }
-                    else
-                    {
-                        await sheetsSink.TryLogPlayAsync(data, context, ct);
-                        sheetsSyncSucceeded = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Error logging play to sink {SinkName}", sheetsSink.SinkName);
-                    sheetsSyncSucceeded = false;
-                }
+                sheetsSyncSucceeded = true;
             }
-            else if (sheetsSink != null && !sheetsSink.IsReady)
+            else
             {
-                sheetsSyncSucceeded = false;
+                sheetsSyncSucceeded = await AttemptSheetsSyncAsync(readySheetsSinks, data, context, ct);
             }
 
             var updatedContext = context with { SheetsSyncSucceeded = sheetsSyncSucceeded };
 
-            var remainingSinks = activeSinks.Where(s => s != sheetsSink).ToList();
-            var tasks = remainingSinks.Select(async sink =>
+            var writeTasks = new List<Task>();
+            if (sqliteSink != null)
             {
-                try
-                {
-                    await sink.TryLogPlayAsync(data, updatedContext, ct);
-                }
-                catch (Exception ex)
-                {
-                    _log.LogError(ex, "Error logging play to sink {SinkName}", sink.SinkName);
-                }
-            });
+                writeTasks.Add(WriteToSinkAsync(sqliteSink, data, updatedContext, ct));
+            }
+            foreach (var sink in otherSinks)
+            {
+                writeTasks.Add(WriteToSinkAsync(sink, data, updatedContext, ct));
+            }
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(writeTasks);
         }
     }
 }

@@ -124,6 +124,8 @@ public class TrackerService : ITrackerService, IMainWindow
     public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.SubmissionService.FlushPendingSubmissionsAsync(ct);
     public ISessionAnalyticsService? GetSessionAnalyticsService() => _tracker.GetSessionAnalyticsService();
 
+    internal static string BuildAppendRange(string sheetName) => $"'{sheetName}'!A:A";
+
     public async Task SyncOfflinePlaysToSheetsAsync(CancellationToken ct = default)
     {
         if (_tracker.SessionManager.GetDatabaseManager() is not SqliteDatabaseManager sqliteDb)
@@ -139,7 +141,7 @@ public class TrackerService : ITrackerService, IMainWindow
 
         async Task AppendBatchAsync(IList<IList<object>> rows, CancellationToken innerCt)
         {
-            string range = $"{sheetName}!A:A";
+            string range = BuildAppendRange(sheetName);
             var valueRange = new ValueRange { Values = rows };
             var request = sheetsService.Spreadsheets.Values.Append(valueRange, spreadsheetId, range);
             request.ValueInputOption = Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;

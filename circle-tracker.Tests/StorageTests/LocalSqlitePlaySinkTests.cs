@@ -388,7 +388,7 @@ namespace CircleTracker.Tests.StorageTests
 
             await composite.TryLogPlayAsync(data, context);
 
-            var expectedContext = context with { SheetsSyncSucceeded = false };
+            var expectedContext = context with { SheetsSyncSucceeded = true };
             enabledSink.Verify(s => s.TryLogPlayAsync(data, expectedContext, It.IsAny<CancellationToken>()), Times.Once);
             disabledSink.Verify(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()), Times.Never);
         }
@@ -544,7 +544,7 @@ namespace CircleTracker.Tests.StorageTests
         }
 
         [Fact]
-        public async Task InsertPlay_WithoutSheetsContext_StoresPendingStatus()
+        public async Task InsertPlay_WithoutSheetsContext_StoresSyncedStatus()
         {
             string dbName = $"TestDb_{Guid.NewGuid():N}";
             string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
@@ -560,7 +560,7 @@ namespace CircleTracker.Tests.StorageTests
             await using var conn = await dbManager.CreateConnectionAsync();
             string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 901;");
 
-            status.Should().Be("Pending");
+            status.Should().Be("Synced");
         }
 
         [Fact]
@@ -624,7 +624,7 @@ namespace CircleTracker.Tests.StorageTests
         }
 
         [Fact]
-        public async Task InsertPlay_WithoutSheetsContext_LeavesSyncedTimestampNull()
+        public async Task InsertPlay_WithoutSheetsContext_StoresSyncedTimestamp()
         {
             string dbName = $"TestDb_{Guid.NewGuid():N}";
             string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
@@ -640,7 +640,7 @@ namespace CircleTracker.Tests.StorageTests
             await using var conn = await dbManager.CreateConnectionAsync();
             string? syncedAt = await conn.ExecuteScalarAsync<string?>("SELECT synced_at FROM plays WHERE beatmap_id = 905;");
 
-            syncedAt.Should().BeNull();
+            syncedAt.Should().NotBeNullOrEmpty();
         }
     }
 }

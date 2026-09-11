@@ -98,6 +98,14 @@ public class TrackerServiceOfflineSyncTests
     }
 
     [Fact]
+    public void DefaultSheetName_BuildsQuotedRange()
+    {
+        string range = TrackerService.BuildAppendRange("Raw Data");
+
+        range.Should().Be("'Raw Data'!A:A");
+    }
+
+    [Fact]
     public async Task InitGoogleAPIAsync_WhenSheetsReady_StartsBackgroundSync()
     {
         using var dbManager = await CreateInitializedDbManagerAsync();

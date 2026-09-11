@@ -4,6 +4,7 @@ using Dapper;
 using FluentAssertions;
 using Moq;
 using System;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -231,6 +232,65 @@ namespace CircleTracker.Tests.StorageTests
             string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 703;");
 
             status.Should().Be("Pending");
+        }
+
+        private static async Task<bool> SlowSheetsResponseAsync()
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            return false;
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_SheetsSlow_SQLiteStillWritesFast()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: true);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .Returns(SlowSheetsResponseAsync);
+
+            var composite = new CompositePlaySink { SheetsAttemptTimeout = TimeSpan.FromMilliseconds(200) };
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+            var stopwatch = Stopwatch.StartNew();
+
+            await composite.TryLogPlayAsync(BuildCompositePlayData(704), BuildCompositePlayContext(session.SessionId));
+
+            stopwatch.Stop();
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            int count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays WHERE beatmap_id = 704;");
+
+            count.Should().Be(1);
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_NoSheetsSink_MarksSyncedNotPending()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(sqliteSink, () => true);
+
+            await composite.TryLogPlayAsync(BuildCompositePlayData(705), BuildCompositePlayContext(session.SessionId));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 705;");
+
+            status.Should().Be("Synced");
         }
     }
 }

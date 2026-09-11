@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,12 +24,67 @@ namespace Circle_Tracker
         public string SinkName => "Google Sheets";
         public bool IsReady => SheetsApiReady;
         private DateTime _lastPostTime = DateTime.MinValue;
+        private readonly object _postTimeLock = new();
 
         private const int MinHitsToSubmit = 40;
         private const int RateLimitSeconds = 3;
         private const int MaxSubmitAttempts = 4;
         private const int BaseRetryDelayMs = 500;
+        private const int MaxRetryJitterMs = 200;
         private const int RowExpansionBatchSize = 100;
+
+        internal SheetsService? TestSheetsService
+        {
+            get => _sheetsService;
+            set => _sheetsService = value;
+        }
+
+        internal Func<int, CancellationToken, Task> RetryDelayProvider { get; set; } = DefaultRetryDelayAsync;
+
+        private static Task DefaultRetryDelayAsync(int attempt, CancellationToken ct)
+        {
+            int delayMs = BaseRetryDelayMs * (1 << attempt) + Random.Shared.Next(0, MaxRetryJitterMs + 1);
+            return Task.Delay(delayMs, ct);
+        }
+
+        private DateTime ReadLastPostTime()
+        {
+            lock (_postTimeLock)
+            {
+                return _lastPostTime;
+            }
+        }
+
+        private void WriteLastPostTime(DateTime value)
+        {
+            lock (_postTimeLock)
+            {
+                _lastPostTime = value;
+            }
+        }
+
+        internal static bool IsTransientSheetsApiFailure(Exception ex)
+        {
+            if (ex is GoogleApiException apiEx)
+            {
+                int statusCode = (int)apiEx.HttpStatusCode;
+                return statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
+            }
+            return ex is HttpRequestException
+                || ex is IOException
+                || ex is TimeoutException
+                || ex is TaskCanceledException;
+        }
+
+        internal static bool IsPermanentSheetsApiFailure(Exception ex)
+        {
+            if (ex is GoogleApiException apiEx)
+            {
+                int statusCode = (int)apiEx.HttpStatusCode;
+                return statusCode >= 400 && statusCode <= 499 && statusCode != 429;
+            }
+            return false;
+        }
 
         private static string FindFile(string relativePath)
         {
@@ -130,7 +186,12 @@ namespace Circle_Tracker
             _form.SetSheetsApiReady(val);
         }
 
-        public async Task InitGoogleAPIAsync(bool silent = false)
+        public Task InitGoogleAPIAsync(bool silent = false)
+        {
+            return InitGoogleAPIAsync(silent, CancellationToken.None);
+        }
+
+        public async Task InitGoogleAPIAsync(bool silent, CancellationToken ct)
         {
             bool credentialsFound = File.Exists(CredentialsFilePath);
             _form.SetCredentialsFound(credentialsFound);
@@ -169,7 +230,7 @@ namespace Circle_Tracker
                 });
 
                 var getSheetRequest = _sheetsService.Spreadsheets.Get(SpreadsheetId);
-                _userSpreadsheet = await getSheetRequest.ExecuteAsync();
+                _userSpreadsheet = await getSheetRequest.ExecuteAsync(ct);
             }
             catch (GoogleApiException e)
             {
@@ -198,7 +259,7 @@ namespace Circle_Tracker
             }
             SheetRows = _rawDataSheet.Properties.GridProperties.RowCount ?? 1000;
 
-            try { await WriteHeaders(); }
+            try { await WriteHeaders(ct); }
             catch (GoogleApiException e)
             {
                 if (!silent)
@@ -213,7 +274,7 @@ namespace Circle_Tracker
                 return;
             }
 
-            try { await AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet); }
+            try { await AddMissingNamedRanges(_userSpreadsheet, _rawDataSheet, ct); }
             catch (GoogleApiException e)
             {
                 if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Add Named Ranges");
@@ -221,8 +282,15 @@ namespace Circle_Tracker
                 return;
             }
 
-            await ResizeNamedRanges(_userSpreadsheet, SheetRows);
-            PromptTimezone(_userSpreadsheet);
+            try { await ResizeNamedRanges(_userSpreadsheet, SheetRows, ct); }
+            catch (GoogleApiException e)
+            {
+                if (!silent) _form.ShowMessage(e.Message, "Google Sheets API Error: Unable to Resize Named Ranges");
+                SetSheetsApiReady(false);
+                return;
+            }
+
+            PromptTimezone(_userSpreadsheet, ct);
             SetSheetsApiReady(true);
             _log.LogInformation("Google Sheets API successfully initialized and connected");
         }
@@ -323,7 +391,7 @@ namespace Circle_Tracker
 
         public Task InitializeAsync(bool silent = false, CancellationToken ct = default)
         {
-            return InitGoogleAPIAsync(silent);
+            return InitGoogleAPIAsync(silent, ct);
         }
 
         public async Task<bool> TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
@@ -331,7 +399,11 @@ namespace Circle_Tracker
             try
             {
                 return await AppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
-                    _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
+                    ReadLastPostTime(), WriteLastPostTime, context.SoundFilePath, context.SubmitSoundEnabled, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -363,7 +435,7 @@ namespace Circle_Tracker
             var mods = (OsuMods)rawMods;
             if (mods.HasFlag(OsuMods.Autoplay) || mods.HasFlag(OsuMods.Relax) || mods.HasFlag(OsuMods.Autopilot))
                 return $"Disallowed mods ({rawMods})";
-            if ((DateTime.Now - lastPostTime).TotalSeconds < RateLimitSeconds)
+            if ((DateTime.UtcNow - lastPostTime).TotalSeconds < RateLimitSeconds)
                 return $"Rate limited (<{RateLimitSeconds}s since last post)";
             if (data.TotalBeatmapHits < MinHitsToSubmit)
                 return $"Hit count below minimum ({data.TotalBeatmapHits} < {MinHitsToSubmit})";
@@ -384,7 +456,7 @@ namespace Circle_Tracker
             string sep = _getFunctionSeparator();
             return new List<object>
             {
-                DateTime.Now.ToString(dateTimeFormat, CultureInfo.InvariantCulture),
+                DateTime.UtcNow.ToString(dateTimeFormat, CultureInfo.InvariantCulture),
                 $"=HYPERLINK(\"https://osu.ppy.sh/beatmapsets/{data.BeatmapSetID}#osu/{data.BeatmapID}\"{sep} \"{escapedName + modsLabel}\")",
                 data.Hidden     ? "1" : "",
                 data.Hardrock   ? "1" : "",
@@ -420,38 +492,40 @@ namespace Circle_Tracker
             }
 
             string range = $"'{SheetName}'!A:X";
-            var valueRange = new ValueRange { Values = new List<IList<object>> { rowData } };
-            var appendRequest = _sheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
-            appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
             _log.LogInformation("Appending row to Google Sheets ({Range})...", range);
 
             for (int i = 0; i < MaxSubmitAttempts; i++)
             {
+                ct.ThrowIfCancellationRequested();
+
                 try
                 {
+                    var valueRange = new ValueRange { Values = new List<IList<object>> { rowData } };
+                    var appendRequest = _sheetsService!.Spreadsheets.Values.Append(valueRange, SpreadsheetId, range);
+                    appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
                     var response = await appendRequest.ExecuteAsync(ct);
                     _circuitBreaker.RecordSuccess();
                     return response;
                 }
-                catch (GoogleApiException ex) when ((int)ex.HttpStatusCode is 429 or 503)
+                catch (Exception ex) when (IsPermanentSheetsApiFailure(ex))
                 {
-                    if (i == MaxSubmitAttempts - 1)
-                    {
-                        _circuitBreaker.RecordFailure();
-                        throw;
-                    }
-                    int delayMs = BaseRetryDelayMs * (1 << i);
-                    _log.LogWarning("Transient error ({StatusCode}), retrying in {DelayMs}ms...", ex.HttpStatusCode, delayMs);
-                    await Task.Delay(delayMs, ct);
+                    _circuitBreaker.RecordFailure();
+                    throw;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (IsTransientSheetsApiFailure(ex))
                 {
+                    _circuitBreaker.RecordFailure();
                     if (i == MaxSubmitAttempts - 1)
                     {
-                        _circuitBreaker.RecordFailure();
                         throw;
                     }
-                    _log.LogError(ex, "Submit attempt {Attempt} failed", i + 1);
+                    _log.LogWarning("Transient error ({ErrorType}), retrying...", ex.GetType().Name);
+                    await RetryDelayProvider(i, ct);
+                }
+                catch (Exception)
+                {
+                    _circuitBreaker.RecordFailure();
+                    throw;
                 }
             }
 
@@ -498,9 +572,9 @@ namespace Circle_Tracker
                 _log.LogInformation("Skipped post: {SkipReason}", skipReason);
                 return !IsRetryableSkipReason(skipReason);
             }
-            setLastPostTime(DateTime.Now);
             List<object> rowData = BuildRowData(data);
             AppendValuesResponse response = await SubmitRowAsync(rowData, ct);
+            setLastPostTime(DateTime.UtcNow);
             _log.LogInformation("Play successfully logged to Google Sheets!");
             if (submitSoundEnabled && !string.IsNullOrEmpty(soundFilePath))
                 SoundHelper.PlaySound(soundFilePath);

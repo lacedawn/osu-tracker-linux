@@ -294,4 +294,33 @@ public class PlaySubmissionServiceTests
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task TryPostBeatmapEntry_SinkFails_DoesNotIncrementCount()
+    {
+        var sink = new Mock<IPlaySink>();
+        sink.Setup(s => s.TryLogPlayAsync(
+            It.IsAny<PlayEntryData>(),
+            It.IsAny<PlayContext>(),
+            It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("DB failure"));
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        service.TryPostBeatmapEntry(complete: true, totalBeatmapHits: 50);
+
+        try
+        {
+            await service.FlushPendingSubmissionsAsync();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        sessionManager.TotalPlays.Should().Be(0);
+    }
 }

@@ -1,12 +1,16 @@
 using Circle_Tracker;
+using Circle_Tracker.Services;
 using Dapper;
+using Google;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,6 +31,9 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
     private static readonly ILogger<OfflinePlaySyncQueue> _log = AppLogger.For<OfflinePlaySyncQueue>();
 
     private const int BatchSize = 50;
+    private const int MaxBatchAttempts = 3;
+    private const int BaseBatchRetryDelayMs = 500;
+    private const int MaxBatchRetryJitterMs = 200;
 
     private readonly Storage.IDatabaseManager _dbManager;
     private readonly SheetsService? _sheetsService;
@@ -35,6 +42,87 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
     private readonly Func<string> _getFunctionSeparator;
     private readonly Func<bool> _getSheetsApiReady;
     private readonly Func<IList<IList<object>>, CancellationToken, Task>? _sheetsAppender;
+    private readonly CircuitBreaker _circuitBreaker = new(failureThreshold: 3, openDuration: TimeSpan.FromSeconds(60));
+
+    internal Func<int, CancellationToken, Task> RetryDelayProvider { get; set; } = DefaultBatchRetryDelayAsync;
+
+    private static Task DefaultBatchRetryDelayAsync(int attempt, CancellationToken ct)
+    {
+        int delayMs = BaseBatchRetryDelayMs * (1 << attempt) + Random.Shared.Next(0, MaxBatchRetryJitterMs + 1);
+        return Task.Delay(delayMs, ct);
+    }
+
+    private sealed class PermanentBatchFailureException : Exception
+    {
+        public PermanentBatchFailureException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
+    }
+
+    internal static bool IsTransientBatchFailure(Exception ex)
+    {
+        if (ex is GoogleApiException apiEx)
+        {
+            int statusCode = (int)apiEx.HttpStatusCode;
+            return statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
+        }
+        return ex is HttpRequestException
+            || ex is IOException
+            || ex is TimeoutException
+            || ex is TaskCanceledException;
+    }
+
+    internal static bool IsPermanentBatchFailure(Exception ex)
+    {
+        if (ex is GoogleApiException apiEx)
+        {
+            int statusCode = (int)apiEx.HttpStatusCode;
+            return statusCode >= 400 && statusCode <= 499 && statusCode != 429;
+        }
+        return false;
+    }
+
+    private async Task AppendBatchWithRetryAsync(IList<IList<object>> rows, CancellationToken ct)
+    {
+        for (int attempt = 0; attempt < MaxBatchAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                if (_sheetsAppender != null)
+                {
+                    await _sheetsAppender(rows, ct);
+                }
+                else if (_sheetsService != null)
+                {
+                    var valueRange = new ValueRange { Values = rows };
+                    var range = $"'{_sheetName}'!A:X";
+                    var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
+                    appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+                    _log.LogInformation("Syncing batch of {Count} plays to Google Sheets", rows.Count);
+                    await appendRequest.ExecuteAsync(ct);
+                }
+                else
+                {
+                    throw new InvalidOperationException("Google Sheets service is not configured");
+                }
+
+                return;
+            }
+            catch (Exception ex) when (IsPermanentBatchFailure(ex))
+            {
+                throw new PermanentBatchFailureException(ex.Message, ex);
+            }
+            catch (Exception ex) when (IsTransientBatchFailure(ex) && attempt < MaxBatchAttempts - 1)
+            {
+                _log.LogWarning("Transient batch error ({ErrorType}), retrying...", ex.GetType().Name);
+                await RetryDelayProvider(attempt, ct);
+            }
+        }
+    }
 
     private CancellationTokenSource? _backgroundCts;
     private Task? _backgroundTask;
@@ -78,25 +166,25 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                 return new SyncResult(false, 0, 0, "Google Sheets API not ready");
             }
 
-            await using var conn = await _dbManager.CreateConnectionAsync(ct);
+            await using var selectConn = await _dbManager.CreateConnectionAsync(ct);
 
             const string selectSql = @"
                 SELECT id AS Id, timestamp AS Timestamp,
-                       beatmap_id AS BeatmapId, beatmap_set_id AS BeatmapSetId,
-                       beatmap_string AS BeatmapString,
-                       mods_bitfield AS ModsBitfield, mods_string AS ModsString,
-                       bpm AS Bpm, aim AS Aim, speed AS Speed, stars AS Stars,
-                       cs AS Cs, ar AS Ar, od AS Od,
-                       total_hits AS TotalHits, accuracy AS Accuracy,
-                       hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50, hit_miss AS HitMiss,
-                       is_complete AS IsComplete,
-                       play_time_seconds AS PlayTimeSeconds,
-                       consecutive_play_count AS ConsecutivePlayCount
+                        beatmap_id AS BeatmapId, beatmap_set_id AS BeatmapSetId,
+                        beatmap_string AS BeatmapString,
+                        mods_bitfield AS ModsBitfield, mods_string AS ModsString,
+                        bpm AS Bpm, aim AS Aim, speed AS Speed, stars AS Stars,
+                        cs AS Cs, ar AS Ar, od AS Od,
+                        total_hits AS TotalHits, accuracy AS Accuracy,
+                        hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50, hit_miss AS HitMiss,
+                        is_complete AS IsComplete,
+                        play_time_seconds AS PlayTimeSeconds,
+                        consecutive_play_count AS ConsecutivePlayCount
                 FROM plays
                 WHERE sync_status = 'Pending'
                 ORDER BY id ASC;";
 
-            var pendingPlays = (await conn.QueryAsync<PendingPlay>(selectSql)).ToList();
+            var pendingPlays = (await selectConn.QueryAsync<PendingPlay>(selectSql)).ToList();
 
             if (pendingPlays.Count == 0)
             {
@@ -104,6 +192,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             }
 
             int totalSynced = 0;
+            int skippedCount = 0;
             var nowUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
             for (int i = 0; i < pendingPlays.Count; i += BatchSize)
@@ -112,36 +201,27 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                 var rows = batch.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
                 var batchIds = batch.Select(p => p.Id).ToList();
 
+                if (!_circuitBreaker.AllowRequest())
+                {
+                    _log.LogWarning("Circuit breaker open, stopping offline sync");
+                    break;
+                }
+
                 try
                 {
-                    if (_sheetsAppender != null)
-                    {
-                        await _sheetsAppender(rows, ct);
-                    }
-                    else if (_sheetsService != null)
-                    {
-                        var valueRange = new ValueRange { Values = rows };
-                        var range = $"'{_sheetName}'!A:X";
-                        var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
-                        appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
-
-                        _log.LogInformation("Syncing batch of {Count} plays to Google Sheets", batch.Count);
-                        await appendRequest.ExecuteAsync(ct);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Google Sheets service is not configured");
-                    }
+                    await AppendBatchWithRetryAsync(rows, ct);
+                    _circuitBreaker.RecordSuccess();
 
                     const string updateSql = @"
                         UPDATE plays
                         SET sync_status = 'Synced', synced_at = @SyncedAt
                         WHERE id IN @Ids;";
 
-                    using var tx = conn.BeginTransaction();
+                    await using var updateConn = await _dbManager.CreateConnectionAsync(ct);
+                    using var tx = updateConn.BeginTransaction();
                     try
                     {
-                        await conn.ExecuteAsync(updateSql, new { Ids = batchIds, SyncedAt = nowUtc }, tx);
+                        await updateConn.ExecuteAsync(updateSql, new { Ids = batchIds, SyncedAt = nowUtc }, tx);
                         tx.Commit();
                         totalSynced += batch.Count;
                         _log.LogInformation("Successfully marked {Count} plays as synced", batch.Count);
@@ -158,10 +238,17 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                         _log.LogError(dbEx, "Failed to mark batch as synced (plays may be duplicated on next sync)");
                     }
                 }
+                catch (PermanentBatchFailureException permanentEx)
+                {
+                    _circuitBreaker.RecordFailure();
+                    _log.LogError(permanentEx.InnerException ?? permanentEx, "Skipping batch starting at index {Index} due to permanent failure", i);
+                    skippedCount += batch.Count;
+                }
                 catch (Exception batchEx)
                 {
+                    _circuitBreaker.RecordFailure();
                     _log.LogError(batchEx, "Failed to sync batch starting at index {Index}", i);
-                    if (totalSynced == 0)
+                    if (totalSynced == 0 && skippedCount == 0)
                     {
                         return new SyncResult(false, 0, 0, batchEx.Message);
                     }
@@ -170,7 +257,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             }
 
             _log.LogInformation("Successfully synced {Count} of {Total} plays to Google Sheets", totalSynced, pendingPlays.Count);
-            return new SyncResult(true, totalSynced, 0, null);
+            return new SyncResult(true, totalSynced, skippedCount, null);
         }
         catch (Exception ex)
         {

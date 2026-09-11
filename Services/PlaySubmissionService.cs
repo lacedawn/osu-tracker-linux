@@ -200,8 +200,8 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             await _sheetsLock.WaitAsync(CancellationToken.None);
             try
             {
-                await _sessionManager.IncrementPlaysAsync();
                 await _playSink.TryLogPlayAsync(data, context);
+                await _sessionManager.IncrementPlaysAsync();
                 PlayLogged?.Invoke(this, (data, context));
             }
             finally
