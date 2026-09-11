@@ -86,6 +86,20 @@ public static class AppPaths
         return CredentialsPath;
     }
 
+    public static string ResolveShippedAssetPath(string relativePath)
+    {
+        return ResolveShippedAssetPath(relativePath, LegacyBaseDirectory, AppDataDirectory);
+    }
+
+    internal static string ResolveShippedAssetPath(string relativePath, string shippedDirectory, string userDirectory)
+    {
+        string shippedPath = Path.Combine(shippedDirectory, relativePath);
+        if (File.Exists(shippedPath)) return shippedPath;
+        string userPath = Path.Combine(userDirectory, relativePath);
+        if (File.Exists(userPath)) return userPath;
+        return shippedPath;
+    }
+
     public static bool CredentialsExist()
     {
         return File.Exists(CredentialsPath) || File.Exists(LegacyCredentialsPath);

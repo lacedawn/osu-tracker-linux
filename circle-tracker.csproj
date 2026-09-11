@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Circle_Tracker</RootNamespace>
     <AssemblyName>circle-tracker</AssemblyName>
-    <ApplicationIcon>ct.ico</ApplicationIcon>
+    <ApplicationIcon>assets/ct.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -40,6 +40,9 @@
     </None>
     <None Update="assets/ct.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="assets/circletrackerlazer.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 </Project>

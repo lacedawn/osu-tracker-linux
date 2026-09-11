@@ -22,6 +22,26 @@ namespace Circle_Tracker
         private static readonly ILogger<Updater> _log = AppLogger.For<Updater>();
 
         public const string DefaultRepository = "lacedawn/osu-tracker-linux";
+
+        public static string ResolveRepository(string? repository)
+        {
+            if (string.IsNullOrWhiteSpace(repository))
+                return DefaultRepository;
+
+            string trimmed = repository.Trim();
+            int slash = trimmed.IndexOf('/');
+            if (slash <= 0 || slash != trimmed.LastIndexOf('/') || slash == trimmed.Length - 1)
+                return DefaultRepository;
+
+            foreach (char c in trimmed)
+            {
+                if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == '/'))
+                    return DefaultRepository;
+            }
+
+            return trimmed;
+        }
+
         private static readonly HttpClient client;
 
         public static Version CurrentVersion =>
@@ -109,7 +129,7 @@ namespace Circle_Tracker
         public static async Task<bool> CheckForUpdates(string? repository = null, HttpClient? httpClient = null, CancellationToken ct = default)
         {
             Release? latestRelease = null;
-            string repo = repository ?? DefaultRepository;
+            string repo = ResolveRepository(repository);
             var http = httpClient ?? client;
 
             try

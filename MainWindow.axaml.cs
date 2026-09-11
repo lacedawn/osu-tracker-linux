@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Circle_Tracker.Services;
 using Circle_Tracker.ViewModels;
 using Circle_Tracker.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,7 +45,7 @@ namespace Circle_Tracker
             {
                 try
                 {
-                    await Updater.CheckForUpdates(ct: updateToken).ConfigureAwait(false);
+                    await Updater.CheckForUpdates(Updater.ResolveRepository(LookupUpdateRepository()), ct: updateToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
@@ -174,6 +175,18 @@ namespace Circle_Tracker
                 _viewModel.SessionSummaryRequested -= ShowSessionSummaryDialogAsync;
                 _viewModel.ShowYesNoDialogDelegate = null;
                 _viewModel.ShowMessageDelegate = null;
+            }
+        }
+
+        private static string? LookupUpdateRepository()
+        {
+            try
+            {
+                return Program.GetServiceProvider()?.GetService<ISettingsService>()?.UpdateRepository;
+            }
+            catch
+            {
+                return null;
             }
         }
 

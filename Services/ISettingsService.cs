@@ -16,6 +16,7 @@ public interface ISettingsService
     string SheetName { get; set; }
     bool UseAltFuncSeparator { get; set; }
     bool SpreadsheetTimezoneVerified { get; set; }
+    string UpdateRepository { get; set; }
     string SettingsFilePath { get; }
     string SoundFilePath { get; }
 

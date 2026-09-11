@@ -241,4 +241,73 @@ public class AppPathsTests
 
         result.Should().Be(expected);
     }
+
+    [Fact]
+    public void ResolveShippedAssetPath_WhenUserCopyMissing_FallsBackToShippedAsset()
+    {
+        string shippedDir = Path.Combine(Path.GetTempPath(), $"ct_ship_{Guid.NewGuid():N}");
+        string userDir = Path.Combine(Path.GetTempPath(), $"ct_user_{Guid.NewGuid():N}");
+        try
+        {
+            string relative = Path.Combine("assets", "sectionpass.wav");
+            Directory.CreateDirectory(Path.Combine(shippedDir, "assets"));
+            Directory.CreateDirectory(userDir);
+            File.WriteAllText(Path.Combine(shippedDir, relative), "shipped-bytes");
+
+            string result = AppPaths.ResolveShippedAssetPath(relative, shippedDir, userDir);
+
+            result.Should().Be(Path.Combine(shippedDir, relative));
+        }
+        finally
+        {
+            try { Directory.Delete(shippedDir, true); } catch { }
+            try { Directory.Delete(userDir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void ResolveShippedAssetPath_WhenExistsInBoth_PrefersShippedAsset()
+    {
+        string shippedDir = Path.Combine(Path.GetTempPath(), $"ct_ship_{Guid.NewGuid():N}");
+        string userDir = Path.Combine(Path.GetTempPath(), $"ct_user_{Guid.NewGuid():N}");
+        try
+        {
+            string relative = Path.Combine("assets", "sectionpass.wav");
+            Directory.CreateDirectory(Path.Combine(shippedDir, "assets"));
+            Directory.CreateDirectory(Path.Combine(userDir, "assets"));
+            File.WriteAllText(Path.Combine(shippedDir, relative), "shipped-bytes");
+            File.WriteAllText(Path.Combine(userDir, relative), "stray-bytes");
+
+            string result = AppPaths.ResolveShippedAssetPath(relative, shippedDir, userDir);
+
+            result.Should().Be(Path.Combine(shippedDir, relative));
+        }
+        finally
+        {
+            try { Directory.Delete(shippedDir, true); } catch { }
+            try { Directory.Delete(userDir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Migration_WhenLegacyAssetsPresent_DoesNotCreateUserCopy()
+    {
+        string legacyDir = Path.Combine(Path.GetTempPath(), $"ct_legacy_{Guid.NewGuid():N}");
+        string targetDir = Path.Combine(Path.GetTempPath(), $"ct_target_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(legacyDir, "assets"));
+        try
+        {
+            File.WriteAllText(Path.Combine(legacyDir, "assets", "sectionpass.wav"), "legacy-bytes");
+            File.WriteAllText(Path.Combine(legacyDir, "user_settings.json"), """{"username":"LegacyUser"}""");
+
+            AppPaths.MigrateLegacyFiles(legacyDir, targetDir);
+
+            File.Exists(Path.Combine(targetDir, "assets", "sectionpass.wav")).Should().BeFalse();
+        }
+        finally
+        {
+            try { Directory.Delete(legacyDir, true); } catch { }
+            try { Directory.Delete(targetDir, true); } catch { }
+        }
+    }
 }

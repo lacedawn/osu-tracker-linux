@@ -14,6 +14,7 @@ check_publish_assets() {
     local dir="$1"
     test -f "$dir/assets/sectionpass.wav" || { echo "missing $dir/assets/sectionpass.wav"; exit 1; }
     test -f "$dir/assets/ct.ico" || { echo "missing $dir/assets/ct.ico"; exit 1; }
+    test ! -f "$dir/assets/circletrackerlazer.png" || { echo "unexpected $dir/assets/circletrackerlazer.png"; exit 1; }
     echo "assets ok in $dir"
 }
 

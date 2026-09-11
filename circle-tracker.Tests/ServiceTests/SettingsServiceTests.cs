@@ -254,7 +254,7 @@ public class SettingsServiceTests
     public void FindFile_NotInBaseDirectory_ReturnsExpectedFallback()
     {
         string fileName = $"nonexistent_{Guid.NewGuid():N}.tmp";
-        string expected = Path.Combine(AppPaths.AppDataDirectory, fileName);
+        string expected = Path.Combine(AppContext.BaseDirectory, fileName);
 
         var result = SettingsService.FindFile(fileName);
 
@@ -265,7 +265,7 @@ public class SettingsServiceTests
     public void MissingSoundFile_FallsBackOrReports()
     {
         string fileName = $"missing_sound_{Guid.NewGuid():N}.wav";
-        string expected = Path.Combine(AppPaths.AppDataDirectory, fileName);
+        string expected = Path.Combine(AppContext.BaseDirectory, fileName);
 
         var result = SettingsService.FindFile(fileName);
 
@@ -389,7 +389,7 @@ public class SettingsServiceTests
     public void SoundFilePath_MissingFile_FallsBackToAssetsPath()
     {
         string missingName = $"missing_sound_{Guid.NewGuid():N}.wav";
-        string expected = Path.Combine(AppPaths.AppDataDirectory, missingName);
+        string expected = Path.Combine(AppContext.BaseDirectory, missingName);
 
         string result = SettingsService.FindFile(missingName);
 
@@ -404,5 +404,65 @@ public class SettingsServiceTests
             Path.Combine(Path.GetTempPath(), $"ct_snd_{Guid.NewGuid():N}.txt"));
 
         service.SoundFilePath.Should().Contain(Path.Combine("assets", "sectionpass.wav"));
+    }
+
+    [Fact]
+    public void SaveSettings_WhenUpdateRepositorySaved_ReloadsSameValue()
+    {
+        string tempJson = Path.Combine(Path.GetTempPath(), $"test_repo_{Guid.NewGuid():N}.json");
+        try
+        {
+            var writer = new SettingsService(tempJson, tempJson + ".old");
+
+            writer.UpdateRepository = "custom-owner/custom-repo";
+            writer.SaveSettings();
+
+            var reader = new SettingsService(tempJson, tempJson + ".old");
+
+            reader.UpdateRepository.Should().Be("custom-owner/custom-repo");
+        }
+        finally
+        {
+            try { if (File.Exists(tempJson)) File.Delete(tempJson); } catch { }
+        }
+    }
+
+    [Fact]
+    public void LoadSettings_WhenUpdateRepositoryMissing_UsesDefault()
+    {
+        string tempJson = Path.Combine(Path.GetTempPath(), $"test_repo_{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(tempJson, """{"username":"RepoUser"}""");
+
+            var service = new SettingsService(tempJson, tempJson + ".old");
+
+            service.UpdateRepository.Should().Be(Updater.DefaultRepository);
+        }
+        finally
+        {
+            try { if (File.Exists(tempJson)) File.Delete(tempJson); } catch { }
+        }
+    }
+
+    [Fact]
+    public void SaveSettings_WhenUpdateRepositoryInvalid_FallsBackToDefault()
+    {
+        string tempJson = Path.Combine(Path.GetTempPath(), $"test_repo_{Guid.NewGuid():N}.json");
+        try
+        {
+            var writer = new SettingsService(tempJson, tempJson + ".old");
+
+            writer.UpdateRepository = "not a valid repo";
+            writer.SaveSettings();
+
+            var reader = new SettingsService(tempJson, tempJson + ".old");
+
+            reader.UpdateRepository.Should().Be(Updater.DefaultRepository);
+        }
+        finally
+        {
+            try { if (File.Exists(tempJson)) File.Delete(tempJson); } catch { }
+        }
     }
 }

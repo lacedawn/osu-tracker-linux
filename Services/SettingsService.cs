@@ -37,6 +37,7 @@ public class SettingsService : ISettingsService
     public string SheetName { get; set; } = "Raw Data";
     public bool UseAltFuncSeparator { get; set; } = false;
     public bool SpreadsheetTimezoneVerified { get; set; } = false;
+    public string UpdateRepository { get; set; } = Updater.DefaultRepository;
 
     public event Action? SettingsChanged;
 
@@ -57,11 +58,7 @@ public class SettingsService : ISettingsService
 
     public static string FindFile(string relativePath)
     {
-        string appDataPath = Path.Combine(AppPaths.AppDataDirectory, relativePath);
-        if (File.Exists(appDataPath)) return appDataPath;
-        string basePath = Path.Combine(AppContext.BaseDirectory, relativePath);
-        if (File.Exists(basePath)) return basePath;
-        return appDataPath;
+        return AppPaths.ResolveShippedAssetPath(relativePath);
     }
 
     public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
@@ -117,6 +114,7 @@ public class SettingsService : ISettingsService
         {
             TosuHost = SanitizeTosuHost(TosuHost);
             TosuPort = SanitizeTosuPort(TosuPort);
+            UpdateRepository = Updater.ResolveRepository(UpdateRepository);
             var settings = new UserSettings
             {
                 EnableLocalLogging = EnableLocalLogging,
@@ -130,7 +128,8 @@ public class SettingsService : ISettingsService
                 Username = Username,
                 TosuHost = TosuHost,
                 TosuPort = TosuPort,
-                DisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused
+                DisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused,
+                UpdateRepository = UpdateRepository
             };
             string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             string? dir = Path.GetDirectoryName(SettingsFilePath);
@@ -161,6 +160,7 @@ public class SettingsService : ISettingsService
         TosuHost = DefaultTosuHost;
         TosuPort = DefaultTosuPort;
         DisableBackgroundAnimationsWhenUnfocused = false;
+        UpdateRepository = Updater.DefaultRepository;
 
         if (!File.Exists(SettingsFilePath))
         {
@@ -193,6 +193,7 @@ public class SettingsService : ISettingsService
                 TosuHost = SanitizeTosuHost(settings.TosuHost);
                 TosuPort = SanitizeTosuPort(settings.TosuPort);
                 DisableBackgroundAnimationsWhenUnfocused = settings.DisableBackgroundAnimationsWhenUnfocused;
+                UpdateRepository = Updater.ResolveRepository(settings.UpdateRepository);
             }
         }
         catch (Exception ex)

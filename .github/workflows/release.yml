@@ -64,12 +64,16 @@ jobs:
       run: |
         test -f ./publish/linux-x64/assets/sectionpass.wav
         test -f ./publish/linux-x64/assets/ct.ico
+        test ! -f ./publish/linux-x64/assets/circletrackerlazer.png
         test -f ./publish/win-x64/assets/sectionpass.wav
         test -f ./publish/win-x64/assets/ct.ico
+        test ! -f ./publish/win-x64/assets/circletrackerlazer.png
         test -f ./publish/osx-x64/assets/sectionpass.wav
         test -f ./publish/osx-x64/assets/ct.ico
+        test ! -f ./publish/osx-x64/assets/circletrackerlazer.png
         test -f ./publish/osx-arm64/assets/sectionpass.wav
         test -f ./publish/osx-arm64/assets/ct.ico
+        test ! -f ./publish/osx-arm64/assets/circletrackerlazer.png
         echo "publish assets ok"
     
     - name: Smoke test linux binary
