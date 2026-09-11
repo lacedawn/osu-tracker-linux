@@ -368,4 +368,62 @@ public class PlaySubmissionServiceTests
 
         service.ConsecutivePlayCount.Should().Be(20);
     }
+
+    [Fact]
+    public async Task TryPostBeatmapEntry_WithHeaderSnapshot_SubmitsOriginalHeader()
+    {
+        var sink = new Mock<IPlaySink>();
+        PlayEntryData? logged = null;
+        sink.Setup(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<PlayEntryData, PlayContext, CancellationToken>((data, context, ct) => logged = data)
+            .Returns(Task.CompletedTask);
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        var header = new PlayHeaderSnapshot(
+            "cs-original", 111, 222, "Artist - Title [Hard]", "Title", "Artist", "Hard",
+            6m, 180, 5m, 2m, 2m, 4m, 9m, 8m, 0,
+            false, false, false, false, false, false, "", 0, 1f, false, "osu!stable");
+
+        service.TryPostBeatmapEntry(complete: true, header: header, totalBeatmapHits: 50);
+        await service.FlushPendingSubmissionsAsync();
+
+        logged!.BeatmapChecksum.Should().Be("cs-original");
+    }
+
+    [Fact]
+    public async Task TryPostBeatmapEntry_WhenLiveBeatmapChangesDuringSubmit_LogsCapturedHeader()
+    {
+        var sink = new Mock<IPlaySink>();
+        PlayEntryData? logged = null;
+        sink.Setup(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<PlayEntryData, PlayContext, CancellationToken>((data, context, ct) => logged = data)
+            .Returns(Task.CompletedTask);
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        beatmapState.SetupSequence(b => b.BeatmapString).Returns("Map A").Returns("Map B");
+        beatmapState.Setup(b => b.CurrentBeatmapChecksum).Returns("cs");
+        beatmapState.Setup(b => b.BeatmapID).Returns(1);
+        beatmapState.Setup(b => b.RawMods).Returns(0);
+        beatmapState.Setup(b => b.GetModsString()).Returns("");
+        var gameState = new Mock<IGameStateManager>();
+        gameState.Setup(g => g.IsReplay).Returns(false);
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        service.TryPostBeatmapEntry(complete: true, beatmapState: beatmapState.Object, gameStateManager: gameState.Object, totalBeatmapHits: 50);
+        await service.FlushPendingSubmissionsAsync();
+
+        logged!.BeatmapString.Should().Be("Map A");
+    }
 }

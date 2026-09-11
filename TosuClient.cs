@@ -84,6 +84,11 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
                     _isConnected = value;
                     changed = true;
                 }
+
+                if (!value)
+                {
+                    _latestState = null;
+                }
             }
 
             if (changed && !_disposed)

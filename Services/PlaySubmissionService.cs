@@ -152,10 +152,71 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
         if (totalBeatmapHits < MinHitsToSubmit || gameStateManager.IsReplay || currentGameMode != 0)
             return;
 
-        string snapshotChecksum = beatmapState.CurrentBeatmapChecksum;
-        int snapshotBeatmapId = beatmapState.BeatmapID;
-        string snapshotBeatmapString = beatmapState.BeatmapString;
-        int snapshotRawMods = beatmapState.RawMods;
+        var header = new PlayHeaderSnapshot(
+            beatmapState.CurrentBeatmapChecksum,
+            beatmapState.BeatmapID,
+            beatmapState.BeatmapSetID,
+            beatmapState.BeatmapString,
+            beatmapState.BeatmapTitle,
+            beatmapState.BeatmapArtist,
+            beatmapState.BeatmapVersion,
+            beatmapState.BeatmapHp,
+            beatmapState.BeatmapBpm,
+            beatmapState.BeatmapStars,
+            beatmapState.BeatmapAim,
+            beatmapState.BeatmapSpeed,
+            beatmapState.BeatmapCs,
+            beatmapState.BeatmapAr,
+            beatmapState.BeatmapOd,
+            beatmapState.RawMods,
+            beatmapState.Hidden,
+            beatmapState.Hardrock,
+            beatmapState.Doubletime,
+            beatmapState.EZ,
+            beatmapState.Halftime,
+            beatmapState.Flashlight,
+            beatmapState.GetModsString(),
+            beatmapState.FirstHitObjectTime,
+            beatmapState.LastClockRate,
+            gameStateManager.IsReplay,
+            gameStateManager.DetectedClient);
+
+        TryPostBeatmapEntry(
+            complete,
+            header,
+            totalBeatmapHits,
+            accuracy,
+            play300c,
+            play100c,
+            play50c,
+            playMissc,
+            time,
+            currentGameMode,
+            soundFilePath,
+            submitSoundEnabled);
+    }
+
+    public void TryPostBeatmapEntry(
+        bool complete,
+        PlayHeaderSnapshot header,
+        int totalBeatmapHits,
+        decimal accuracy = 0,
+        int play300c = 0,
+        int play100c = 0,
+        int play50c = 0,
+        int playMissc = 0,
+        int time = 0,
+        int currentGameMode = 0,
+        string? soundFilePath = null,
+        bool submitSoundEnabled = false)
+    {
+        if (totalBeatmapHits < MinHitsToSubmit || header.IsReplay || currentGameMode != 0)
+            return;
+
+        string snapshotChecksum = header.Checksum;
+        int snapshotBeatmapId = header.BeatmapID;
+        string snapshotBeatmapString = header.BeatmapString;
+        int snapshotRawMods = header.RawMods;
         int snapshotPlayCount;
 
         lock (_dedupLock)
@@ -181,27 +242,27 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             snapshotPlayCount = _consecutivePlayCount;
         }
 
-        float clockRate = beatmapState.LastClockRate > 0 ? beatmapState.LastClockRate : (beatmapState.Doubletime ? 1.5f : beatmapState.Halftime ? 0.75f : 1f);
-        int playTime = (int)(Math.Max(0, time - beatmapState.FirstHitObjectTime) / clockRate / 1000f);
+        float clockRate = header.LastClockRate > 0 ? header.LastClockRate : (header.Doubletime ? 1.5f : header.Halftime ? 0.75f : 1f);
+        int playTime = (int)(Math.Max(0, time - header.FirstHitObjectTime) / clockRate / 1000f);
         bool accuracyReliable = accuracy > 0 && totalBeatmapHits > 0;
 
         var data = new PlayEntryData(
-            BeatmapString: beatmapState.BeatmapString,
-            BeatmapSetID: beatmapState.BeatmapSetID,
-            BeatmapID: beatmapState.BeatmapID,
-            Hidden: beatmapState.Hidden,
-            Hardrock: beatmapState.Hardrock,
-            Doubletime: beatmapState.Doubletime,
-            EZ: beatmapState.EZ,
-            Halftime: beatmapState.Halftime,
-            Flashlight: beatmapState.Flashlight,
-            BeatmapBpm: beatmapState.BeatmapBpm,
-            BeatmapAim: beatmapState.BeatmapAim,
-            BeatmapSpeed: beatmapState.BeatmapSpeed,
-            BeatmapStars: beatmapState.BeatmapStars,
-            BeatmapCs: beatmapState.BeatmapCs,
-            BeatmapAr: beatmapState.BeatmapAr,
-            BeatmapOd: beatmapState.BeatmapOd,
+            BeatmapString: header.BeatmapString,
+            BeatmapSetID: header.BeatmapSetID,
+            BeatmapID: header.BeatmapID,
+            Hidden: header.Hidden,
+            Hardrock: header.Hardrock,
+            Doubletime: header.Doubletime,
+            EZ: header.EZ,
+            Halftime: header.Halftime,
+            Flashlight: header.Flashlight,
+            BeatmapBpm: header.BeatmapBpm,
+            BeatmapAim: header.BeatmapAim,
+            BeatmapSpeed: header.BeatmapSpeed,
+            BeatmapStars: header.BeatmapStars,
+            BeatmapCs: header.BeatmapCs,
+            BeatmapAr: header.BeatmapAr,
+            BeatmapOd: header.BeatmapOd,
             TotalBeatmapHits: totalBeatmapHits,
             Accuracy: accuracy,
             Play300c: play300c,
@@ -210,23 +271,23 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             PlayMissc: playMissc,
             Complete: complete,
             PlayTimeSeconds: playTime,
-            ModsString: beatmapState.GetModsString(),
+            ModsString: header.ModsString,
             PlayCount: snapshotPlayCount,
             AccuracyReliable: accuracyReliable,
-            BeatmapTitle: beatmapState.BeatmapTitle,
-            BeatmapArtist: beatmapState.BeatmapArtist,
-            BeatmapVersion: beatmapState.BeatmapVersion,
-            BeatmapHp: beatmapState.BeatmapHp,
+            BeatmapTitle: header.BeatmapTitle,
+            BeatmapArtist: header.BeatmapArtist,
+            BeatmapVersion: header.BeatmapVersion,
+            BeatmapHp: header.BeatmapHp,
             BeatmapChecksum: snapshotChecksum,
             ClientId: Guid.NewGuid().ToString()
         );
 
         var context = new PlayContext(
             SessionId: _sessionManager.SessionId,
-            IsReplay: gameStateManager.IsReplay,
+            IsReplay: header.IsReplay,
             RawMods: snapshotRawMods,
             CurrentGameMode: currentGameMode,
-            DetectedClient: gameStateManager.DetectedClient,
+            DetectedClient: header.DetectedClient,
             SoundFilePath: soundFilePath,
             SubmitSoundEnabled: submitSoundEnabled
         );

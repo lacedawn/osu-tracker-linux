@@ -1,4 +1,5 @@
 using Circle_Tracker;
+using Circle_Tracker.Services;
 using Circle_Tracker.Storage;
 using Dapper;
 using FluentAssertions;
@@ -743,6 +744,211 @@ namespace CircleTracker.Tests
             System.Threading.Tasks.Parallel.For(0, 100, _ => tracker.TickEverySecond());
 
             tracker.PlayingSeconds.Should().Be(100);
+        }
+
+        [Fact]
+        public void Tick_WhenMapChangesBetweenUnlockAndSubmit_LogsOriginalMapHeader()
+        {
+            string liveChecksum = "mapA-checksum";
+            int liveBeatmapId = 111;
+            string liveBeatmapString = "ArtistA - TitleA [Hard]";
+            int liveRawMods = 0;
+            string liveModsString = "";
+
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            mockClient.Setup(c => c.IsConnected).Returns(true);
+            var mockSink = new Mock<IPlaySink>();
+            var gameStateManager = new GameStateManager();
+
+            var mockBeatmap = new Mock<IBeatmapStateTracker>();
+            mockBeatmap.Setup(b => b.CurrentBeatmapChecksum).Returns(() => liveChecksum);
+            mockBeatmap.Setup(b => b.BeatmapID).Returns(() => liveBeatmapId);
+            mockBeatmap.Setup(b => b.BeatmapSetID).Returns(222);
+            mockBeatmap.Setup(b => b.BeatmapString).Returns(() => liveBeatmapString);
+            mockBeatmap.Setup(b => b.BeatmapTitle).Returns("TitleA");
+            mockBeatmap.Setup(b => b.BeatmapArtist).Returns("ArtistA");
+            mockBeatmap.Setup(b => b.BeatmapVersion).Returns("Hard");
+            mockBeatmap.Setup(b => b.BeatmapHp).Returns(6m);
+            mockBeatmap.Setup(b => b.BeatmapBpm).Returns(180);
+            mockBeatmap.Setup(b => b.BeatmapStars).Returns(5m);
+            mockBeatmap.Setup(b => b.BeatmapAim).Returns(2m);
+            mockBeatmap.Setup(b => b.BeatmapSpeed).Returns(2m);
+            mockBeatmap.Setup(b => b.BeatmapCs).Returns(4m);
+            mockBeatmap.Setup(b => b.BeatmapAr).Returns(9m);
+            mockBeatmap.Setup(b => b.BeatmapOd).Returns(8m);
+            mockBeatmap.Setup(b => b.RawMods).Returns(() => liveRawMods);
+            mockBeatmap.Setup(b => b.GetModsString()).Returns(() => liveModsString);
+            mockBeatmap.Setup(b => b.FirstHitObjectTime).Returns(0);
+            mockBeatmap.Setup(b => b.LastClockRate).Returns(1f);
+
+            PlayHeaderSnapshot? capturedHeader = null;
+            var mockSubmission = new Mock<IPlaySubmissionService>();
+            mockSubmission.Setup(s => s.TryPostBeatmapEntry(
+                    It.IsAny<bool>(), It.IsAny<PlayHeaderSnapshot>(), It.IsAny<int>(), It.IsAny<decimal>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                    It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+                .Callback<bool, PlayHeaderSnapshot, int, decimal, int, int, int, int, int, int, string, bool>(
+                    (complete, header, totalHits, accuracy, c300, c100, c50, miss, time, mode, sound, enabled) =>
+                    {
+                        liveChecksum = "mapB-checksum";
+                        liveBeatmapId = 999;
+                        liveBeatmapString = "ArtistB - TitleB [Insane]";
+                        liveRawMods = 8;
+                        liveModsString = "HD";
+                        capturedHeader = header;
+                    });
+
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(
+                mockClient.Object,
+                PlaySink: mockSink.Object,
+                GameStateManager: gameStateManager,
+                BeatmapStateTracker: mockBeatmap.Object,
+                PlaySubmissionService: mockSubmission.Object));
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "mapA-checksum"));
+            tracker.Tick();
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000, checksum: "mapA-checksum"));
+            tracker.Tick();
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 45, checksum: "mapA-checksum"));
+            tracker.Tick();
+
+            capturedHeader!.Checksum.Should().Be("mapA-checksum");
+        }
+
+        [Fact]
+        public void Tick_WhenModsChangeBetweenUnlockAndSubmit_LogsOriginalMods()
+        {
+            string liveChecksum = "mapA-checksum";
+            int liveBeatmapId = 111;
+            string liveBeatmapString = "ArtistA - TitleA [Hard]";
+            int liveRawMods = 0;
+            string liveModsString = "";
+
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            mockClient.Setup(c => c.IsConnected).Returns(true);
+            var mockSink = new Mock<IPlaySink>();
+            var gameStateManager = new GameStateManager();
+
+            var mockBeatmap = new Mock<IBeatmapStateTracker>();
+            mockBeatmap.Setup(b => b.CurrentBeatmapChecksum).Returns(() => liveChecksum);
+            mockBeatmap.Setup(b => b.BeatmapID).Returns(() => liveBeatmapId);
+            mockBeatmap.Setup(b => b.BeatmapSetID).Returns(222);
+            mockBeatmap.Setup(b => b.BeatmapString).Returns(() => liveBeatmapString);
+            mockBeatmap.Setup(b => b.BeatmapTitle).Returns("TitleA");
+            mockBeatmap.Setup(b => b.BeatmapArtist).Returns("ArtistA");
+            mockBeatmap.Setup(b => b.BeatmapVersion).Returns("Hard");
+            mockBeatmap.Setup(b => b.BeatmapHp).Returns(6m);
+            mockBeatmap.Setup(b => b.BeatmapBpm).Returns(180);
+            mockBeatmap.Setup(b => b.BeatmapStars).Returns(5m);
+            mockBeatmap.Setup(b => b.BeatmapAim).Returns(2m);
+            mockBeatmap.Setup(b => b.BeatmapSpeed).Returns(2m);
+            mockBeatmap.Setup(b => b.BeatmapCs).Returns(4m);
+            mockBeatmap.Setup(b => b.BeatmapAr).Returns(9m);
+            mockBeatmap.Setup(b => b.BeatmapOd).Returns(8m);
+            mockBeatmap.Setup(b => b.RawMods).Returns(() => liveRawMods);
+            mockBeatmap.Setup(b => b.GetModsString()).Returns(() => liveModsString);
+            mockBeatmap.Setup(b => b.FirstHitObjectTime).Returns(0);
+            mockBeatmap.Setup(b => b.LastClockRate).Returns(1f);
+
+            PlayHeaderSnapshot? capturedHeader = null;
+            var mockSubmission = new Mock<IPlaySubmissionService>();
+            mockSubmission.Setup(s => s.TryPostBeatmapEntry(
+                    It.IsAny<bool>(), It.IsAny<PlayHeaderSnapshot>(), It.IsAny<int>(), It.IsAny<decimal>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(),
+                    It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+                .Callback<bool, PlayHeaderSnapshot, int, decimal, int, int, int, int, int, int, string, bool>(
+                    (complete, header, totalHits, accuracy, c300, c100, c50, miss, time, mode, sound, enabled) =>
+                    {
+                        liveChecksum = "mapB-checksum";
+                        liveBeatmapId = 999;
+                        liveBeatmapString = "ArtistB - TitleB [Insane]";
+                        liveRawMods = 8;
+                        liveModsString = "HD";
+                        capturedHeader = header;
+                    });
+
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(
+                mockClient.Object,
+                PlaySink: mockSink.Object,
+                GameStateManager: gameStateManager,
+                BeatmapStateTracker: mockBeatmap.Object,
+                PlaySubmissionService: mockSubmission.Object));
+
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying(checksum: "mapA-checksum"));
+            tracker.Tick();
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000, checksum: "mapA-checksum"));
+            tracker.Tick();
+            mockClient.Setup(c => c.LatestState).Returns(StateBuilder.Results(h300: 45, checksum: "mapA-checksum"));
+            tracker.Tick();
+
+            capturedHeader!.RawMods.Should().Be(0);
+        }
+
+        [Fact]
+        public void Tick_WhenTosuDisconnects_PlayingSecondsFrozen()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+            tracker.TickEverySecond();
+            client.Setup(c => c.IsConnected).Returns(false);
+            tracker.Tick();
+            tracker.TickEverySecond();
+            tracker.TickEverySecond();
+            tracker.TickEverySecond();
+
+            tracker.PlayingSeconds.Should().Be(1);
+        }
+
+        [Fact]
+        public void Tick_WhenTosuDisconnects_IdleSecondsFrozen()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+            tracker.TickEverySecond();
+            client.Setup(c => c.IsConnected).Returns(false);
+            tracker.Tick();
+            tracker.TickEverySecond();
+            tracker.TickEverySecond();
+            tracker.TickEverySecond();
+
+            tracker.IdleSeconds.Should().Be(0);
+        }
+
+        [Fact]
+        public void Tick_WhenTosuDisconnects_ResetsPerPlayCounters()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.WarmUpPlaying());
+            tracker.Tick();
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 45, songTimeMs: 30000));
+            tracker.Tick();
+            client.Setup(c => c.IsConnected).Returns(false);
+            tracker.Tick();
+
+            tracker.GetSnapshot().TotalBeatmapHits.Should().Be(0);
+        }
+
+        [Fact]
+        public void Tick_WhenTosuStateNull_PlayingSecondsFrozen()
+        {
+            var (tracker, client, _) = TrackerFactory.Create();
+
+            client.Setup(c => c.LatestState).Returns(StateBuilder.Playing(h300: 10, songTimeMs: 5000));
+            tracker.Tick();
+            tracker.TickEverySecond();
+            client.Setup(c => c.LatestState).Returns((TosuState?)null);
+            tracker.Tick();
+            tracker.TickEverySecond();
+            tracker.TickEverySecond();
+
+            tracker.PlayingSeconds.Should().Be(1);
         }
     }
 }

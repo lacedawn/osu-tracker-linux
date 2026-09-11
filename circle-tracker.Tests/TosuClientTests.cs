@@ -1,4 +1,5 @@
 using Circle_Tracker;
+using CircleTracker.Tests.Mocks;
 using FluentAssertions;
 using Moq;
 using System.IO;
@@ -628,6 +629,74 @@ namespace CircleTracker.Tests
             client.RunnerTask!.IsCompleted.Should().BeTrue();
 
             Volatile.Read(ref postDisposeEvents).Should().Be(eventsAtDispose);
+        }
+
+        [Fact]
+        public async Task Reconnect_WhenStateWasStale_DoesNotResubmitOldChecksum()
+        {
+            using var server = new MockTosuWebSocketServer();
+            using var client = new TosuClient { Host = "127.0.0.1", Port = server.Port };
+
+            await client.ConnectAsync();
+            await server.WaitForClientConnectionAsync(TimeSpan.FromSeconds(3));
+
+            var stateReceived = new TaskCompletionSource<TosuState>(TaskCreationOptions.RunContinuationsAsynchronously);
+            client.StateUpdated += (_, state) => stateReceived.TrySetResult(state);
+
+            await server.BroadcastStateAsync(StateBuilder.Playing(checksum: "stale-checksum"));
+            await stateReceived.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            await client.DisconnectAsync();
+
+            client.LatestState.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task ConnectionLoop_WhenHttpSnapshotMissing_ClearsStaleState()
+        {
+            var staleState = StateBuilder.Playing(checksum: "stale-checksum");
+            int pollCount = 0;
+            var mockTransport = new Mock<ITosuTransport>();
+            mockTransport
+                .Setup(t => t.RunWebSocketSessionAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            mockTransport
+                .Setup(t => t.PollHttpSnapshotAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => Interlocked.Increment(ref pollCount) == 1 ? staleState : null);
+            using var client = new TosuClient(mockTransport.Object);
+
+            await client.ConnectAsync();
+            await WaitForChecksumAsync(client, "stale-checksum");
+            await WaitForNullStateAsync(client);
+            await client.DisconnectAsync();
+
+            client.LatestState.Should().BeNull();
+        }
+
+        private static async Task WaitForChecksumAsync(TosuClient client, string checksum)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+
+            while (client.LatestState?.Beatmap?.Checksum != checksum)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException("Timed out waiting for latest state.");
+
+                await Task.Delay(25);
+            }
+        }
+
+        private static async Task WaitForNullStateAsync(TosuClient client)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+
+            while (client.LatestState != null)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException("Timed out waiting for state to clear.");
+
+                await Task.Delay(25);
+            }
         }
     }
 }

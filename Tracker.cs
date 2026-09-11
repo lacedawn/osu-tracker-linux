@@ -60,6 +60,7 @@ namespace Circle_Tracker
         private readonly object _snapshotLock = new();
         private TrackerSnapshot? _lastSnapshot;
         private string? _tosuProfileName;
+        private bool _isTosuConnected = true;
         private readonly IPlaySubmissionService _submissionService;
         public IPlaySubmissionService SubmissionService => _submissionService;
 
@@ -249,8 +250,52 @@ namespace Circle_Tracker
                 PlayCount: _submissionService.ConsecutivePlayCount,
                 DatabaseReady: DatabaseReady,
                 LocalPlayCount: LocalPlayCount,
-                ProfileIdentityConfirmed: !string.IsNullOrWhiteSpace(_tosuProfileName ?? _tosuClient.LatestState?.Profile?.Name)
+                ProfileIdentityConfirmed: !string.IsNullOrWhiteSpace(_tosuProfileName ?? _tosuClient.LatestState?.Profile?.Name),
+                IsTosuConnected: _isTosuConnected
             );
+        }
+
+        private PlayHeaderSnapshot CaptureHeaderLocked()
+        {
+            return new PlayHeaderSnapshot(
+                _beatmapState.CurrentBeatmapChecksum,
+                _beatmapState.BeatmapID,
+                _beatmapState.BeatmapSetID,
+                _beatmapState.BeatmapString ?? "",
+                _beatmapState.BeatmapTitle,
+                _beatmapState.BeatmapArtist,
+                _beatmapState.BeatmapVersion,
+                _beatmapState.BeatmapHp,
+                _beatmapState.BeatmapBpm,
+                _beatmapState.BeatmapStars,
+                _beatmapState.BeatmapAim,
+                _beatmapState.BeatmapSpeed,
+                _beatmapState.BeatmapCs,
+                _beatmapState.BeatmapAr,
+                _beatmapState.BeatmapOd,
+                _beatmapState.RawMods,
+                _beatmapState.Hidden,
+                _beatmapState.Hardrock,
+                _beatmapState.Doubletime,
+                _beatmapState.EZ,
+                _beatmapState.Halftime,
+                _beatmapState.Flashlight,
+                _beatmapState.GetModsString(),
+                _beatmapState.FirstHitObjectTime,
+                _beatmapState.LastClockRate,
+                _gameStateManager.IsReplay,
+                _gameStateManager.DetectedClient);
+        }
+
+        private void ResetPerPlayCountersLocked()
+        {
+            Play300c = 0;
+            Play100c = 0;
+            Play50c = 0;
+            PlayMissc = 0;
+            Accuracy = 0;
+            TotalBeatmapHits = 0;
+            Time = 0;
         }
 
         public TrackerSnapshot GetSnapshot()
@@ -283,6 +328,9 @@ namespace Circle_Tracker
                 lock (_snapshotLock)
                 {
                     _gameStateManager.DetectedClient = "Disconnected";
+                    _gameStateManager.GameState = GameStatus.Menu;
+                    ResetPerPlayCountersLocked();
+                    _isTosuConnected = false;
                     _lastSnapshot = BuildSnapshotLocked();
                 }
                 return;
@@ -294,12 +342,15 @@ namespace Circle_Tracker
                 lock (_snapshotLock)
                 {
                     _gameStateManager.DetectedClient = "Connecting...";
+                    _gameStateManager.GameState = GameStatus.Menu;
+                    ResetPerPlayCountersLocked();
+                    _isTosuConnected = false;
                     _lastSnapshot = BuildSnapshotLocked();
                 }
                 return;
             }
 
-            List<(bool Complete, int TotalHits, decimal Accuracy, int C300, int C100, int C50, int Miss, int Time, int GameMode, string? SoundPath, bool SoundEnabled)> deferredSubmissions = new();
+            List<(bool Complete, PlayHeaderSnapshot Header, int TotalHits, decimal Accuracy, int C300, int C100, int C50, int Miss, int Time, int GameMode, string? SoundPath, bool SoundEnabled)> deferredSubmissions = new();
             List<int> deferredPpMods = new();
             GameStatus loggedCurrent = GameStatus.Menu;
             bool loggedTransition = false;
@@ -312,6 +363,7 @@ namespace Circle_Tracker
 
             lock (_snapshotLock)
             {
+                _isTosuConnected = true;
                 _tosuProfileName = state.Profile?.Name;
                 GameStatus previousGameState = _gameStateManager.GameState;
                 _gameStateManager.UpdateFromState(state);
@@ -349,26 +401,14 @@ namespace Circle_Tracker
                         loggedTransition = true;
                         loggedCompleted = beatmapCompleted;
                         loggedHits = TotalBeatmapHits;
-                        deferredSubmissions.Add((beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
+                        deferredSubmissions.Add((beatmapCompleted, CaptureHeaderLocked(), TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
 
-                        Play300c = 0;
-                        Play100c = 0;
-                        Play50c = 0;
-                        PlayMissc = 0;
-                        Accuracy = 0;
-                        TotalBeatmapHits = 0;
-                        Time = 0;
+                        ResetPerPlayCountersLocked();
                     }
                     else if (previousGameState != GameStatus.Playing && currentGameState == GameStatus.Playing)
                     {
                         justEnteredPlaying = true;
-                        Play300c = 0;
-                        Play100c = 0;
-                        Play50c = 0;
-                        PlayMissc = 0;
-                        Accuracy = 0;
-                        TotalBeatmapHits = 0;
-                        Time = 0;
+                        ResetPerPlayCountersLocked();
                     }
                 }
 
@@ -440,14 +480,9 @@ namespace Circle_Tracker
                                 loggedRetryTime = newSongTime;
                                 loggedRetryPrevTime = Time;
                                 loggedRetryHits = TotalBeatmapHits;
-                                deferredSubmissions.Add((false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
+                                deferredSubmissions.Add((false, CaptureHeaderLocked(), TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
                             }
-                            Play300c = 0;
-                            Play100c = 0;
-                            Play50c = 0;
-                            PlayMissc = 0;
-                            Accuracy = 0;
-                            TotalBeatmapHits = 0;
+                            ResetPerPlayCountersLocked();
                             Time = newSongTime;
                         }
                         else
@@ -471,7 +506,7 @@ namespace Circle_Tracker
 
             foreach (var submission in deferredSubmissions)
             {
-                _submissionService.TryPostBeatmapEntry(submission.Complete, submission.TotalHits, submission.Accuracy, submission.C300, submission.C100, submission.C50, submission.Miss, submission.Time, submission.GameMode, submission.SoundPath, submission.SoundEnabled);
+                _submissionService.TryPostBeatmapEntry(submission.Complete, submission.Header, submission.TotalHits, submission.Accuracy, submission.C300, submission.C100, submission.C50, submission.Miss, submission.Time, submission.GameMode, submission.SoundPath, submission.SoundEnabled);
             }
 
             if (loggedTransition)
@@ -503,6 +538,12 @@ namespace Circle_Tracker
         {
             TrackerSnapshot? snap = Volatile.Read(ref _lastSnapshot);
             if (snap == null) return;
+
+            if (!snap.IsTosuConnected)
+            {
+                _form.UpdateTime();
+                return;
+            }
 
             if (snap.IsPlaying)
                 Interlocked.Increment(ref _playingSeconds);

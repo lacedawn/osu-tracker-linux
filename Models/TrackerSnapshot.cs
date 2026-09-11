@@ -34,7 +34,8 @@ public record TrackerSnapshot(
     int PlayCount = 0,
     bool DatabaseReady = false,
     int LocalPlayCount = 0,
-    bool ProfileIdentityConfirmed = false
+    bool ProfileIdentityConfirmed = false,
+    bool IsTosuConnected = true
 )
 {
     public string CoverUrl => BeatmapSetId > 0 ? $"https://assets.ppy.sh/beatmaps/{BeatmapSetId}/covers/cover.jpg" : "";

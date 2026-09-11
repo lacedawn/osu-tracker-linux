@@ -108,7 +108,7 @@ public class DefaultTosuTransport : ITosuTransport
             _client.IsConnected = false;
         }
 
-        return true;
+        return false;
     }
 
     public async Task<TosuState?> PollHttpSnapshotAsync(CancellationToken ct)

@@ -1,0 +1,31 @@
+namespace Circle_Tracker.Services;
+
+public record PlayHeaderSnapshot(
+    string Checksum,
+    int BeatmapID,
+    int BeatmapSetID,
+    string BeatmapString,
+    string BeatmapTitle,
+    string BeatmapArtist,
+    string BeatmapVersion,
+    decimal BeatmapHp,
+    int BeatmapBpm,
+    decimal BeatmapStars,
+    decimal BeatmapAim,
+    decimal BeatmapSpeed,
+    decimal BeatmapCs,
+    decimal BeatmapAr,
+    decimal BeatmapOd,
+    int RawMods,
+    bool Hidden,
+    bool Hardrock,
+    bool Doubletime,
+    bool EZ,
+    bool Halftime,
+    bool Flashlight,
+    string ModsString,
+    int FirstHitObjectTime,
+    float LastClockRate,
+    bool IsReplay,
+    string DetectedClient
+);
