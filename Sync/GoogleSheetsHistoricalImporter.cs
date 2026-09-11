@@ -1,6 +1,7 @@
 using Dapper;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -37,6 +38,147 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         _dbManager = dbManager;
     }
 
+    internal sealed record ParsedImportRow(
+        DateTime Timestamp,
+        int BeatmapId,
+        int BeatmapSetId,
+        string BeatmapString,
+        int Bpm,
+        decimal Stars,
+        decimal Aim,
+        decimal Speed,
+        decimal Cs,
+        decimal Ar,
+        decimal Od,
+        int TotalHits,
+        decimal Accuracy,
+        int Hit300,
+        int Hit100,
+        int Hit50,
+        int HitMiss,
+        int ModsBitfield,
+        string ModsString,
+        bool IsComplete,
+        int PlayTimeSeconds,
+        int PlayCount);
+
+    internal static string BuildDedupKey(
+        DateTime timestamp,
+        int beatmapId,
+        int totalHits,
+        decimal accuracy,
+        int hit300,
+        int hit100,
+        int hit50,
+        int hitMiss,
+        int modsBitfield,
+        bool isComplete)
+    {
+        DateTime normalized = timestamp.Kind == DateTimeKind.Utc ? timestamp : timestamp.ToUniversalTime();
+        string timePart = normalized.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+        return string.Create(CultureInfo.InvariantCulture, $"{timePart}|{beatmapId}|{totalHits}|{accuracy}|{hit300}|{hit100}|{hit50}|{hitMiss}|{modsBitfield}|{(isComplete ? 1 : 0)}");
+    }
+
+    internal async Task<SyncResult> ImportParsedRowsAsync(
+        IReadOnlyList<ParsedImportRow> parsed,
+        IProgress<MigrationProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (parsed.Count == 0)
+        {
+            return new SyncResult(true, 0, 0, "No data found in spreadsheet");
+        }
+
+        return await _dbManager.ExecuteInTransactionAsync(async (conn, tx) =>
+        {
+            const string existingSql = @"
+                SELECT timestamp AS Timestamp, beatmap_id AS BeatmapId, total_hits AS TotalHits,
+                       accuracy AS Accuracy, hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50,
+                       hit_miss AS HitMiss, mods_bitfield AS ModsBitfield, is_complete AS IsComplete
+                FROM plays;";
+
+            var existingRows = await conn.QueryAsync<ExistingPlayKey>(existingSql, transaction: tx);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var existing in existingRows)
+            {
+                if (DateTime.TryParse(existing.Timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime existingTimestamp))
+                {
+                    seen.Add(BuildDedupKey(existingTimestamp, existing.BeatmapId, existing.TotalHits, (decimal)existing.Accuracy, existing.Hit300, existing.Hit100, existing.Hit50, existing.HitMiss, existing.ModsBitfield, existing.IsComplete != 0));
+                }
+            }
+
+            int importedCount = 0;
+            int skippedDuplicates = 0;
+            int failedCount = 0;
+            int totalRows = parsed.Count;
+            DateTime? lastPlayTimestamp = null;
+            string? currentSessionId = null;
+
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var row = parsed[i];
+
+                try
+                {
+                    string key = BuildDedupKey(row.Timestamp, row.BeatmapId, row.TotalHits, row.Accuracy, row.Hit300, row.Hit100, row.Hit50, row.HitMiss, row.ModsBitfield, row.IsComplete);
+
+                    if (seen.Contains(key))
+                    {
+                        skippedDuplicates++;
+                    }
+                    else
+                    {
+                        if (lastPlayTimestamp.HasValue && (row.Timestamp - lastPlayTimestamp.Value).TotalMinutes > 45)
+                        {
+                            currentSessionId = Guid.NewGuid().ToString();
+                            await InsertSessionAsync(conn, tx, currentSessionId, row.Timestamp, ct);
+                        }
+                        else if (currentSessionId == null)
+                        {
+                            currentSessionId = Guid.NewGuid().ToString();
+                            await InsertSessionAsync(conn, tx, currentSessionId, row.Timestamp, ct);
+                        }
+
+                        await InsertPlayAsync(conn, tx, currentSessionId, row, ct);
+                        seen.Add(key);
+                        importedCount++;
+                    }
+
+                    lastPlayTimestamp = row.Timestamp;
+
+                    if (progress != null && (i % 50 == 0 || i == parsed.Count - 1))
+                    {
+                        progress.Report(new MigrationProgress(
+                            ProcessedRows: i + 1,
+                            TotalRows: totalRows,
+                            ImportedCount: importedCount,
+                            SkippedDuplicates: skippedDuplicates,
+                            CurrentBeatmapString: row.BeatmapString,
+                            ProgressPercent: (double)(i + 1) / totalRows * 100.0
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Failed to import row {RowNumber} ({Beatmap})", i + 2, row.BeatmapString);
+                    failedCount++;
+                }
+            }
+
+            _log.LogInformation("Historical import completed: {Imported} imported, {Skipped} duplicates skipped, {Failed} failed", importedCount, skippedDuplicates, failedCount);
+
+            return new SyncResult(
+                Success: true,
+                SyncedCount: importedCount,
+                FailedCount: failedCount + skippedDuplicates,
+                ErrorMessage: failedCount > 0 ? $"{failedCount} rows failed to import" : null
+            );
+        }, ct).ConfigureAwait(false);
+    }
+
     public async Task<SyncResult> ImportFromSpreadsheetAsync(
         string spreadsheetId,
         string sheetName,
@@ -56,27 +198,18 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
             }
 
             var rows = response.Values;
-            int totalRows = rows.Count;
-            int importedCount = 0;
-            int skippedDuplicates = 0;
+            var parsed = new List<ParsedImportRow>(rows.Count);
             int failedCount = 0;
-
-            var sessionMap = new Dictionary<string, string>();
-            DateTime? lastPlayTimestamp = null;
-            string? currentSessionId = null;
-
-            await using var conn = await _dbManager.CreateConnectionAsync(ct);
 
             for (int i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
-                string currentBeatmap = "";
 
                 try
                 {
                     if (row.Count < 18)
                     {
-                        _log.LogWarning($"Row {i + 2} has insufficient columns ({row.Count}), skipping");
+                        _log.LogWarning("Row {RowNumber} has insufficient columns ({ColumnCount}), skipping", i + 2, row.Count);
                         failedCount++;
                         continue;
                     }
@@ -84,17 +217,16 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                     var timestamp = ParseTimestamp(GetCellValue(row, 0));
                     if (!timestamp.HasValue)
                     {
-                        _log.LogWarning($"Row {i + 2} has invalid timestamp: '{GetCellValue(row, 0)}', skipping");
+                        _log.LogWarning("Row {RowNumber} has invalid timestamp: '{TimestampValue}', skipping", i + 2, GetCellValue(row, 0));
                         failedCount++;
                         continue;
                     }
 
                     var (beatmapSetId, beatmapId, beatmapString) = ParseHyperlink(GetCellValue(row, 1));
-                    currentBeatmap = beatmapString ?? "Unknown";
 
                     if (beatmapSetId == 0 || beatmapId == 0)
                     {
-                        _log.LogWarning($"Row {i + 2} has invalid beatmap hyperlink, skipping");
+                        _log.LogWarning("Row {RowNumber} has invalid beatmap hyperlink, skipping", i + 2);
                         failedCount++;
                         continue;
                     }
@@ -125,58 +257,44 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                     int modsBitfield = BuildModsBitfield(hd, hr, dt, ez, ht, fl);
                     string modsString = BuildModsString(hd, hr, dt, ez, ht, fl);
 
-                    if (lastPlayTimestamp.HasValue &&
-                        (timestamp.Value - lastPlayTimestamp.Value).TotalMinutes > 45)
-                    {
-                        currentSessionId = Guid.NewGuid().ToString();
-                        await InsertSessionAsync(conn, currentSessionId, timestamp.Value, ct);
-                    }
-                    else if (currentSessionId == null)
-                    {
-                        currentSessionId = Guid.NewGuid().ToString();
-                        await InsertSessionAsync(conn, currentSessionId, timestamp.Value, ct);
-                    }
-
-                    lastPlayTimestamp = timestamp.Value;
-
-                    var isDuplicate = await CheckDuplicateAsync(conn, timestamp.Value, beatmapId, totalHits, ct);
-                    if (isDuplicate)
-                    {
-                        skippedDuplicates++;
-                    }
-                    else
-                    {
-                        await InsertPlayAsync(conn, currentSessionId, timestamp.Value, beatmapId, beatmapSetId,
-                            beatmapString ?? "", bpm, stars, aim, speed, cs, ar, od, totalHits, accuracy,
-                            hit300, hit100, hit50, hitMiss, modsBitfield, modsString, isComplete,
-                            playTimeSeconds, playCount, ct);
-                        importedCount++;
-                    }
-
-                    if (progress != null && (i % 50 == 0 || i == rows.Count - 1))
-                    {
-                        progress.Report(new MigrationProgress(
-                            ProcessedRows: i + 1,
-                            TotalRows: totalRows,
-                            ImportedCount: importedCount,
-                            SkippedDuplicates: skippedDuplicates,
-                            CurrentBeatmapString: currentBeatmap,
-                            ProgressPercent: (double)(i + 1) / totalRows * 100.0
-                        ));
-                    }
+                    parsed.Add(new ParsedImportRow(
+                        Timestamp: timestamp.Value,
+                        BeatmapId: beatmapId,
+                        BeatmapSetId: beatmapSetId,
+                        BeatmapString: beatmapString ?? "",
+                        Bpm: bpm,
+                        Stars: stars,
+                        Aim: aim,
+                        Speed: speed,
+                        Cs: cs,
+                        Ar: ar,
+                        Od: od,
+                        TotalHits: totalHits,
+                        Accuracy: accuracy,
+                        Hit300: hit300,
+                        Hit100: hit100,
+                        Hit50: hit50,
+                        HitMiss: hitMiss,
+                        ModsBitfield: modsBitfield,
+                        ModsString: modsString,
+                        IsComplete: isComplete,
+                        PlayTimeSeconds: playTimeSeconds,
+                        PlayCount: playCount));
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, $"Failed to process row {i + 2} ({currentBeatmap})");
+                    _log.LogError(ex, "Failed to parse row {RowNumber}", i + 2);
                     failedCount++;
                 }
             }
 
+            SyncResult imported = await ImportParsedRowsAsync(parsed, progress, ct).ConfigureAwait(false);
+
             return new SyncResult(
-                Success: true,
-                SyncedCount: importedCount,
-                FailedCount: failedCount + skippedDuplicates,
-                ErrorMessage: failedCount > 0 ? $"{failedCount} rows failed to import" : null
+                Success: imported.Success,
+                SyncedCount: imported.SyncedCount,
+                FailedCount: failedCount + imported.FailedCount,
+                ErrorMessage: failedCount > 0 ? $"{failedCount} rows failed to import" : imported.ErrorMessage
             );
         }
         catch (Exception ex)
@@ -196,44 +314,35 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
-        // Try Excel/Google Sheets serial number format first (e.g., "46258.44861111111")
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double serialNumber))
         {
-            // Check if it's a reasonable serial number (between 1900 and 2100)
             if (serialNumber > 1 && serialNumber < 100000)
             {
                 try
                 {
-                    // Excel epoch: December 30, 1899 (OLE Automation)
                     var excelEpoch = new DateTime(1899, 12, 30, 0, 0, 0, DateTimeKind.Utc);
                     var timestamp = excelEpoch.AddDays(serialNumber);
                     return timestamp;
                 }
                 catch (ArgumentOutOfRangeException)
                 {
-                    // Fall through to other parsing methods
                 }
             }
         }
 
-        // Try common formats
         string[] formats = {
-            // ISO formats
             "yyyy-MM-dd HH:mm:ss",
             "yyyy-MM-dd HH:mm",
             "yyyy-MM-dd h:mm:ss tt",
             "yyyy-MM-dd h:mm tt",
-            // US formats
             "M/d/yyyy h:mm:ss tt",
             "M/d/yyyy h:mm tt",
             "M/d/yyyy HH:mm:ss",
             "M/d/yyyy HH:mm",
-            // EU formats
             "d/M/yyyy HH:mm:ss",
             "d/M/yyyy HH:mm",
             "d/M/yyyy h:mm:ss tt",
             "d/M/yyyy h:mm tt",
-            // Alternative separators
             "yyyy.MM.dd HH:mm:ss",
             "yyyy.MM.dd HH:mm",
             "dd.MM.yyyy HH:mm:ss",
@@ -249,14 +358,12 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
             }
         }
 
-        // Fallback to flexible parsing
         if (DateTime.TryParse(value, CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var fallback))
         {
             return fallback;
         }
 
-        // Last resort: try current culture
         if (DateTime.TryParse(value, CultureInfo.CurrentCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var lastResort))
         {
@@ -323,31 +430,23 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         return mods.Count > 0 ? string.Join("", mods) : "NM";
     }
 
-    private static async Task<bool> CheckDuplicateAsync(
-        Microsoft.Data.Sqlite.SqliteConnection conn,
-        DateTime timestamp,
-        int beatmapId,
-        int totalHits,
-        CancellationToken ct)
+    private sealed class ExistingPlayKey
     {
-        const string sql = @"
-            SELECT COUNT(*) FROM plays
-            WHERE timestamp = @Timestamp
-              AND beatmap_id = @BeatmapId
-              AND total_hits = @TotalHits;";
-
-        var count = await conn.ExecuteScalarAsync<int>(sql, new
-        {
-            Timestamp = timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            BeatmapId = beatmapId,
-            TotalHits = totalHits
-        });
-
-        return count > 0;
+        public string Timestamp { get; set; } = "";
+        public int BeatmapId { get; set; }
+        public int TotalHits { get; set; }
+        public double Accuracy { get; set; }
+        public int Hit300 { get; set; }
+        public int Hit100 { get; set; }
+        public int Hit50 { get; set; }
+        public int HitMiss { get; set; }
+        public int ModsBitfield { get; set; }
+        public int IsComplete { get; set; }
     }
 
     private static async Task InsertSessionAsync(
-        Microsoft.Data.Sqlite.SqliteConnection conn,
+        SqliteConnection conn,
+        SqliteTransaction tx,
         string sessionId,
         DateTime startTime,
         CancellationToken ct)
@@ -360,34 +459,14 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         {
             Id = sessionId,
             StartTime = startTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        });
+        }, transaction: tx);
     }
 
-    private static async Task InsertPlayAsync(
-        Microsoft.Data.Sqlite.SqliteConnection conn,
+    private static Task InsertPlayAsync(
+        SqliteConnection conn,
+        SqliteTransaction tx,
         string sessionId,
-        DateTime timestamp,
-        int beatmapId,
-        int beatmapSetId,
-        string beatmapString,
-        int bpm,
-        decimal stars,
-        decimal aim,
-        decimal speed,
-        decimal cs,
-        decimal ar,
-        decimal od,
-        int totalHits,
-        decimal accuracy,
-        int hit300,
-        int hit100,
-        int hit50,
-        int hitMiss,
-        int modsBitfield,
-        string modsString,
-        bool isComplete,
-        int playTimeSeconds,
-        int playCount,
+        ParsedImportRow row,
         CancellationToken ct)
     {
         const string sql = @"
@@ -407,32 +486,32 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                 'Synced', @SyncedAt
             );";
 
-        await conn.ExecuteAsync(sql, new
+        return conn.ExecuteAsync(sql, new
         {
             SessionId = sessionId,
-            Timestamp = timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            BeatmapId = beatmapId,
-            BeatmapSetId = beatmapSetId,
-            BeatmapString = beatmapString,
-            ModsBitfield = modsBitfield,
-            ModsString = modsString,
-            Bpm = bpm,
-            Stars = (double)stars,
-            Aim = (double)aim,
-            Speed = (double)speed,
-            Cs = (double)cs,
-            Ar = (double)ar,
-            Od = (double)od,
-            TotalHits = totalHits,
-            Hit300 = hit300,
-            Hit100 = hit100,
-            Hit50 = hit50,
-            HitMiss = hitMiss,
-            Accuracy = (double)accuracy,
-            IsComplete = isComplete ? 1 : 0,
-            PlayTimeSeconds = playTimeSeconds,
-            PlayCount = playCount,
-            SyncedAt = timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        });
+            Timestamp = row.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            BeatmapId = row.BeatmapId,
+            BeatmapSetId = row.BeatmapSetId,
+            BeatmapString = row.BeatmapString,
+            ModsBitfield = row.ModsBitfield,
+            ModsString = row.ModsString,
+            Bpm = row.Bpm,
+            Stars = (double)row.Stars,
+            Aim = (double)row.Aim,
+            Speed = (double)row.Speed,
+            Cs = (double)row.Cs,
+            Ar = (double)row.Ar,
+            Od = (double)row.Od,
+            TotalHits = row.TotalHits,
+            Hit300 = row.Hit300,
+            Hit100 = row.Hit100,
+            Hit50 = row.Hit50,
+            HitMiss = row.HitMiss,
+            Accuracy = (double)row.Accuracy,
+            IsComplete = row.IsComplete ? 1 : 0,
+            PlayTimeSeconds = row.PlayTimeSeconds,
+            PlayCount = row.PlayCount,
+            SyncedAt = row.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        }, transaction: tx);
     }
 }

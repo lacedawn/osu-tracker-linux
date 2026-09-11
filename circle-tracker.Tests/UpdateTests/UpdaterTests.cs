@@ -112,4 +112,63 @@ public class UpdaterTests
 
         queriedPath.Should().Contain("lacedawn/osu-tracker-linux");
     }
+
+    [Fact]
+    public async Task NonSuccess_LogsAndReturnsFalse()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.InternalServerError,
+                Content = new StringContent("{}")
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("https://api.github.com/")
+        };
+
+        bool result = await Updater.CheckForUpdates("lacedawn/osu-tracker-linux", httpClient);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Cancelled_RespectsToken()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((_, ct) => ct.ThrowIfCancellationRequested())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent("{\"tag_name\":\"v99.0.0\"}")
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("https://api.github.com/")
+        };
+
+        using var cts = new CancellationTokenSource();
+
+        cts.Cancel();
+
+        bool result = await Updater.CheckForUpdates("lacedawn/osu-tracker-linux", httpClient, cts.Token);
+
+        result.Should().BeFalse();
+    }
 }

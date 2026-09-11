@@ -249,11 +249,23 @@ public class SettingsServiceTests
     public void FindFile_NotInBaseDirectory_ReturnsExpectedFallback()
     {
         string fileName = $"nonexistent_{Guid.NewGuid():N}.tmp";
-        string expected = Path.Combine(AppContext.BaseDirectory, fileName);
+        string expected = Path.Combine(AppPaths.AppDataDirectory, fileName);
 
         var result = SettingsService.FindFile(fileName);
 
         result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void MissingSoundFile_FallsBackOrReports()
+    {
+        string fileName = $"missing_sound_{Guid.NewGuid():N}.wav";
+        string expected = Path.Combine(AppPaths.AppDataDirectory, fileName);
+
+        var result = SettingsService.FindFile(fileName);
+
+        result.Should().Be(expected);
+        File.Exists(result).Should().BeFalse();
     }
 
     [Fact]

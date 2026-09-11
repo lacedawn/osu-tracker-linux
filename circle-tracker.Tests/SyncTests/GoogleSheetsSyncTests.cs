@@ -3,6 +3,7 @@ using Circle_Tracker.Storage;
 using Circle_Tracker.Storage.Querying;
 using Circle_Tracker.Sync;
 using Dapper;
+using FluentAssertions;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using Moq;
@@ -314,5 +315,111 @@ public class GoogleSheetsSyncTests : IDisposable
               AND name = 'idx_plays_sync_status';");
 
         Assert.Equal(1, indexExists);
+    }
+
+    private static async Task<SqliteDatabaseManager> CreateImportDbManagerAsync()
+    {
+        string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+        var dbManager = new SqliteDatabaseManager(connStr);
+
+        await dbManager.InitializeAsync();
+
+        return dbManager;
+    }
+
+    private static GoogleSheetsHistoricalImporter.ParsedImportRow BuildImportRow(
+        DateTime timestamp,
+        int beatmapId = 12345,
+        int totalHits = 500,
+        decimal accuracy = 98.5m,
+        int hit300 = 450,
+        int hit100 = 40,
+        int hit50 = 10,
+        int hitMiss = 0,
+        int modsBitfield = 0,
+        bool isComplete = true)
+    {
+        return new GoogleSheetsHistoricalImporter.ParsedImportRow(
+            Timestamp: timestamp,
+            BeatmapId: beatmapId,
+            BeatmapSetId: 100,
+            BeatmapString: "Artist - Title [Diff]",
+            Bpm: 180,
+            Stars: 5.5m,
+            Aim: 2.5m,
+            Speed: 2.8m,
+            Cs: 4.0m,
+            Ar: 9.0m,
+            Od: 8.0m,
+            TotalHits: totalHits,
+            Accuracy: accuracy,
+            Hit300: hit300,
+            Hit100: hit100,
+            Hit50: hit50,
+            HitMiss: hitMiss,
+            ModsBitfield: modsBitfield,
+            ModsString: "NM",
+            IsComplete: isComplete,
+            PlayTimeSeconds: 120,
+            PlayCount: 1);
+    }
+
+    [Fact]
+    public async Task SameMapTwiceSameMinute_BothImported()
+    {
+        using var dbManager = await CreateImportDbManagerAsync();
+        var importer = new GoogleSheetsHistoricalImporter(null!, dbManager);
+        var minute = new DateTime(2024, 5, 1, 12, 34, 0, DateTimeKind.Utc);
+
+        var rows = new List<GoogleSheetsHistoricalImporter.ParsedImportRow>
+        {
+            BuildImportRow(minute, accuracy: 98.5m, hit300: 450, hit100: 40),
+            BuildImportRow(minute, accuracy: 97.0m, hit300: 440, hit100: 50)
+        };
+
+        SyncResult result = await importer.ImportParsedRowsAsync(rows);
+
+        result.SyncedCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task LargeBatch_ImportsInTransaction()
+    {
+        using var dbManager = await CreateImportDbManagerAsync();
+        var importer = new GoogleSheetsHistoricalImporter(null!, dbManager);
+        var baseTime = new DateTime(2024, 5, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        var rows = Enumerable.Range(0, 200).Select(i => BuildImportRow(
+            baseTime.AddMinutes(i),
+            beatmapId: 20000 + i,
+            accuracy: 90.0m + (i % 9),
+            hit300: 400 + (i % 50))).ToList();
+
+        SyncResult result = await importer.ImportParsedRowsAsync(rows);
+
+        result.SyncedCount.Should().Be(200);
+
+        await using var conn = await dbManager.CreateConnectionAsync();
+        int count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays;");
+
+        count.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task ExactDuplicate_SkippedAsDuplicate()
+    {
+        using var dbManager = await CreateImportDbManagerAsync();
+        var importer = new GoogleSheetsHistoricalImporter(null!, dbManager);
+        var minute = new DateTime(2024, 5, 1, 12, 34, 0, DateTimeKind.Utc);
+
+        var rows = new List<GoogleSheetsHistoricalImporter.ParsedImportRow>
+        {
+            BuildImportRow(minute),
+            BuildImportRow(minute)
+        };
+
+        SyncResult result = await importer.ImportParsedRowsAsync(rows);
+
+        result.SyncedCount.Should().Be(1);
     }
 }

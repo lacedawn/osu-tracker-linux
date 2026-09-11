@@ -38,18 +38,20 @@ namespace Circle_Tracker
                 _viewModel.ShowMessageDelegate = ShowRealMessageAsync;
             }
 
+            CancellationToken updateToken = _updateCheckCts.Token;
+
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await Updater.CheckForUpdates();
+                    await Updater.CheckForUpdates(ct: updateToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Update check failed");
                 }
-            }, _updateCheckCts.Token);
+            }, CancellationToken.None);
         }
 
         private void OpenAnalyticsWindow()

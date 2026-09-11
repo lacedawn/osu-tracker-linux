@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -34,6 +35,7 @@ namespace Circle_Tracker
         {
             client = new HttpClient();
             client.BaseAddress = new Uri("https://api.github.com/");
+            client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             client.DefaultRequestHeaders.Add("User-Agent", "Circle-Tracker");
         }
@@ -104,7 +106,7 @@ namespace Circle_Tracker
             return IsUpdateAvailable(CurrentVersion.ToString(), remoteVersion);
         }
 
-        public static async Task<bool> CheckForUpdates(string? repository = null, HttpClient? httpClient = null)
+        public static async Task<bool> CheckForUpdates(string? repository = null, HttpClient? httpClient = null, CancellationToken ct = default)
         {
             Release? latestRelease = null;
             string repo = repository ?? DefaultRepository;
@@ -112,13 +114,23 @@ namespace Circle_Tracker
 
             try
             {
-                var response = await http.GetAsync($"/repos/{repo}/releases/latest");
+                using var response = await http.GetAsync($"/repos/{repo}/releases/latest", ct).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
-                    string responseJson = await response.Content.ReadAsStringAsync();
+                    string responseJson = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                     var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                     latestRelease = JsonSerializer.Deserialize<Release>(responseJson, options);
                 }
+                else
+                {
+                    _log.LogWarning("Update check returned non-success status {StatusCode} for repository {Repository}. Current version: {CurrentVersion}", (int)response.StatusCode, repo, CurrentVersion);
+                    return false;
+                }
+            }
+            catch (OperationCanceledException e)
+            {
+                _log.LogWarning(e, "Update check cancelled for repository {Repository}. Current version: {CurrentVersion}", repo, CurrentVersion);
+                return false;
             }
             catch (Exception e)
             {

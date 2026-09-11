@@ -58,9 +58,11 @@ public class SettingsService : ISettingsService
 
     public static string FindFile(string relativePath)
     {
-        string p1 = Path.Combine(AppContext.BaseDirectory, relativePath);
-        if (File.Exists(p1)) return p1;
-        return p1;
+        string appDataPath = Path.Combine(AppPaths.AppDataDirectory, relativePath);
+        if (File.Exists(appDataPath)) return appDataPath;
+        string basePath = Path.Combine(AppContext.BaseDirectory, relativePath);
+        if (File.Exists(basePath)) return basePath;
+        return appDataPath;
     }
 
     public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
