@@ -404,7 +404,7 @@ public class TrackerService : ITrackerService, IMainWindow, IAsyncDisposable, ID
         {
             try
             {
-                queue.StopBackgroundSyncAsync().Wait(TimeSpan.FromSeconds(5));
+                _ = queue.StopBackgroundSyncAsync();
             }
             catch
             {
@@ -413,9 +413,23 @@ public class TrackerService : ITrackerService, IMainWindow, IAsyncDisposable, ID
             try
             {
                 if (queue is IDisposable disposable)
+                {
                     disposable.Dispose();
+                }
                 else if (queue is IAsyncDisposable asyncDisposable)
-                    Task.Run(async () => await asyncDisposable.DisposeAsync().ConfigureAwait(false)).Wait(TimeSpan.FromSeconds(5));
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                            await asyncDisposable.DisposeAsync().AsTask().WaitAsync(cts.Token).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                        }
+                    });
+                }
             }
             catch
             {

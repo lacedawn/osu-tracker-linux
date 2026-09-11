@@ -950,5 +950,66 @@ namespace CircleTracker.Tests
 
             tracker.PlayingSeconds.Should().Be(1);
         }
+
+        [Fact]
+        public void Dispose_CalledTwice_DisposesEachSinkOnce()
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            var mockSinkOne = new Mock<IPlaySink>();
+            var mockSinkTwo = new Mock<IPlaySink>();
+            var disposableOne = mockSinkOne.As<IDisposable>();
+            var disposableTwo = mockSinkTwo.As<IDisposable>();
+            int disposeCountOne = 0;
+            int disposeCountTwo = 0;
+            disposableOne.Setup(d => d.Dispose()).Callback(() => disposeCountOne++);
+            disposableTwo.Setup(d => d.Dispose()).Callback(() => disposeCountTwo++);
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(mockSinkOne.Object);
+            composite.AddSink(mockSinkTwo.Object);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: composite));
+
+            tracker.Dispose();
+            tracker.Dispose();
+
+            (disposeCountOne == 1 && disposeCountTwo == 1).Should().BeTrue();
+        }
+
+        [Fact]
+        public void Dispose_WhenSameSinkRegisteredTwice_DisposesOnce()
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            var mockSink = new Mock<IPlaySink>();
+            var disposable = mockSink.As<IDisposable>();
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(mockSink.Object);
+            composite.AddSink(mockSink.Object);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: composite));
+
+            tracker.Dispose();
+
+            disposable.Verify(d => d.Dispose(), Times.Once);
+        }
+
+        [Fact]
+        public async Task DisposeAsync_WhenCalledTwice_DisposesEachSinkOnce()
+        {
+            var mockWindow = new Mock<IMainWindow>();
+            var mockClient = new Mock<ITosuClient>();
+            var mockSink = new Mock<IPlaySink>();
+            var disposable = mockSink.As<IDisposable>();
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(mockSink.Object);
+            var tracker = new Tracker(mockWindow.Object, new TrackerOptions(mockClient.Object, PlaySink: composite));
+
+            await tracker.DisposeAsync();
+            await tracker.DisposeAsync();
+
+            disposable.Verify(d => d.Dispose(), Times.Once);
+        }
     }
 }

@@ -541,7 +541,7 @@ namespace Circle_Tracker
 
             if (!snap.IsTosuConnected)
             {
-                _form.UpdateTime();
+                UiDispatcher.Post(() => _form.UpdateTime());
                 return;
             }
 
@@ -551,7 +551,7 @@ namespace Circle_Tracker
                 Interlocked.Increment(ref _idleSeconds);
 
             _ = _sessionManager.UpdateStatsAsync(PlayingSeconds, IdleSeconds, snap.DetectedClient);
-            _form.UpdateTime();
+            UiDispatcher.Post(() => _form.UpdateTime());
         }
 
         public Task<bool> FlushPendingSubmissionsAsync(CancellationToken ct = default) => _submissionService.FlushPendingSubmissionsAsync(ct);
@@ -584,8 +584,13 @@ namespace Circle_Tracker
             {
             }
 
-            DisposePlaySink(_playSink);
-            DisposePlaySink(_localSqliteSink);
+            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            DisposePlaySink(_playSink, visited);
+
+            if (_localSqliteSink != null && !ReferenceEquals(_localSqliteSink, _playSink))
+            {
+                DisposePlaySink(_localSqliteSink, visited);
+            }
         }
 
         public async ValueTask DisposeAsync()
@@ -623,23 +628,31 @@ namespace Circle_Tracker
             {
             }
 
-            await DisposePlaySinkAsync(_playSink).ConfigureAwait(false);
+            var asyncVisited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            await DisposePlaySinkAsync(_playSink, asyncVisited).ConfigureAwait(false);
 
             if (_localSqliteSink != null && !ReferenceEquals(_localSqliteSink, _playSink))
             {
-                await DisposePlaySinkAsync(_localSqliteSink).ConfigureAwait(false);
+                await DisposePlaySinkAsync(_localSqliteSink, asyncVisited).ConfigureAwait(false);
             }
         }
 
-        private static void DisposePlaySink(object? sink)
+        private static void DisposePlaySink(object? sink, HashSet<object>? visited)
         {
             try
             {
+                visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+                if (sink == null || !visited.Add(sink))
+                {
+                    return;
+                }
+
                 if (sink is CompositePlaySink composite)
                 {
                     foreach (SinkRegistration registration in composite.Registrations)
                     {
-                        DisposePlaySink(registration.Sink);
+                        DisposePlaySink(registration.Sink, visited);
                     }
 
                     return;
@@ -655,15 +668,22 @@ namespace Circle_Tracker
             }
         }
 
-        private static async Task DisposePlaySinkAsync(object? sink)
+        private static async Task DisposePlaySinkAsync(object? sink, HashSet<object>? visited)
         {
             try
             {
+                visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+                if (sink == null || !visited.Add(sink))
+                {
+                    return;
+                }
+
                 if (sink is CompositePlaySink composite)
                 {
                     foreach (SinkRegistration registration in composite.Registrations)
                     {
-                        await DisposePlaySinkAsync(registration.Sink).ConfigureAwait(false);
+                        await DisposePlaySinkAsync(registration.Sink, visited).ConfigureAwait(false);
                     }
 
                     return;

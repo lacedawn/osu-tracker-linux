@@ -188,4 +188,114 @@ public class SoundHelperTests
 
         order.Should().Equal("play", "dispose");
     }
+
+    public static IEnumerable<object[]> PlayerArgumentCases { get; } = new List<object[]>
+    {
+        new object[] { "pw-play", "notify.wav", "--volume=1.0 \"notify.wav\"" },
+        new object[] { "paplay", "notify.wav", "--volume=65536 \"notify.wav\"" },
+        new object[] { "aplay", "notify.wav", "\"notify.wav\"" },
+        new object[] { "pw-play", "a\"b.wav", "--volume=1.0 \"a\\\"b.wav\"" },
+        new object[] { "paplay", "a\"b.wav", "--volume=65536 \"a\\\"b.wav\"" },
+        new object[] { "aplay", "a\"b.wav", "\"a\\\"b.wav\"" },
+        new object[] { "pw-play", "a\\b.wav", "--volume=1.0 \"a\\\\b.wav\"" },
+    };
+
+    [Theory]
+    [MemberData(nameof(PlayerArgumentCases))]
+    public void BuildPlayerArguments_Scenario_ExpectedResult(string player, string path, string expected)
+    {
+        string actual = SoundHelper.BuildPlayerArguments(player, path);
+
+        actual.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Probe_WhenHelperHangs_FallsThroughWithinTimeout()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        string dir = Path.Combine(Path.GetTempPath(), $"ct_probe_{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            string hangPath = Path.Combine(dir, "hang-helper");
+            string quickPath = Path.Combine(dir, "quick-helper");
+
+            File.WriteAllText(hangPath, "#!/bin/sh\nsleep 30\n");
+            File.WriteAllText(quickPath, "#!/bin/sh\nexit 0\n");
+            File.SetUnixFileMode(hangPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.SetUnixFileMode(quickPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            var sw = Stopwatch.StartNew();
+
+            string? result = SoundHelper.ProbeLinuxPlayer(
+                new[] { hangPath, quickPath },
+                static psi => Process.Start(psi),
+                TimeSpan.FromSeconds(2));
+
+            sw.Stop();
+
+            (result == quickPath && sw.Elapsed < TimeSpan.FromSeconds(15)).Should().BeTrue();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public void Probe_WhenAllHelpersHang_ReturnsNullWithinTimeout()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        string dir = Path.Combine(Path.GetTempPath(), $"ct_probe_{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            string hangOne = Path.Combine(dir, "hang-one");
+            string hangTwo = Path.Combine(dir, "hang-two");
+
+            File.WriteAllText(hangOne, "#!/bin/sh\nsleep 30\n");
+            File.WriteAllText(hangTwo, "#!/bin/sh\nsleep 30\n");
+            File.SetUnixFileMode(hangOne, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.SetUnixFileMode(hangTwo, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            var sw = Stopwatch.StartNew();
+
+            string? result = SoundHelper.ProbeLinuxPlayer(
+                new[] { hangOne, hangTwo },
+                static psi => Process.Start(psi),
+                TimeSpan.FromSeconds(1));
+
+            sw.Stop();
+
+            (result is null && sw.Elapsed < TimeSpan.FromSeconds(15)).Should().BeTrue();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch
+            {
+            }
+        }
+    }
 }

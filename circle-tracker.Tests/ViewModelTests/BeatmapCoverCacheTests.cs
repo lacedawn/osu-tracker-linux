@@ -209,4 +209,164 @@ public class BeatmapCoverCacheTests : IDisposable
 
         image.Source.Should().BeSameAs(testBitmap);
     }
+
+    private sealed class TrackingBitmap : Bitmap
+    {
+        public int DisposeCount;
+
+        public TrackingBitmap(MemoryStream stream)
+            : base(stream)
+        {
+        }
+
+        public override void Dispose()
+        {
+            DisposeCount++;
+            base.Dispose();
+        }
+    }
+
+    private static TrackingBitmap CreateTrackingBitmap()
+    {
+        return new TrackingBitmap(new MemoryStream(ValidPngBytes));
+    }
+
+    [AvaloniaFact]
+    public void CoverCache_WhenEvicted_OldBitmapDisposed()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        var httpClient = new HttpClient(handlerMock.Object);
+        var cache = new BeatmapCoverCache(httpClient, _testCacheDir);
+        var first = CreateTrackingBitmap();
+
+        cache.SetMemoryCache(1, first);
+
+        for (int id = 2; id <= BeatmapCoverCache.MaxMemoryCacheSize + 1; id++)
+        {
+            cache.SetMemoryCache(id, CreateTrackingBitmap());
+        }
+
+        first.DisposeCount.Should().Be(1);
+    }
+
+    [AvaloniaFact]
+    public void CoverCache_WhenOverCapacity_EvictsOldestEntry()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        var httpClient = new HttpClient(handlerMock.Object);
+        var cache = new BeatmapCoverCache(httpClient, _testCacheDir);
+
+        cache.SetMemoryCache(1, CreateTestBitmap());
+
+        for (int id = 2; id <= BeatmapCoverCache.MaxMemoryCacheSize + 1; id++)
+        {
+            cache.SetMemoryCache(id, CreateTestBitmap());
+        }
+
+        cache.TryGetFromMemory(1, out _).Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public async Task CoverCache_WhenOneWaiterCancels_OtherWaitersStillComplete()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns(async () =>
+            {
+                entered.TrySetResult(true);
+                await release.Task;
+                return new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new ByteArrayContent(ValidPngBytes)
+                };
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object);
+        var cache = new BeatmapCoverCache(httpClient, _testCacheDir);
+        var beatmapSetId = 31337;
+        using var cts = new CancellationTokenSource();
+
+        Task<Bitmap?> waiterOne = cache.GetCoverAsync(beatmapSetId, cts.Token);
+        Task<Bitmap?> waiterTwo = cache.GetCoverAsync(beatmapSetId, CancellationToken.None);
+
+        await entered.Task;
+        cts.Cancel();
+        release.TrySetResult(true);
+
+        Bitmap? resultTwo = null;
+
+        try
+        {
+            resultTwo = await waiterTwo;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        try
+        {
+            await waiterOne;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        resultTwo.Should().NotBeNull();
+    }
+
+    [AvaloniaFact]
+    public async Task CoverCache_WhenWaiterCancels_CancelledWaiterThrows()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        handlerMock
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns(async () =>
+            {
+                entered.TrySetResult(true);
+                await release.Task;
+                return new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new ByteArrayContent(ValidPngBytes)
+                };
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object);
+        var cache = new BeatmapCoverCache(httpClient, _testCacheDir);
+        var beatmapSetId = 31338;
+        using var cts = new CancellationTokenSource();
+
+        Task<Bitmap?> waiterOne = cache.GetCoverAsync(beatmapSetId, cts.Token);
+        Task<Bitmap?> waiterTwo = cache.GetCoverAsync(beatmapSetId, CancellationToken.None);
+
+        await entered.Task;
+        cts.Cancel();
+        release.TrySetResult(true);
+
+        Func<Task> act = async () => await waiterOne;
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        try
+        {
+            await waiterTwo;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
 }

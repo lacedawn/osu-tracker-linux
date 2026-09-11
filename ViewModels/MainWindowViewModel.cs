@@ -77,7 +77,7 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         Settings = settings ?? new SettingsViewModel(_tracker, _tosuClient, _dbManager, msg => StatusText = msg);
         SessionLive = sessionLive ?? new SessionLiveCardViewModel();
 
-        Banner.CoverImageChanged += (s, e) => CoverImageChanged?.Invoke(this, e);
+        Banner.CoverImageChanged += OnBannerCoverImageChanged;
 
         OpenAnalyticsCommand = new RelayCommand(async () => await OpenAnalyticsAsync());
         ResetSessionCommand = new RelayCommand(async () => await ResetSessionAsync());
@@ -369,6 +369,11 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
         }
     }
 
+    private void OnBannerCoverImageChanged(object? sender, Bitmap? bitmap)
+    {
+        CoverImageChanged?.Invoke(this, bitmap);
+    }
+
     private void OnPlayLogged(object? sender, (PlayEntryData Data, PlayContext Context) args)
     {
         _ = _liveSessionTracker.OnPlayLoggedAsync(args.Data, args.Context);
@@ -466,11 +471,27 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
     public async Task ShutdownAsync()
     {
-        _shutdownCts.Cancel();
+        try
+        {
+            _shutdownCts.Cancel();
+        }
+        catch
+        {
+        }
 
         _gameTickTimer?.Stop();
         _uiUpdateTimer?.Stop();
         _secondsTimer?.Stop();
+
+        Banner.CoverImageChanged -= OnBannerCoverImageChanged;
+        _liveSessionTracker.MetricsUpdated -= OnLiveSessionMetricsUpdated;
+        _liveSessionTracker.PlayProcessed -= OnLiveSessionMetricsUpdated;
+        _liveSessionTracker.AchievementUnlocked -= OnAchievementUnlocked;
+
+        if (_tracker != null)
+        {
+            _tracker.PlayLogged -= OnPlayLogged;
+        }
 
         Settings.Dispose();
         SessionLive.Dispose();

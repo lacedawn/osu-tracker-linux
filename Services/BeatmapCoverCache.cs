@@ -1,6 +1,7 @@
 using Avalonia.Media.Imaging;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -11,8 +12,11 @@ namespace Circle_Tracker.Services;
 
 public class BeatmapCoverCache
 {
+    internal const int MaxMemoryCacheSize = 50;
+
     private readonly ConcurrentDictionary<int, Bitmap?> _memoryCache = new();
     private readonly ConcurrentDictionary<int, Task<Bitmap?>> _inFlightRequests = new();
+    private readonly LinkedList<int> _lruOrder = new();
     private readonly HttpClient _httpClient;
     private readonly string? _cacheDirectory;
     private readonly object _syncLock = new();
@@ -69,28 +73,96 @@ public class BeatmapCoverCache
 
     public Bitmap? GetFromMemory(int beatmapSetId)
     {
-        return _memoryCache.TryGetValue(beatmapSetId, out var bitmap) ? bitmap : null;
+        lock (_syncLock)
+        {
+            if (_memoryCache.TryGetValue(beatmapSetId, out var bitmap))
+            {
+                TouchLocked(beatmapSetId);
+                return bitmap;
+            }
+
+            return null;
+        }
     }
 
     public bool TryGetFromMemory(int beatmapSetId, out Bitmap? bitmap)
     {
-        return _memoryCache.TryGetValue(beatmapSetId, out bitmap);
+        lock (_syncLock)
+        {
+            if (_memoryCache.TryGetValue(beatmapSetId, out bitmap))
+            {
+                TouchLocked(beatmapSetId);
+                return true;
+            }
+
+            bitmap = null;
+            return false;
+        }
     }
 
     public void SetMemoryCache(int beatmapSetId, Bitmap? bitmap)
     {
-        _memoryCache[beatmapSetId] = bitmap;
+        Bitmap? old;
+        List<Bitmap?> evicted;
+
+        lock (_syncLock)
+        {
+            _memoryCache.TryGetValue(beatmapSetId, out old);
+            _memoryCache[beatmapSetId] = bitmap;
+            TouchLocked(beatmapSetId);
+            evicted = EvictIfNeededLocked();
+        }
+
+        if (!ReferenceEquals(old, bitmap))
+        {
+            try
+            {
+                old?.Dispose();
+            }
+            catch
+            {
+            }
+        }
+
+        foreach (var item in evicted)
+        {
+            try
+            {
+                item?.Dispose();
+            }
+            catch
+            {
+            }
+        }
     }
 
     public void PrepopulateCache(int beatmapSetId, Bitmap? bitmap)
     {
-        _memoryCache[beatmapSetId] = bitmap;
+        SetMemoryCache(beatmapSetId, bitmap);
     }
 
     public void Clear()
     {
-        _memoryCache.Clear();
-        _inFlightRequests.Clear();
+        List<Bitmap?> owned;
+
+        lock (_syncLock)
+        {
+            owned = new List<Bitmap?>(_memoryCache.Values);
+            _memoryCache.Clear();
+            _lruOrder.Clear();
+            _inFlightRequests.Clear();
+        }
+
+        foreach (var bitmap in owned)
+        {
+            try
+            {
+                bitmap?.Dispose();
+            }
+            catch
+            {
+            }
+        }
     }
 
     public async Task<Bitmap?> GetCoverAsync(int beatmapSetId, CancellationToken ct = default)
@@ -100,34 +172,111 @@ public class BeatmapCoverCache
             return null;
         }
 
-        if (_memoryCache.TryGetValue(beatmapSetId, out var cached))
-        {
-            return cached;
-        }
-
         Task<Bitmap?> loadTask;
+
         lock (_syncLock)
         {
-            if (_memoryCache.TryGetValue(beatmapSetId, out cached))
+            if (_memoryCache.TryGetValue(beatmapSetId, out var cached))
             {
+                TouchLocked(beatmapSetId);
                 return cached;
             }
 
             if (!_inFlightRequests.TryGetValue(beatmapSetId, out loadTask!))
             {
-                loadTask = LoadCoverInternalAsync(beatmapSetId, ct);
+                loadTask = LoadCoverInternalAsync(beatmapSetId, CancellationToken.None);
                 _inFlightRequests[beatmapSetId] = loadTask;
             }
         }
 
         try
         {
-            return await loadTask;
+            return await loadTask.WaitAsync(ct).ConfigureAwait(false);
         }
         finally
         {
-            _inFlightRequests.TryRemove(beatmapSetId, out _);
+            if (loadTask.IsCompleted)
+            {
+                _inFlightRequests.TryRemove(new KeyValuePair<int, Task<Bitmap?>>(beatmapSetId, loadTask));
+            }
         }
+    }
+
+    private void TouchLocked(int beatmapSetId)
+    {
+        var node = _lruOrder.Find(beatmapSetId);
+
+        if (node != null)
+        {
+            _lruOrder.Remove(node);
+        }
+
+        _lruOrder.AddLast(beatmapSetId);
+    }
+
+    private List<Bitmap?> EvictIfNeededLocked()
+    {
+        var evictedBitmaps = new List<Bitmap?>();
+
+        while (_memoryCache.Count > MaxMemoryCacheSize && _lruOrder.First != null)
+        {
+            int oldest = _lruOrder.First.Value;
+            _lruOrder.RemoveFirst();
+
+            if (_memoryCache.TryRemove(oldest, out var evicted))
+            {
+                evictedBitmaps.Add(evicted);
+            }
+        }
+
+        return evictedBitmaps;
+    }
+
+    private (Bitmap? Overwritten, List<Bitmap?> Evicted) StoreMemoryCacheLocked(int beatmapSetId, Bitmap? bitmap)
+    {
+        _memoryCache.TryGetValue(beatmapSetId, out var old);
+        _memoryCache[beatmapSetId] = bitmap;
+        TouchLocked(beatmapSetId);
+        List<Bitmap?> evicted = EvictIfNeededLocked();
+        Bitmap? overwritten = ReferenceEquals(old, bitmap) ? null : old;
+        return (overwritten, evicted);
+    }
+
+    private static void DisposeBitmaps(Bitmap? overwritten, List<Bitmap?> evicted)
+    {
+        if (overwritten != null)
+        {
+            try
+            {
+                overwritten.Dispose();
+            }
+            catch
+            {
+            }
+        }
+
+        foreach (var item in evicted)
+        {
+            try
+            {
+                item?.Dispose();
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void RaiseCoverLoaded(int beatmapSetId, Bitmap? bitmap)
+    {
+        EventHandler<(int BeatmapSetId, Bitmap? Bitmap)>? handler = CoverLoaded;
+
+        if (handler == null)
+        {
+            return;
+        }
+
+        UiDispatcher.Post(() => handler(this, (beatmapSetId, bitmap)));
     }
 
     private async Task<Bitmap?> LoadCoverInternalAsync(int beatmapSetId, CancellationToken ct)
@@ -139,8 +288,16 @@ public class BeatmapCoverCache
             {
                 using var stream = File.OpenRead(diskPath);
                 var diskBitmap = new Bitmap(stream);
-                _memoryCache[beatmapSetId] = diskBitmap;
-                CoverLoaded?.Invoke(this, (beatmapSetId, diskBitmap));
+                (Bitmap? Overwritten, List<Bitmap?> Evicted) storeDisk;
+
+                lock (_syncLock)
+                {
+                    storeDisk = StoreMemoryCacheLocked(beatmapSetId, diskBitmap);
+                }
+
+                DisposeBitmaps(storeDisk.Overwritten, storeDisk.Evicted);
+
+                RaiseCoverLoaded(beatmapSetId, diskBitmap);
                 return diskBitmap;
             }
             catch
@@ -158,10 +315,18 @@ public class BeatmapCoverCache
         var url = $"https://assets.ppy.sh/beatmaps/{beatmapSetId}/covers/cover.jpg";
         try
         {
-            using var response = await _httpClient.GetAsync(url, ct);
+            using var response = await _httpClient.GetAsync(url, ct).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                _memoryCache[beatmapSetId] = null;
+                (Bitmap? Overwritten, List<Bitmap?> Evicted) storeNull;
+
+                lock (_syncLock)
+                {
+                    storeNull = StoreMemoryCacheLocked(beatmapSetId, null);
+                }
+
+                DisposeBitmaps(storeNull.Overwritten, storeNull.Evicted);
+
                 return null;
             }
 
@@ -170,7 +335,7 @@ public class BeatmapCoverCache
                 return null;
             }
 
-            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             if (bytes == null || bytes.Length == 0)
             {
                 return null;
@@ -180,7 +345,7 @@ public class BeatmapCoverCache
             {
                 try
                 {
-                    await File.WriteAllBytesAsync(diskPath, bytes, ct);
+                    await File.WriteAllBytesAsync(diskPath, bytes, ct).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -189,13 +354,25 @@ public class BeatmapCoverCache
 
             using var memoryStream = new MemoryStream(bytes);
             var downloadedBitmap = new Bitmap(memoryStream);
-            _memoryCache[beatmapSetId] = downloadedBitmap;
-            CoverLoaded?.Invoke(this, (beatmapSetId, downloadedBitmap));
+            (Bitmap? Overwritten, List<Bitmap?> Evicted) storeDownload;
+
+            lock (_syncLock)
+            {
+                storeDownload = StoreMemoryCacheLocked(beatmapSetId, downloadedBitmap);
+            }
+
+            DisposeBitmaps(storeDownload.Overwritten, storeDownload.Evicted);
+
+            RaiseCoverLoaded(beatmapSetId, downloadedBitmap);
             return downloadedBitmap;
         }
         catch
         {
             return null;
+        }
+        finally
+        {
+            _inFlightRequests.TryRemove(beatmapSetId, out _);
         }
     }
 

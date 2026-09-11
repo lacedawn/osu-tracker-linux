@@ -1,3 +1,4 @@
+using Circle_Tracker.Services;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Net.Http;
@@ -93,7 +94,18 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
 
             if (changed && !_disposed)
             {
-                ConnectionStateChanged?.Invoke(this, value);
+                EventHandler<bool>? handler = ConnectionStateChanged;
+
+                if (handler != null)
+                {
+                    UiDispatcher.Post(() =>
+                    {
+                        if (!_disposed)
+                        {
+                            handler(this, value);
+                        }
+                    });
+                }
             }
         }
     }
@@ -118,7 +130,18 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
 
             if (value != null && !_disposed)
             {
-                StateUpdated?.Invoke(this, value);
+                EventHandler<TosuState>? handler = StateUpdated;
+
+                if (handler != null)
+                {
+                    UiDispatcher.Post(() =>
+                    {
+                        if (!_disposed)
+                        {
+                            handler(this, value);
+                        }
+                    });
+                }
             }
         }
     }

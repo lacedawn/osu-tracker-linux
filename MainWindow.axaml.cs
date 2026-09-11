@@ -132,7 +132,13 @@ namespace Circle_Tracker
 
             e.Cancel = true;
 
-            _updateCheckCts.Cancel();
+            try
+            {
+                _updateCheckCts.Cancel();
+            }
+            catch
+            {
+            }
 
             try
             {
@@ -153,8 +159,21 @@ namespace Circle_Tracker
             }
             finally
             {
+                DetachViewModelEvents();
+                _updateCheckCts.Dispose();
                 _isExplicitShutdownComplete = true;
                 Close();
+            }
+        }
+
+        private void DetachViewModelEvents()
+        {
+            if (_viewModel != null)
+            {
+                _viewModel.OpenAnalyticsRequested -= OpenAnalyticsWindow;
+                _viewModel.SessionSummaryRequested -= ShowSessionSummaryDialogAsync;
+                _viewModel.ShowYesNoDialogDelegate = null;
+                _viewModel.ShowMessageDelegate = null;
             }
         }
 

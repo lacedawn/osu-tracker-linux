@@ -484,6 +484,37 @@ public class MainWindowViewModelTests
         (capturedMessage, capturedTitle).Should().Be(("Do you confirm?", "Timezone"));
     }
 
+    [AvaloniaFact]
+    public async Task ViewModel_WhenShutdown_UnsubscribesEvents()
+    {
+        var viewModel = CreateViewModel();
+        var initial = new LiveSessionMetrics(10, 8, 5.0, 97.5m, 0m, 5m, 0m, 180.0, 0.0);
+
+        _mockLiveSessionTracker.Raise(t => t.MetricsUpdated += null, _mockLiveSessionTracker.Object, initial);
+        await Task.Delay(50);
+        await viewModel.ShutdownAsync();
+
+        var after = new LiveSessionMetrics(99, 90, 50.0, 50.0m, 0m, 5m, 0m, 180.0, 0.0);
+        _mockLiveSessionTracker.Raise(t => t.MetricsUpdated += null, _mockLiveSessionTracker.Object, after);
+        await Task.Delay(50);
+
+        viewModel.SessionPlaysCount.Should().Be(10);
+    }
+
+    [AvaloniaFact]
+    public async Task Shutdown_WhenCalledTwice_DoesNotThrow()
+    {
+        var viewModel = CreateViewModel();
+
+        Func<Task> act = async () =>
+        {
+            await viewModel.ShutdownAsync();
+            await viewModel.ShutdownAsync();
+        };
+
+        await act.Should().NotThrowAsync();
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         return new MainWindowViewModel(

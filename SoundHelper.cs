@@ -129,19 +129,26 @@ namespace Circle_Tracker
 
         internal static Func<string, IWindowsSoundPlayer>? WindowsSoundPlayerFactory;
 
+        internal static string EscapePlayerPath(string path)
+        {
+            return path.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
         internal static string BuildPlayerArguments(string playerName, string path)
         {
+            string escaped = EscapePlayerPath(path);
+
             if (playerName == "pw-play")
             {
-                return $"--volume=1.0 \"{path}\"";
+                return $"--volume=1.0 \"{escaped}\"";
             }
 
             if (playerName == "paplay")
             {
-                return $"--volume=65536 \"{path}\"";
+                return $"--volume=65536 \"{escaped}\"";
             }
 
-            return $"\"{path}\"";
+            return $"\"{escaped}\"";
         }
 
         [SupportedOSPlatform("windows")]
@@ -168,7 +175,7 @@ namespace Circle_Tracker
         {
             try
             {
-                var psi = new ProcessStartInfo("afplay", $"\"{path}\"")
+                var psi = new ProcessStartInfo("afplay", $"\"{EscapePlayerPath(path)}\"")
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false
@@ -200,28 +207,20 @@ namespace Circle_Tracker
             }
         }
 
+        internal static readonly TimeSpan LinuxProbeTimeout = TimeSpan.FromSeconds(2);
+
         private static string? ProbeLinuxPlayer()
         {
             string[] players = ["pw-play", "paplay", "aplay"];
-            string? pathEnv = Environment.GetEnvironmentVariable("PATH");
-            if (!string.IsNullOrEmpty(pathEnv))
-            {
-                var dirs = pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var player in players)
-                {
-                    foreach (var dir in dirs)
-                    {
-                        var candidate = Path.Combine(dir, player);
-                        if (File.Exists(candidate))
-                        {
-                            return candidate;
-                        }
-                    }
-                }
-            }
+            return ProbeLinuxPlayer(players, static psi => Process.Start(psi), LinuxProbeTimeout);
+        }
 
+        internal static string? ProbeLinuxPlayer(string[] players, Func<ProcessStartInfo, Process?> starter, TimeSpan timeout)
+        {
             foreach (var player in players)
             {
+                Process? proc = null;
+
                 try
                 {
                     var psi = new ProcessStartInfo
@@ -229,19 +228,56 @@ namespace Circle_Tracker
                         FileName = player,
                         Arguments = "--version",
                         CreateNoWindow = true,
-                        UseShellExecute = false
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
                     };
-                    using var proc = Process.Start(psi);
-                    if (proc != null)
+
+                    proc = starter(psi);
+
+                    if (proc == null)
                     {
-                        proc.WaitForExit();
+                        continue;
+                    }
+
+                    bool exited = proc.WaitForExit((int)Math.Min(timeout.TotalMilliseconds, int.MaxValue));
+
+                    if (exited)
+                    {
                         return player;
+                    }
+
+                    try
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        proc.WaitForExit(500);
+                    }
+                    catch
+                    {
                     }
                 }
                 catch
                 {
                 }
+                finally
+                {
+                    try
+                    {
+                        proc?.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
             }
+
             return null;
         }
 

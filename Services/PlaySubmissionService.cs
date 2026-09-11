@@ -310,7 +310,13 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             {
                 await _playSink.TryLogPlayAsync(data, context, disposeToken).ConfigureAwait(false);
                 await _sessionManager.IncrementPlaysAsync(disposeToken).ConfigureAwait(false);
-                PlayLogged?.Invoke(this, (data, context));
+                EventHandler<(PlayEntryData Data, PlayContext Context)>? handler = PlayLogged;
+
+                if (handler != null)
+                {
+                    var payload = (data, context);
+                    UiDispatcher.Post(() => handler(this, payload));
+                }
             }
             finally
             {
