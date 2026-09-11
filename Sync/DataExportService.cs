@@ -74,21 +74,45 @@ public class DataExportService : IDataExportService
 
         await using var sourceConn = await _dbManager.CreateConnectionAsync(ct);
 
-        if (File.Exists(backupFilePath))
+        string? backupDirectory = Path.GetDirectoryName(Path.GetFullPath(backupFilePath));
+        if (!string.IsNullOrEmpty(backupDirectory) && !Directory.Exists(backupDirectory))
         {
-            File.Delete(backupFilePath);
+            Directory.CreateDirectory(backupDirectory);
         }
 
-        await using var destConn = new SqliteConnection($"Data Source={backupFilePath}");
-        await destConn.OpenAsync(ct);
+        string tempPath = backupFilePath + ".tmp-" + Guid.NewGuid().ToString("N");
 
-        if (sourceConn is SqliteConnection sqliteSource)
+        try
         {
-            sqliteSource.BackupDatabase(destConn);
+            await using (var destConn = new SqliteConnection($"Data Source={tempPath}"))
+            {
+                await destConn.OpenAsync(ct);
+
+                if (sourceConn is SqliteConnection sqliteSource)
+                {
+                    sqliteSource.BackupDatabase(destConn);
+                }
+                else
+                {
+                    throw new InvalidOperationException("Database connection is not a SqliteConnection");
+                }
+            }
+
+            File.Move(tempPath, backupFilePath, true);
         }
-        else
+        catch
         {
-            throw new InvalidOperationException("Database connection is not a SqliteConnection");
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+            }
+            throw;
         }
 
         _log.LogInformation("Database backup completed successfully");

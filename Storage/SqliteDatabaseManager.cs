@@ -156,7 +156,7 @@ namespace Circle_Tracker.Storage
             }
         }
 
-        private void RotateCorruptDatabase()
+        internal void RotateCorruptDatabase()
         {
             if (_isMemory || !File.Exists(DatabasePath)) return;
 
@@ -166,12 +166,63 @@ namespace Circle_Tracker.Storage
                     Path.GetDirectoryName(DatabasePath) ?? "",
                     $"circle_tracker_corrupt_{DateTime.UtcNow:yyyyMMddHHmmss}.db");
                 File.Move(DatabasePath, corruptPath);
+                foreach (string suffix in new[] { "-wal", "-shm" })
+                {
+                    string sibling = DatabasePath + suffix;
+                    if (!File.Exists(sibling)) continue;
+                    try
+                    {
+                        File.Move(sibling, corruptPath + suffix, true);
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            File.Delete(sibling);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
                 _log.LogWarning("Moved corrupt database from {OldPath} to {CorruptPath}", DatabasePath, corruptPath);
             }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Failed to rotate corrupt database");
             }
+        }
+
+        private static async Task EnsureV2SyncObjectsAsync(SqliteConnection connection, SqliteTransaction? transaction)
+        {
+            int playsTable = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plays';",
+                transaction: transaction);
+            if (playsTable == 0) return;
+
+            int syncStatusCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('plays') WHERE name = 'sync_status';",
+                transaction: transaction);
+            if (syncStatusCount == 0)
+            {
+                await connection.ExecuteAsync(
+                    "ALTER TABLE plays ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced';",
+                    transaction: transaction);
+            }
+
+            int syncedAtCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('plays') WHERE name = 'synced_at';",
+                transaction: transaction);
+            if (syncedAtCount == 0)
+            {
+                await connection.ExecuteAsync(
+                    "ALTER TABLE plays ADD COLUMN synced_at TEXT;",
+                    transaction: transaction);
+            }
+
+            await connection.ExecuteAsync(
+                "CREATE INDEX IF NOT EXISTS idx_plays_sync_status ON plays(sync_status);",
+                transaction: transaction);
         }
 
         private async Task ApplyMigrationsAsync(CancellationToken ct)
@@ -271,11 +322,7 @@ namespace Circle_Tracker.Storage
                 await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
                 try
                 {
-                    await connection.ExecuteAsync(@"
-                        ALTER TABLE plays ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced';
-                        ALTER TABLE plays ADD COLUMN synced_at TEXT;
-                        CREATE INDEX IF NOT EXISTS idx_plays_sync_status ON plays(sync_status);",
-                        transaction: tx);
+                    await EnsureV2SyncObjectsAsync(connection, tx);
 
                     await connection.ExecuteAsync(
                         "INSERT INTO schema_migrations (version, applied_at, description) VALUES (@version, @appliedAt, @description);",
@@ -290,6 +337,10 @@ namespace Circle_Tracker.Storage
                     await tx.RollbackAsync(ct);
                     throw;
                 }
+            }
+            else
+            {
+                await EnsureV2SyncObjectsAsync(connection, null);
             }
         }
 
