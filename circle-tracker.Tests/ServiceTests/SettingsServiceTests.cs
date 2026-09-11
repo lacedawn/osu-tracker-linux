@@ -316,4 +316,26 @@ public class SettingsServiceTests
             Environment.CurrentDirectory = previousCwd;
         }
     }
+
+    [Fact]
+    public void StaticFlag_NotSharedAcrossInstances()
+    {
+        string firstFile = Path.Combine(Path.GetTempPath(), $"test_flag_a_{Guid.NewGuid():N}.json");
+        string secondFile = Path.Combine(Path.GetTempPath(), $"test_flag_b_{Guid.NewGuid():N}.json");
+        try
+        {
+            var first = new SettingsService(firstFile, firstFile + ".old");
+            var second = new SettingsService(secondFile, secondFile + ".old");
+
+            first.DisableBackgroundAnimationsWhenUnfocused = true;
+
+            second.DisableBackgroundAnimationsWhenUnfocused.Should().BeFalse();
+            first.DisableBackgroundAnimationsWhenUnfocused.Should().BeTrue();
+        }
+        finally
+        {
+            try { if (File.Exists(firstFile)) File.Delete(firstFile); } catch { }
+            try { if (File.Exists(secondFile)) File.Delete(secondFile); } catch { }
+        }
+    }
 }

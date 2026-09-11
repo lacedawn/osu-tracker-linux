@@ -107,19 +107,60 @@ namespace Circle_Tracker
             }
         }
 
+        internal interface IWindowsSoundPlayer : IDisposable
+        {
+            void PlaySync();
+        }
+
         [SupportedOSPlatform("windows")]
-        private static Task PlayWindowsSoundAsync(string path)
+        private sealed class SoundPlayerAdapter : IWindowsSoundPlayer
+        {
+            private readonly System.Media.SoundPlayer _player;
+
+            public SoundPlayerAdapter(string path)
+            {
+                _player = new System.Media.SoundPlayer(path);
+            }
+
+            public void PlaySync() => _player.PlaySync();
+
+            public void Dispose() => _player.Dispose();
+        }
+
+        internal static Func<string, IWindowsSoundPlayer>? WindowsSoundPlayerFactory;
+
+        internal static string BuildPlayerArguments(string playerName, string path)
+        {
+            if (playerName == "pw-play")
+            {
+                return $"--volume=1.0 \"{path}\"";
+            }
+
+            if (playerName == "paplay")
+            {
+                return $"--volume=65536 \"{path}\"";
+            }
+
+            return $"\"{path}\"";
+        }
+
+        [SupportedOSPlatform("windows")]
+        internal static async Task PlayWindowsSoundAsync(string path)
         {
             try
             {
-                using var player = new System.Media.SoundPlayer(path);
-                player.Play();
+                Func<string, IWindowsSoundPlayer> factory = WindowsSoundPlayerFactory ?? (static p => new SoundPlayerAdapter(p));
+
+                await Task.Run(() =>
+                {
+                    using IWindowsSoundPlayer player = factory(path);
+                    player.PlaySync();
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Windows audio error");
             }
-            return Task.CompletedTask;
         }
 
         [SupportedOSPlatform("macos")]
@@ -219,27 +260,7 @@ namespace Circle_Tracker
             await _fallbackSemaphore.WaitAsync(ct);
             try
             {
-                // Add volume control based on player type
-                string args;
-                if (playerName == "pw-play")
-                {
-                    // PipeWire: use --volume (0.0 to 1.0, max valid value)
-                    args = $"--volume=1.0 \"{path}\"";
-                }
-                else if (playerName == "paplay")
-                {
-                    // PulseAudio: use --volume (0-65536, 65536 = 100%)
-                    args = $"--volume=327680 \"{path}\""; // 500% volume
-                }
-                else if (playerName == "aplay")
-                {
-                    // ALSA: no built-in volume control, use amixer or just play normally
-                    args = $"\"{path}\"";
-                }
-                else
-                {
-                    args = $"\"{path}\"";
-                }
+                string args = BuildPlayerArguments(playerName, path);
 
                 var psi = new ProcessStartInfo(player, args)
                 {
@@ -253,11 +274,13 @@ namespace Circle_Tracker
                     return;
                 }
 
+                Task<string> stderrDrain = proc.StandardError.ReadToEndAsync();
+
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 linkedCts.CancelAfter(TimeSpan.FromSeconds(10));
                 try
                 {
-                    await proc.WaitForExitAsync(linkedCts.Token);
+                    await proc.WaitForExitAsync(linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -269,6 +292,18 @@ namespace Circle_Tracker
                     catch
                     {
                     }
+                }
+
+                try
+                {
+                    string stderr = await stderrDrain.ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(stderr))
+                    {
+                        _log.LogDebug("Audio player '{Player}' stderr: {Stderr}", player, stderr.Trim());
+                    }
+                }
+                catch
+                {
                 }
             }
             catch (Exception ex)
@@ -378,16 +413,12 @@ namespace Circle_Tracker
 
                     lock (_lock)
                     {
-                        // Drain any stale error state before starting
                         _al.GetError();
 
-                        // Ensure source is stopped and unbound before reuse
                         _al.SourceStop(source);
-                        // Drain error from SourceStop (harmless if source wasn't playing)
                         _al.GetError();
 
                         _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
-                        // Drain error from unbind (harmless if no buffer was bound)
                         _al.GetError();
                         
                         _al.SetSourceProperty(source, SourceInteger.Buffer, (int)bufferId);
@@ -398,8 +429,7 @@ namespace Circle_Tracker
                             return false;
                         }
 
-                        // Set volume to 500% (5.0 = much louder notification sound)
-                        _al.SetSourceProperty(source, SourceFloat.Gain, 5.0f);
+                        _al.SetSourceProperty(source, SourceFloat.Gain, 0.8f);
                         
                         _al.SourcePlay(source);
                         error = _al.GetError();
@@ -441,12 +471,10 @@ namespace Circle_Tracker
                     {
                         lock (_lock)
                         {
-                            // Must stop the source before unbinding the buffer,
-                            // otherwise OpenAL returns AL_INVALID_OPERATION (IllegalCommand)
                             _al.SourceStop(source);
-                            _al.GetError(); // drain stop error
+                            _al.GetError();
                             _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
-                            _al.GetError(); // drain unbind error
+                            _al.GetError();
                         }
                         _sourcePool.Enqueue(source);
                     }

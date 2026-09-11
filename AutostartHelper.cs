@@ -8,6 +8,8 @@ namespace Circle_Tracker
     {
         private const string AppName = "circle-tracker";
 
+        public static bool IsAutostartSupported => OperatingSystem.IsLinux();
+
         private static string GetAutostartFilePath()
         {
             if (OperatingSystem.IsLinux())
@@ -67,7 +69,9 @@ Type=Application
 Name=Circle Tracker
 Comment=osu! training session tracker
 Exec={exe}
+Terminal=false
 Icon={AppName}
+Categories=Game;
 X-GNOME-Autostart-enabled=true
 X-KDE-autostart-after=panel
 """;

@@ -17,6 +17,5 @@ namespace Circle_Tracker
         [JsonPropertyName("tosuPort")] public int TosuPort { get; set; } = 24050;
         [JsonPropertyName("disableBackgroundAnimationsWhenUnfocused")] public bool DisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
         [JsonPropertyName("updateRepository")] public string UpdateRepository { get; set; } = "lacedawn/osu-tracker-linux";
-        public static bool GlobalDisableBackgroundAnimationsWhenUnfocused { get; set; } = false;
     }
 }

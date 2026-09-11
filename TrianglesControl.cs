@@ -89,9 +89,7 @@ namespace Circle_Tracker
         private bool _isWindowMinimized = false;
         private bool _isWindowDeactivated = false;
 
-        private bool ShouldPauseWhenUnfocused =>
-            DisableBackgroundAnimationsWhenUnfocused ||
-            UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused;
+        private bool ShouldPauseWhenUnfocused => DisableBackgroundAnimationsWhenUnfocused;
 
         static TrianglesControl()
         {

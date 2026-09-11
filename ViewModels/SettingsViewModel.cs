@@ -269,6 +269,8 @@ public class SettingsViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public bool IsAutostartSupported => AutostartHelper.IsAutostartSupported;
+
     public bool StartupLaunch
     {
         get => _startupLaunch;

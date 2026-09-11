@@ -61,4 +61,12 @@ public class AutostartHelperTests : IDisposable
         entry.Should().Contain("Exec=/usr/bin/circle-tracker");
         entry.Should().Contain("Icon=circle-tracker");
     }
+
+    [Fact]
+    public void GeneratedDesktop_ContainsTerminalFalse()
+    {
+        string entry = AutostartHelper.GenerateDesktopEntry("/usr/bin/circle-tracker");
+
+        entry.Should().Contain("Terminal=false");
+    }
 }

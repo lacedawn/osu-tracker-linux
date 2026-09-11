@@ -25,6 +25,16 @@ namespace Circle_Tracker
             return Path.Combine(temp, $"circle-tracker-{user}.lock");
         }
 
+        public static bool IsAlreadyRunningException(Exception ex)
+        {
+            return ex is IOException || ex is UnauthorizedAccessException;
+        }
+
+        public static bool PrefersXdgRuntimeDir(string? xdgRuntimeDir)
+        {
+            return !string.IsNullOrEmpty(xdgRuntimeDir);
+        }
+
         public static FileStream? TryAcquire(string lockPath)
         {
             return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);

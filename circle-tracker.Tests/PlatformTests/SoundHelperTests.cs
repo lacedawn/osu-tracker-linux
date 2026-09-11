@@ -1,9 +1,12 @@
 using Circle_Tracker;
 using FluentAssertions;
+using Moq;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -150,5 +153,39 @@ public class SoundHelperTests
         Action act = () => SoundHelper.PlaySound(null!);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void VolumeArgs_WithinPAScale()
+    {
+        string args = SoundHelper.BuildPlayerArguments("paplay", "notify.wav");
+
+        args.Should().Contain("65536");
+        args.Should().NotContain("327680");
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task WindowsPlay_DoesNotDisposeEarly()
+    {
+        var order = new List<string>();
+        var mock = new Mock<SoundHelper.IWindowsSoundPlayer>();
+
+        mock.Setup(p => p.PlaySync()).Callback(() => order.Add("play"));
+        mock.Setup(p => p.Dispose()).Callback(() => order.Add("dispose"));
+
+        Func<string, SoundHelper.IWindowsSoundPlayer>? previous = SoundHelper.WindowsSoundPlayerFactory;
+        SoundHelper.WindowsSoundPlayerFactory = _ => mock.Object;
+
+        try
+        {
+            await SoundHelper.PlayWindowsSoundAsync("notify.wav");
+        }
+        finally
+        {
+            SoundHelper.WindowsSoundPlayerFactory = previous;
+        }
+
+        order.Should().Equal("play", "dispose");
     }
 }

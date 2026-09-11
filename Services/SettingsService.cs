@@ -10,6 +10,9 @@ public class SettingsService : ISettingsService
 {
     private static readonly ILogger<SettingsService> _log = AppLogger.For<SettingsService>();
 
+    public const string DefaultTosuHost = "127.0.0.1";
+    public const int DefaultTosuPort = 24050;
+
     private bool _disableBackgroundAnimationsWhenUnfocused;
 
     public string SettingsFilePath { get; }
@@ -19,19 +22,15 @@ public class SettingsService : ISettingsService
     public bool EnableLocalLogging { get; set; } = true;
     public bool EnableGoogleSheetsLogging { get; set; } = false;
     public string LocalDatabasePath { get; set; } = "";
-    public string TosuHost { get; set; } = "127.0.0.1";
-    public int TosuPort { get; set; } = 24050;
+    public string TosuHost { get; set; } = DefaultTosuHost;
+    public int TosuPort { get; set; } = DefaultTosuPort;
     public bool SubmitSoundEnabled { get; set; } = true;
     public string Username { get; set; } = "";
 
     public bool DisableBackgroundAnimationsWhenUnfocused
     {
         get => _disableBackgroundAnimationsWhenUnfocused;
-        set
-        {
-            _disableBackgroundAnimationsWhenUnfocused = value;
-            UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused = value;
-        }
+        set => _disableBackgroundAnimationsWhenUnfocused = value;
     }
 
     public string SpreadsheetId { get; set; } = "";
@@ -67,10 +66,57 @@ public class SettingsService : ISettingsService
 
     public string GetFunctionSeparator() => UseAltFuncSeparator ? ";" : ",";
 
+    public static string SanitizeTosuHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return DefaultTosuHost;
+        }
+
+        string trimmed = host.Trim();
+
+        if (trimmed.Length == 0)
+        {
+            return DefaultTosuHost;
+        }
+
+        foreach (char c in trimmed)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                return DefaultTosuHost;
+            }
+        }
+
+        return trimmed;
+    }
+
+    public static int SanitizeTosuPort(int port)
+    {
+        if (port < 1 || port > 65535)
+        {
+            return DefaultTosuPort;
+        }
+
+        return port;
+    }
+
+    public static int SanitizeTosuPortText(string? portText)
+    {
+        if (!int.TryParse(portText?.Trim(), out int port))
+        {
+            return DefaultTosuPort;
+        }
+
+        return SanitizeTosuPort(port);
+    }
+
     public void SaveSettings()
     {
         try
         {
+            TosuHost = SanitizeTosuHost(TosuHost);
+            TosuPort = SanitizeTosuPort(TosuPort);
             var settings = new UserSettings
             {
                 EnableLocalLogging = EnableLocalLogging,
@@ -112,8 +158,8 @@ public class SettingsService : ISettingsService
         SpreadsheetTimezoneVerified = false;
         UseAltFuncSeparator = false;
         Username = "";
-        TosuHost = "127.0.0.1";
-        TosuPort = 24050;
+        TosuHost = DefaultTosuHost;
+        TosuPort = DefaultTosuPort;
         DisableBackgroundAnimationsWhenUnfocused = false;
 
         if (!File.Exists(SettingsFilePath))
@@ -144,10 +190,9 @@ public class SettingsService : ISettingsService
                 SpreadsheetTimezoneVerified = settings.SpreadsheetTimezoneVerified;
                 UseAltFuncSeparator = settings.UseAltFuncSeparator;
                 Username = settings.Username;
-                TosuHost = !string.IsNullOrWhiteSpace(settings.TosuHost) ? settings.TosuHost : "127.0.0.1";
-                TosuPort = settings.TosuPort > 0 ? settings.TosuPort : 24050;
+                TosuHost = SanitizeTosuHost(settings.TosuHost);
+                TosuPort = SanitizeTosuPort(settings.TosuPort);
                 DisableBackgroundAnimationsWhenUnfocused = settings.DisableBackgroundAnimationsWhenUnfocused;
-                UserSettings.GlobalDisableBackgroundAnimationsWhenUnfocused = DisableBackgroundAnimationsWhenUnfocused;
             }
         }
         catch (Exception ex)
@@ -167,8 +212,8 @@ public class SettingsService : ISettingsService
             if (lines.Length > 3) SpreadsheetTimezoneVerified = lines[3] == "1";
             if (lines.Length > 4) UseAltFuncSeparator = lines[4] == "1";
             if (lines.Length > 5) Username = lines[5];
-            if (lines.Length > 6 && !string.IsNullOrWhiteSpace(lines[6])) TosuHost = lines[6];
-            if (lines.Length > 7 && int.TryParse(lines[7], out int port) && port > 0) TosuPort = port;
+            if (lines.Length > 6) TosuHost = SanitizeTosuHost(lines[6]);
+            if (lines.Length > 7) TosuPort = SanitizeTosuPortText(lines[7]);
             SaveSettings();
             _log.LogInformation("Migrated settings from old text format to JSON");
         }

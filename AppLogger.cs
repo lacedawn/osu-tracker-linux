@@ -12,18 +12,25 @@ namespace Circle_Tracker
 
         static AppLogger()
         {
+#if DEBUG
+            Serilog.Events.LogEventLevel consoleLevel = Serilog.Events.LogEventLevel.Debug;
+#else
+            Serilog.Events.LogEventLevel consoleLevel = Serilog.Events.LogEventLevel.Warning;
+#endif
             Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .WriteTo.Console()
+                .MinimumLevel.Information()
+                .WriteTo.Console(restrictedToMinimumLevel: consoleLevel)
                 .WriteTo.File(
                     AppPaths.LogPath,
+                    restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information,
                     rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 3)
+                    fileSizeLimitBytes: 10485760,
+                    retainedFileCountLimit: 7)
                 .CreateLogger();
 
             Factory = LoggerFactory.Create(builder =>
             {
-                builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+                builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Information);
                 builder.AddSerilog(Log.Logger, dispose: true);
             });
         }

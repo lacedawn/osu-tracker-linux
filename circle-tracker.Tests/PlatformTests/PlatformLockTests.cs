@@ -92,5 +92,13 @@ namespace CircleTracker.Tests.PlatformTests
             path.Should().NotBeNullOrWhiteSpace();
             path.Should().EndWith(".lock");
         }
+
+        [Fact]
+        public void Unauthorized_TreatedAsRunning()
+        {
+            bool result = SingleInstanceLock.IsAlreadyRunningException(new UnauthorizedAccessException());
+
+            result.Should().BeTrue();
+        }
     }
 }

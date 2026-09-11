@@ -108,8 +108,8 @@ public class MainWindowViewModel : ViewModelBase, IMainWindow, IDialogService
 
         if (_tosuClient != null)
         {
-            _tosuClient.Host = !string.IsNullOrWhiteSpace(Settings.TosuHost) ? Settings.TosuHost : "127.0.0.1";
-            _tosuClient.Port = int.TryParse(Settings.TosuPortText, out int port) ? port : 24050;
+            _tosuClient.Host = SettingsService.SanitizeTosuHost(Settings.TosuHost);
+            _tosuClient.Port = SettingsService.SanitizeTosuPortText(Settings.TosuPortText);
 
             _ = Task.Run(async () =>
             {

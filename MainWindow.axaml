@@ -203,7 +203,7 @@
                   <TextBox Grid.Column="0" Classes="osu-input" Watermark="Host (127.0.0.1)" Text="{Binding Settings.TosuHost}"/>
                   <TextBox Grid.Column="2" Classes="osu-input" Watermark="Port (24050)" Text="{Binding Settings.TosuPortText}"/>
                 </Grid>
-                <CheckBox Classes="osu-check" Content="Launch on system startup" IsChecked="{Binding Settings.StartupLaunch}"/>
+                <CheckBox Classes="osu-check" Content="Launch on system startup" IsChecked="{Binding Settings.StartupLaunch}" IsVisible="{Binding Settings.IsAutostartSupported}"/>
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="8" Margin="10,0,0,0">
