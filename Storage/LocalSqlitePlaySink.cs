@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Circle_Tracker.Storage
 {
-    public class LocalSqlitePlaySink : IPlaySink, IDisposable, IAsyncDisposable
+    public class LocalSqlitePlaySink : IPlaySink, IClientIdStore, IDisposable, IAsyncDisposable
     {
         private static readonly ILogger<LocalSqlitePlaySink> _log = AppLogger.For<LocalSqlitePlaySink>();
 
@@ -104,9 +104,19 @@ namespace Circle_Tracker.Storage
             }
         }
 
+        public async Task<bool> ContainsClientIdAsync(string clientId, CancellationToken ct = default)
+        {
+            await using var conn = await _dbManager.CreateConnectionAsync(ct);
+            int count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM plays WHERE client_id = @ClientId;",
+                new { ClientId = clientId });
+            return count > 0;
+        }
+
         private async Task InsertPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct)
         {
             string syncStatus = DetermineSyncStatus(context);
+            string clientId = string.IsNullOrEmpty(data.ClientId) ? Guid.NewGuid().ToString() : data.ClientId;
 
             const string sql = @"
                 INSERT INTO plays (
@@ -115,14 +125,14 @@ namespace Circle_Tracker.Storage
                     mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
                     total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
                     is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client,
-                    sync_status, synced_at
+                    sync_status, synced_at, client_id, sync_attempts
                 ) VALUES (
                     @SessionId, @Timestamp, @BeatmapId, @BeatmapSetId, @BeatmapChecksum,
                     @BeatmapString, @BeatmapTitle, @BeatmapArtist, @BeatmapVersion,
                     @ModsBitfield, @ModsString, @Bpm, @Stars, @Aim, @Speed, @Cs, @Ar, @Od, @Hp,
                     @TotalHits, @Hit300, @Hit100, @Hit50, @HitMiss, @Accuracy, @AccuracyReliable,
                     @IsComplete, @PlayTimeSeconds, @ConsecutivePlayCount, @GameMode, @IsReplay, @DetectedClient,
-                    @SyncStatus, @SyncedAt
+                    @SyncStatus, @SyncedAt, @ClientId, @SyncAttempts
                 );";
 
             var nowUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
@@ -161,7 +171,9 @@ namespace Circle_Tracker.Storage
                 IsReplay = context.IsReplay ? 1 : 0,
                 DetectedClient = context.DetectedClient ?? "",
                 SyncStatus = syncStatus,
-                SyncedAt = syncStatus == "Synced" ? nowUtc : (string?)null
+                SyncedAt = syncStatus == "Synced" ? nowUtc : (string?)null,
+                ClientId = clientId,
+                SyncAttempts = syncStatus == "Pending" ? 1 : 0
             };
 
             await using var conn = await _dbManager.CreateConnectionAsync(ct);

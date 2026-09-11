@@ -14,7 +14,8 @@ public record PlayEntryData(
     string BeatmapArtist = "",
     string BeatmapVersion = "",
     decimal BeatmapHp = 0m,
-    string BeatmapChecksum = ""
+    string BeatmapChecksum = "",
+    string ClientId = ""
 )
 {
     private readonly int? _totalHits;

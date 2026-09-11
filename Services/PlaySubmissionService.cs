@@ -217,7 +217,8 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             BeatmapArtist: beatmapState.BeatmapArtist,
             BeatmapVersion: beatmapState.BeatmapVersion,
             BeatmapHp: beatmapState.BeatmapHp,
-            BeatmapChecksum: snapshotChecksum
+            BeatmapChecksum: snapshotChecksum,
+            ClientId: Guid.NewGuid().ToString()
         );
 
         var context = new PlayContext(

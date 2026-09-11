@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,6 +8,11 @@ using System.Threading.Tasks;
 
 namespace Circle_Tracker.Storage
 {
+    public interface IClientIdStore
+    {
+        Task<bool> ContainsClientIdAsync(string clientId, CancellationToken ct = default);
+    }
+
     public class SinkRegistration
     {
         public IPlaySink Sink { get; }
@@ -24,8 +30,10 @@ namespace Circle_Tracker.Storage
         private static readonly ILogger<CompositePlaySink> _log = AppLogger.For<CompositePlaySink>();
         private readonly List<SinkRegistration> _registrations = new();
         private readonly object _registrationsLock = new();
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _clientIdGates = new();
 
         internal TimeSpan SheetsAttemptTimeout { get; set; } = TimeSpan.FromSeconds(10);
+        internal TimeSpan LateSheetsJoinGrace { get; set; } = TimeSpan.FromSeconds(1);
 
         public string SinkName => "Composite";
         public IReadOnlyList<SinkRegistration> Registrations => SnapshotRegistrations();
@@ -114,12 +122,28 @@ namespace Circle_Tracker.Storage
 
         private async Task<bool> AttemptSheetsSyncAsync(IReadOnlyList<IPlaySink> readySheetsSinks, PlayEntryData data, PlayContext context, CancellationToken ct)
         {
-            var sheetsTasks = readySheetsSinks.Select(s => TrySheetsSinkAsync(s, data, context, ct)).ToList();
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var sheetsTasks = readySheetsSinks.Select(s => TrySheetsSinkAsync(s, data, context, timeoutCts.Token)).ToList();
             var allSheets = Task.WhenAll(sheetsTasks);
             var completed = await Task.WhenAny(allSheets, Task.Delay(SheetsAttemptTimeout, ct));
             if (!ReferenceEquals(completed, allSheets))
             {
+                ct.ThrowIfCancellationRequested();
                 _log.LogWarning("Sheets sync timed out after {Timeout}, continuing with local write", SheetsAttemptTimeout);
+                timeoutCts.Cancel();
+                var joined = await Task.WhenAny(allSheets, Task.Delay(LateSheetsJoinGrace));
+                if (ReferenceEquals(joined, allSheets))
+                {
+                    try
+                    {
+                        return (await allSheets).All(succeeded => succeeded);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogError(ex, "Error logging play to sheets sinks");
+                        return false;
+                    }
+                }
                 _ = allSheets.ContinueWith(t =>
                 {
                     if (t.IsFaulted)
@@ -177,6 +201,39 @@ namespace Circle_Tracker.Storage
             var sqliteSink = activeSinks.FirstOrDefault(s => s.SinkName == "Local SQLite");
             var otherSinks = activeSinks.Where(s => s != sqliteSink && !IsSheetsSink(s)).ToList();
 
+            if (!string.IsNullOrEmpty(data.ClientId) && sqliteSink is IClientIdStore clientIdStore)
+            {
+                var gate = _clientIdGates.GetOrAdd(data.ClientId, _ => new SemaphoreSlim(1, 1));
+                await gate.WaitAsync(ct);
+                try
+                {
+                    if (await clientIdStore.ContainsClientIdAsync(data.ClientId, ct))
+                    {
+                        return;
+                    }
+
+                    await SubmitOnceAsync(sheetsSinks, sqliteSink, otherSinks, data, context, ct);
+                }
+                finally
+                {
+                    gate.Release();
+                    _clientIdGates.TryRemove(data.ClientId, out _);
+                }
+
+                return;
+            }
+
+            await SubmitOnceAsync(sheetsSinks, sqliteSink, otherSinks, data, context, ct);
+        }
+
+        private async Task SubmitOnceAsync(
+            IReadOnlyList<IPlaySink> sheetsSinks,
+            IPlaySink? sqliteSink,
+            IReadOnlyList<IPlaySink> otherSinks,
+            PlayEntryData data,
+            PlayContext context,
+            CancellationToken ct)
+        {
             var readySheetsSinks = sheetsSinks.Where(s => s.IsReady).ToList();
             bool sheetsAttempted = readySheetsSinks.Count > 0;
             bool sheetsSyncSucceeded;

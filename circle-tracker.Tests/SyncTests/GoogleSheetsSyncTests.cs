@@ -337,7 +337,8 @@ public class GoogleSheetsSyncTests : IDisposable
         int hit50 = 10,
         int hitMiss = 0,
         int modsBitfield = 0,
-        bool isComplete = true)
+        bool isComplete = true,
+        string clientId = "")
     {
         return new GoogleSheetsHistoricalImporter.ParsedImportRow(
             Timestamp: timestamp,
@@ -361,7 +362,8 @@ public class GoogleSheetsSyncTests : IDisposable
             ModsString: "NM",
             IsComplete: isComplete,
             PlayTimeSeconds: 120,
-            PlayCount: 1);
+            PlayCount: 1,
+            ClientId: clientId);
     }
 
     [Fact]
@@ -416,6 +418,82 @@ public class GoogleSheetsSyncTests : IDisposable
         {
             BuildImportRow(minute),
             BuildImportRow(minute)
+        };
+
+        SyncResult result = await importer.ImportParsedRowsAsync(rows);
+
+        result.SyncedCount.Should().Be(1);
+    }
+
+    private static async Task SeedImportPlayAsync(SqliteDatabaseManager dbManager, string? clientId, DateTime timestamp, int beatmapId)
+    {
+        await using var conn = await dbManager.CreateConnectionAsync();
+        var sessionId = Guid.NewGuid().ToString();
+
+        await conn.ExecuteAsync(
+            "INSERT INTO sessions (id, start_time, total_plays, playing_seconds, idle_seconds, efficiency_percent) VALUES (@Id, @Start, 0, 0, 0, 0.0);",
+            new { Id = sessionId, Start = timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ") });
+
+        await conn.ExecuteAsync(@"
+            INSERT INTO plays (
+                session_id, timestamp, beatmap_id, beatmap_set_id, beatmap_checksum,
+                beatmap_string, beatmap_title, beatmap_artist, beatmap_version,
+                mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
+                total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
+                is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client,
+                sync_status, client_id
+            ) VALUES (
+                @SessionId, @Timestamp, @BeatmapId, 100, '',
+                'Artist - Title [Diff]', '', '', '',
+                0, 'NM', 180, 5.5, 2.5, 2.8, 4.0, 9.0, 8.0, 6.0,
+                500, 450, 40, 10, 0, 98.5, 1,
+                1, 120, 1, 0, 0, 'Test',
+                'Synced', @ClientId
+            );", new
+        {
+            SessionId = sessionId,
+            Timestamp = timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            BeatmapId = beatmapId,
+            ClientId = clientId
+        });
+    }
+
+    [Fact]
+    public async Task Import_WhenClientIdMatches_TreatedAsDuplicate()
+    {
+        using var dbManager = await CreateImportDbManagerAsync();
+        var seedTime = new DateTime(2024, 3, 10, 9, 0, 0, DateTimeKind.Utc);
+
+        await SeedImportPlayAsync(dbManager, "sheet-cid-1", seedTime, 11111);
+
+        var importer = new GoogleSheetsHistoricalImporter(null!, dbManager);
+        var minute = new DateTime(2024, 5, 1, 12, 34, 0, DateTimeKind.Utc);
+
+        var rows = new List<GoogleSheetsHistoricalImporter.ParsedImportRow>
+        {
+            BuildImportRow(minute, beatmapId: 77777, accuracy: 91.2m, hit300: 400, hit100: 80, clientId: "sheet-cid-1"),
+            BuildImportRow(minute.AddHours(2), beatmapId: 77778)
+        };
+
+        SyncResult result = await importer.ImportParsedRowsAsync(rows);
+
+        result.SyncedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Import_WhenLegacyRowWithoutClientId_FallsBackToOldKey()
+    {
+        using var dbManager = await CreateImportDbManagerAsync();
+        var minute = new DateTime(2024, 5, 1, 12, 34, 0, DateTimeKind.Utc);
+
+        await SeedImportPlayAsync(dbManager, null, minute, 12345);
+
+        var importer = new GoogleSheetsHistoricalImporter(null!, dbManager);
+
+        var rows = new List<GoogleSheetsHistoricalImporter.ParsedImportRow>
+        {
+            BuildImportRow(minute),
+            BuildImportRow(minute.AddHours(2), beatmapId: 77778)
         };
 
         SyncResult result = await importer.ImportParsedRowsAsync(rows);

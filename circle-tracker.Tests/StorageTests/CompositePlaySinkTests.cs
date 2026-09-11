@@ -96,7 +96,7 @@ namespace CircleTracker.Tests.StorageTests
             allReady.Should().BeTrue();
         }
 
-        private static PlayEntryData BuildCompositePlayData(int beatmapId)
+        private static PlayEntryData BuildCompositePlayData(int beatmapId, string clientId = "")
         {
             return new PlayEntryData(
                 BeatmapString: "Artist - Title [Hard]",
@@ -125,7 +125,8 @@ namespace CircleTracker.Tests.StorageTests
                 PlayTimeSeconds: 60,
                 ModsString: "",
                 PlayCount: 1,
-                AccuracyReliable: true
+                AccuracyReliable: true,
+                ClientId: clientId
             );
         }
 
@@ -345,6 +346,112 @@ namespace CircleTracker.Tests.StorageTests
             string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 707;");
 
             status.Should().Be("Synced");
+        }
+
+        [Fact]
+        public async Task Submit_SameClientIdTwice_SecondAppendSkipped()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: true);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+            var data = BuildCompositePlayData(708, clientId: "idem-client-1");
+
+            await composite.TryLogPlayAsync(data, BuildCompositePlayContext(session.SessionId));
+
+            await composite.TryLogPlayAsync(data, BuildCompositePlayContext(session.SessionId));
+
+            sheets.Verify(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        private static async Task<bool> GatedSheetsAppendAsync(TaskCompletionSource<bool> entered, TaskCompletionSource<bool> release)
+        {
+            entered.TrySetResult(true);
+
+            await release.Task;
+
+            return true;
+        }
+
+        private static async Task<bool> CancelHonouringSheetsAppendAsync(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+
+            return true;
+        }
+
+        [Fact]
+        public async Task Timeout_WhenContinuationSucceeds_ReportsSingleSuccess()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: true);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .Returns(() => GatedSheetsAppendAsync(entered, release));
+
+            var composite = new CompositePlaySink { SheetsAttemptTimeout = TimeSpan.Zero };
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+
+            Task submit = composite.TryLogPlayAsync(BuildCompositePlayData(709, clientId: "timeout-client-1"), BuildCompositePlayContext(session.SessionId));
+
+            await entered.Task;
+
+            release.TrySetResult(true);
+
+            await submit;
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 709;");
+
+            status.Should().Be("Synced");
+            sheets.Verify(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task Timeout_WhenSheetsHonoursCancellation_ReportsPending()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: true);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .Returns((PlayEntryData _, PlayContext _, CancellationToken ct) => CancelHonouringSheetsAppendAsync(ct));
+
+            var composite = new CompositePlaySink { SheetsAttemptTimeout = TimeSpan.Zero };
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+
+            await composite.TryLogPlayAsync(BuildCompositePlayData(710, clientId: "timeout-client-2"), BuildCompositePlayContext(session.SessionId));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 710;");
+
+            status.Should().Be("Pending");
         }
     }
 }

@@ -193,6 +193,46 @@ namespace Circle_Tracker.Storage
             }
         }
 
+        private static async Task EnsureV3ClientIdObjectsAsync(SqliteConnection connection, SqliteTransaction? transaction)
+        {
+            int playsTable = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plays';",
+                transaction: transaction);
+            if (playsTable == 0) return;
+
+            int clientIdCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('plays') WHERE name = 'client_id';",
+                transaction: transaction);
+            if (clientIdCount == 0)
+            {
+                await connection.ExecuteAsync(
+                    "ALTER TABLE plays ADD COLUMN client_id TEXT;",
+                    transaction: transaction);
+            }
+
+            int attemptsCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('plays') WHERE name = 'sync_attempts';",
+                transaction: transaction);
+            if (attemptsCount == 0)
+            {
+                await connection.ExecuteAsync(
+                    "ALTER TABLE plays ADD COLUMN sync_attempts INTEGER NOT NULL DEFAULT 0;",
+                    transaction: transaction);
+            }
+
+            await connection.ExecuteAsync(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_plays_client_id ON plays(client_id);",
+                transaction: transaction);
+
+            await connection.ExecuteAsync(
+                "UPDATE plays SET client_id = 'legacy-' || id WHERE client_id IS NULL;",
+                transaction: transaction);
+
+            await connection.ExecuteAsync(
+                "UPDATE plays SET sync_attempts = 1 WHERE sync_status = 'Pending' AND sync_attempts = 0;",
+                transaction: transaction);
+        }
+
         private static async Task EnsureV2SyncObjectsAsync(SqliteConnection connection, SqliteTransaction? transaction)
         {
             int playsTable = await connection.ExecuteScalarAsync<int>(
@@ -341,6 +381,32 @@ namespace Circle_Tracker.Storage
             else
             {
                 await EnsureV2SyncObjectsAsync(connection, null);
+            }
+
+            if (currentVersion < 3)
+            {
+                await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+                try
+                {
+                    await EnsureV3ClientIdObjectsAsync(connection, tx);
+
+                    await connection.ExecuteAsync(
+                        "INSERT INTO schema_migrations (version, applied_at, description) VALUES (@version, @appliedAt, @description);",
+                        new { version = 3, appliedAt = DateTime.UtcNow.ToString("O"), description = "Add client id dedup column" },
+                        transaction: tx);
+
+                    await tx.CommitAsync(ct);
+                    _log.LogInformation("Applied migration V3 (Add client id dedup column)");
+                }
+                catch
+                {
+                    await tx.RollbackAsync(ct);
+                    throw;
+                }
+            }
+            else
+            {
+                await EnsureV3ClientIdObjectsAsync(connection, null);
             }
         }
 

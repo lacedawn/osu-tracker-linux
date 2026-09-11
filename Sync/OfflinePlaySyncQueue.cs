@@ -42,6 +42,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
     private readonly Func<string> _getFunctionSeparator;
     private readonly Func<bool> _getSheetsApiReady;
     private readonly Func<IList<IList<object>>, CancellationToken, Task>? _sheetsAppender;
+    private readonly Func<CancellationToken, Task<IReadOnlySet<string>>>? _sheetsClientIdReader;
     private readonly CircuitBreaker _circuitBreaker = new(failureThreshold: 3, openDuration: TimeSpan.FromSeconds(60));
 
     internal Func<int, CancellationToken, Task> RetryDelayProvider { get; set; } = DefaultBatchRetryDelayAsync;
@@ -98,7 +99,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                 else if (_sheetsService != null)
                 {
                     var valueRange = new ValueRange { Values = rows };
-                    var range = $"'{_sheetName}'!A:X";
+                    var range = $"'{_sheetName}'!A:Y";
                     var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
                     appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
 
@@ -134,7 +135,8 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
         string sheetName,
         Func<string> getFunctionSeparator,
         Func<bool> getSheetsApiReady,
-        Func<IList<IList<object>>, CancellationToken, Task>? sheetsAppender = null)
+        Func<IList<IList<object>>, CancellationToken, Task>? sheetsAppender = null,
+        Func<CancellationToken, Task<IReadOnlySet<string>>>? sheetsClientIdReader = null)
     {
         _dbManager = dbManager;
         _sheetsService = sheetsService;
@@ -143,6 +145,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
         _getFunctionSeparator = getFunctionSeparator;
         _getSheetsApiReady = getSheetsApiReady;
         _sheetsAppender = sheetsAppender;
+        _sheetsClientIdReader = sheetsClientIdReader;
     }
 
     public async Task<int> GetPendingCountAsync(CancellationToken ct = default)
@@ -179,7 +182,9 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                         hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50, hit_miss AS HitMiss,
                         is_complete AS IsComplete,
                         play_time_seconds AS PlayTimeSeconds,
-                        consecutive_play_count AS ConsecutivePlayCount
+                        consecutive_play_count AS ConsecutivePlayCount,
+                        COALESCE(client_id, '') AS ClientId,
+                        sync_attempts AS SyncAttempts
                 FROM plays
                 WHERE sync_status = 'Pending'
                 ORDER BY id ASC;";
@@ -198,7 +203,6 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             for (int i = 0; i < pendingPlays.Count; i += BatchSize)
             {
                 var batch = pendingPlays.Skip(i).Take(BatchSize).ToList();
-                var rows = batch.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
                 var batchIds = batch.Select(p => p.Id).ToList();
 
                 if (!_circuitBreaker.AllowRequest())
@@ -209,22 +213,36 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
 
                 try
                 {
-                    await AppendBatchWithRetryAsync(rows, ct);
-                    _circuitBreaker.RecordSuccess();
+                    var stillPending = await ReadStillPendingBatchAsync(batch, batchIds, ct);
+                    if (stillPending.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var alreadyAppended = await ReadAlreadyAppendedAsync(stillPending, ct);
+                    var toAppend = stillPending.Where(p => !alreadyAppended.Contains(p.ClientId)).ToList();
+                    var markIds = stillPending.Select(p => p.Id).ToList();
+
+                    if (toAppend.Count > 0)
+                    {
+                        var rows = toAppend.Select(play => BuildRowData(play, _getFunctionSeparator())).ToList();
+                        await AppendBatchWithRetryAsync(rows, ct);
+                        _circuitBreaker.RecordSuccess();
+                    }
 
                     const string updateSql = @"
                         UPDATE plays
                         SET sync_status = 'Synced', synced_at = @SyncedAt
-                        WHERE id IN @Ids;";
+                        WHERE id IN @Ids AND sync_status = 'Pending';";
 
                     await using var updateConn = await _dbManager.CreateConnectionAsync(ct);
                     using var tx = updateConn.BeginTransaction();
                     try
                     {
-                        await updateConn.ExecuteAsync(updateSql, new { Ids = batchIds, SyncedAt = nowUtc }, tx);
+                        int affected = await updateConn.ExecuteAsync(updateSql, new { Ids = markIds, SyncedAt = nowUtc }, tx);
                         tx.Commit();
-                        totalSynced += batch.Count;
-                        _log.LogInformation("Successfully marked {Count} plays as synced", batch.Count);
+                        totalSynced += affected;
+                        _log.LogInformation("Successfully marked {Count} plays as synced", affected);
                     }
                     catch (Exception dbEx)
                     {
@@ -264,6 +282,67 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             _log.LogError(ex, "Failed to flush offline sync queue");
             return new SyncResult(false, 0, 0, ex.Message);
         }
+    }
+
+    private async Task<List<PendingPlay>> ReadStillPendingBatchAsync(List<PendingPlay> batch, List<long> batchIds, CancellationToken ct)
+    {
+        await using var conn = await _dbManager.CreateConnectionAsync(ct);
+        var liveIds = (await conn.QueryAsync<long>(
+            "SELECT id FROM plays WHERE id IN @Ids AND sync_status = 'Pending';",
+            new { Ids = batchIds })).ToHashSet();
+        return batch.Where(p => liveIds.Contains(p.Id)).ToList();
+    }
+
+    private async Task<HashSet<string>> ReadAlreadyAppendedAsync(IReadOnlyList<PendingPlay> batch, CancellationToken ct)
+    {
+        if (!batch.Any(p => p.SyncAttempts > 0 && !string.IsNullOrEmpty(p.ClientId)))
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            return await ReadAppendedClientIdsAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not verify already-appended plays, proceeding with append");
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+    }
+
+    private async Task<HashSet<string>> ReadAppendedClientIdsAsync(CancellationToken ct)
+    {
+        if (_sheetsClientIdReader != null)
+        {
+            var known = await _sheetsClientIdReader(ct).ConfigureAwait(false);
+            return new HashSet<string>(known.Where(id => !string.IsNullOrEmpty(id)), StringComparer.Ordinal);
+        }
+
+        var appended = new HashSet<string>(StringComparer.Ordinal);
+        if (_sheetsService == null)
+        {
+            return appended;
+        }
+
+        var range = $"'{_sheetName}'!Y2:Y";
+        var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
+        var response = await request.ExecuteAsync(ct).ConfigureAwait(false);
+        if (response?.Values == null)
+        {
+            return appended;
+        }
+
+        foreach (var row in response.Values)
+        {
+            string? clientId = row.Count > 0 ? row[0]?.ToString() : null;
+            if (!string.IsNullOrEmpty(clientId))
+            {
+                appended.Add(clientId);
+            }
+        }
+
+        return appended;
     }
 
     public void StartBackgroundSync(TimeSpan checkInterval)
@@ -378,7 +457,8 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             fl ? "1" : "",
             play.IsComplete == 1 ? "1" : "0",
             play.ConsecutivePlayCount,
-            play.PlayTimeSeconds
+            play.PlayTimeSeconds,
+            play.ClientId
         };
     }
 
@@ -417,5 +497,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
         public int IsComplete { get; set; }
         public int PlayTimeSeconds { get; set; }
         public int ConsecutivePlayCount { get; set; }
+        public string ClientId { get; set; } = "";
+        public int SyncAttempts { get; set; }
     }
 }

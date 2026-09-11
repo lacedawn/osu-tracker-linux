@@ -60,7 +60,13 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         string ModsString,
         bool IsComplete,
         int PlayTimeSeconds,
-        int PlayCount);
+        int PlayCount,
+        string ClientId = "");
+
+    internal static string BuildDedupKey(string clientId)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"cid:{clientId}");
+    }
 
     internal static string BuildDedupKey(
         DateTime timestamp,
@@ -72,8 +78,14 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         int hit50,
         int hitMiss,
         int modsBitfield,
-        bool isComplete)
+        bool isComplete,
+        string? clientId = null)
     {
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            return BuildDedupKey(clientId);
+        }
+
         DateTime normalized = timestamp.Kind == DateTimeKind.Utc ? timestamp : timestamp.ToUniversalTime();
         string timePart = normalized.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
         return string.Create(CultureInfo.InvariantCulture, $"{timePart}|{beatmapId}|{totalHits}|{accuracy}|{hit300}|{hit100}|{hit50}|{hitMiss}|{modsBitfield}|{(isComplete ? 1 : 0)}");
@@ -93,8 +105,9 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         {
             const string existingSql = @"
                 SELECT timestamp AS Timestamp, beatmap_id AS BeatmapId, total_hits AS TotalHits,
-                       accuracy AS Accuracy, hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50,
-                       hit_miss AS HitMiss, mods_bitfield AS ModsBitfield, is_complete AS IsComplete
+                        accuracy AS Accuracy, hit_300 AS Hit300, hit_100 AS Hit100, hit_50 AS Hit50,
+                        hit_miss AS HitMiss, mods_bitfield AS ModsBitfield, is_complete AS IsComplete,
+                        COALESCE(client_id, '') AS ClientId
                 FROM plays;";
 
             var existingRows = await conn.QueryAsync<ExistingPlayKey>(existingSql, transaction: tx);
@@ -102,7 +115,11 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
 
             foreach (var existing in existingRows)
             {
-                if (DateTime.TryParse(existing.Timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime existingTimestamp))
+                if (!string.IsNullOrEmpty(existing.ClientId))
+                {
+                    seen.Add(BuildDedupKey(existing.ClientId));
+                }
+                else if (DateTime.TryParse(existing.Timestamp, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime existingTimestamp))
                 {
                     seen.Add(BuildDedupKey(existingTimestamp, existing.BeatmapId, existing.TotalHits, (decimal)existing.Accuracy, existing.Hit300, existing.Hit100, existing.Hit50, existing.HitMiss, existing.ModsBitfield, existing.IsComplete != 0));
                 }
@@ -123,7 +140,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
 
                 try
                 {
-                    string key = BuildDedupKey(row.Timestamp, row.BeatmapId, row.TotalHits, row.Accuracy, row.Hit300, row.Hit100, row.Hit50, row.HitMiss, row.ModsBitfield, row.IsComplete);
+                    string key = BuildDedupKey(row.Timestamp, row.BeatmapId, row.TotalHits, row.Accuracy, row.Hit300, row.Hit100, row.Hit50, row.HitMiss, row.ModsBitfield, row.IsComplete, row.ClientId);
 
                     if (seen.Contains(key))
                     {
@@ -187,7 +204,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
     {
         try
         {
-            var range = $"'{sheetName}'!A2:X";
+            var range = $"'{sheetName}'!A2:Y";
             var request = _sheetsService.Spreadsheets.Values.Get(spreadsheetId, range);
             request.ValueRenderOption = SpreadsheetsResource.ValuesResource.GetRequest.ValueRenderOptionEnum.FORMULA;
             var response = await request.ExecuteAsync(ct);
@@ -253,6 +270,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                     bool isComplete = row.Count > 21 && GetCellValue(row, 21) == "1";
                     int playCount = row.Count > 22 ? ParseInt(GetCellValue(row, 22)) : 1;
                     int playTimeSeconds = row.Count > 23 ? ParseInt(GetCellValue(row, 23)) : 0;
+                    string clientId = GetCellValue(row, 24);
 
                     int modsBitfield = BuildModsBitfield(hd, hr, dt, ez, ht, fl);
                     string modsString = BuildModsString(hd, hr, dt, ez, ht, fl);
@@ -279,7 +297,8 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                         ModsString: modsString,
                         IsComplete: isComplete,
                         PlayTimeSeconds: playTimeSeconds,
-                        PlayCount: playCount));
+                        PlayCount: playCount,
+                        ClientId: clientId));
                 }
                 catch (Exception ex)
                 {
@@ -442,6 +461,7 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
         public int HitMiss { get; set; }
         public int ModsBitfield { get; set; }
         public int IsComplete { get; set; }
+        public string ClientId { get; set; } = "";
     }
 
     private static async Task InsertSessionAsync(
@@ -476,14 +496,14 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
                 mods_bitfield, mods_string, bpm, stars, aim, speed, cs, ar, od, hp,
                 total_hits, hit_300, hit_100, hit_50, hit_miss, accuracy, accuracy_reliable,
                 is_complete, play_time_seconds, consecutive_play_count, game_mode, is_replay, detected_client,
-                sync_status, synced_at
+                sync_status, synced_at, client_id
             ) VALUES (
                 @SessionId, @Timestamp, @BeatmapId, @BeatmapSetId, '',
                 @BeatmapString, '', '', '',
                 @ModsBitfield, @ModsString, @Bpm, @Stars, @Aim, @Speed, @Cs, @Ar, @Od, 0.0,
                 @TotalHits, @Hit300, @Hit100, @Hit50, @HitMiss, @Accuracy, 1,
                 @IsComplete, @PlayTimeSeconds, @PlayCount, 0, 0, 'Legacy Import',
-                'Synced', @SyncedAt
+                'Synced', @SyncedAt, @ClientId
             );";
 
         return conn.ExecuteAsync(sql, new
@@ -511,7 +531,8 @@ public class GoogleSheetsHistoricalImporter : IGoogleSheetsHistoricalImporter
             IsComplete = row.IsComplete ? 1 : 0,
             PlayTimeSeconds = row.PlayTimeSeconds,
             PlayCount = row.PlayCount,
-            SyncedAt = row.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            SyncedAt = row.Timestamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            ClientId = string.IsNullOrEmpty(row.ClientId) ? Guid.NewGuid().ToString() : row.ClientId
         }, transaction: tx);
     }
 }

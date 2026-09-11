@@ -479,7 +479,8 @@ namespace Circle_Tracker
                 data.Flashlight ? "1" : "",
                 data.Complete ? "1" : "0",
                 data.PlayCount,
-                data.PlayTimeSeconds
+                data.PlayTimeSeconds,
+                data.ClientId ?? ""
             };
         }
 
@@ -491,7 +492,7 @@ namespace Circle_Tracker
                 throw new InvalidOperationException("Circuit breaker is open");
             }
 
-            string range = $"'{SheetName}'!A:X";
+            string range = $"'{SheetName}'!A:Y";
             _log.LogInformation("Appending row to Google Sheets ({Range})...", range);
 
             for (int i = 0; i < MaxSubmitAttempts; i++)

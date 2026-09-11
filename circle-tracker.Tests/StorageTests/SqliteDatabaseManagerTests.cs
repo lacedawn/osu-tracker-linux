@@ -68,7 +68,7 @@ public class SqliteDatabaseManagerTests
             await using var conn = await dbManager.CreateConnectionAsync();
             int version = await conn.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(version), 0) FROM schema_migrations;");
 
-            version.Should().Be(2);
+            version.Should().Be(3);
         }
         finally
         {

@@ -615,6 +615,66 @@ public class OfflinePlaySyncQueueTests
         result.SyncedCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Flush_WhenCrashBetweenAppendAndMark_RetryDoesNotDuplicate()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        var session = new SessionManager(dbManager);
+        await session.InitializeAsync();
+        await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+        await sqliteSink.InitializeAsync();
+
+        var data = BuildReconnectPlayData(920) with { ClientId = "crash-client-1" };
+        var pendingContext = new PlayContext(session.SessionId, false, 0, 0, "test", null, false, SheetsSyncSucceeded: false);
+
+        await sqliteSink.TryLogPlayAsync(data, pendingContext);
+
+        var appendedClientIds = new HashSet<string>(StringComparer.Ordinal);
+        int appendCallCount = 0;
+        var appender = new Func<IList<IList<object>>, CancellationToken, Task>((rows, ct) =>
+        {
+            appendCallCount++;
+            foreach (var row in rows)
+            {
+                string? clientId = row.Count > 24 ? row[24]?.ToString() : null;
+                if (!string.IsNullOrEmpty(clientId))
+                {
+                    appendedClientIds.Add(clientId);
+                }
+            }
+            return Task.CompletedTask;
+        });
+        var reader = new Func<CancellationToken, Task<IReadOnlySet<string>>>(_ => Task.FromResult<IReadOnlySet<string>>(appendedClientIds));
+
+        await using (var triggerConn = await dbManager.CreateConnectionAsync())
+        {
+            await triggerConn.ExecuteAsync(@"
+                CREATE TRIGGER fail_crash_mark
+                BEFORE UPDATE ON plays
+                WHEN NEW.sync_status = 'Synced'
+                BEGIN
+                    SELECT RAISE(ABORT, 'Simulated crash before mark');
+                END;");
+        }
+
+        using (var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender, reader))
+        {
+            await queue.FlushPendingQueueAsync();
+        }
+
+        await using (var dropConn = await dbManager.CreateConnectionAsync())
+        {
+            await dropConn.ExecuteAsync("DROP TRIGGER fail_crash_mark;");
+        }
+
+        using (var queue = new OfflinePlaySyncQueue(dbManager, null, "id", "Sheet1", () => ",", () => true, appender, reader))
+        {
+            await queue.FlushPendingQueueAsync();
+        }
+
+        appendCallCount.Should().Be(1);
+    }
+
     private sealed class ScriptedQueueHandler : HttpMessageHandler
     {
         private readonly Func<int, HttpResponseMessage> _script;
