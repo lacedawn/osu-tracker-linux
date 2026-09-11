@@ -159,7 +159,14 @@ public class SettingsViewModel : ViewModelBase, IDisposable
     public bool CredentialsFound
     {
         get => _credentialsFound;
-        set => SetProperty(ref _credentialsFound, value);
+        set
+        {
+            if (SetProperty(ref _credentialsFound, value))
+            {
+                OnPropertyChanged(nameof(CredentialsWarningVisible));
+                OnPropertyChanged(nameof(CredentialsWarningText));
+            }
+        }
     }
 
     public string CredentialsStatusText
@@ -167,6 +174,10 @@ public class SettingsViewModel : ViewModelBase, IDisposable
         get => _credentialsStatusText;
         set => SetProperty(ref _credentialsStatusText, value);
     }
+
+    public bool CredentialsWarningVisible => !CredentialsFound;
+
+    public string CredentialsWarningText => "credentials.json missing — Google Sheets disabled. Local SQLite logging continues.";
 
     public IBrush CredentialsStatusBrush
     {

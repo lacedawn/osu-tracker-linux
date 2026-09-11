@@ -10,6 +10,25 @@ echo "=================================="
 rm -rf ./releases
 mkdir -p "$OUTPUT_DIR"
 
+check_publish_assets() {
+    local dir="$1"
+    test -f "$dir/assets/sectionpass.wav" || { echo "missing $dir/assets/sectionpass.wav"; exit 1; }
+    test -f "$dir/assets/ct.ico" || { echo "missing $dir/assets/ct.ico"; exit 1; }
+    echo "assets ok in $dir"
+}
+
+smoke_run_native() {
+    local dir="$1"
+    local binary="$dir/circle-tracker"
+    if [ -x "$binary" ]; then
+        "$binary" --help | head -n 5
+        "$binary" --version
+        "$binary" --smoke-test
+    else
+        echo "skip native smoke-run (binary not executable on this host): $dir"
+    fi
+}
+
 echo "Building Linux x64..."
 dotnet publish -c Release -r linux-x64 \
     --self-contained true \
@@ -17,6 +36,7 @@ dotnet publish -c Release -r linux-x64 \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:Version="${VERSION}" \
     -o "${OUTPUT_DIR}/circle-tracker-linux-x64"
+check_publish_assets "${OUTPUT_DIR}/circle-tracker-linux-x64"
 
 echo "Building Windows x64..."
 dotnet publish -c Release -r win-x64 \
@@ -25,6 +45,7 @@ dotnet publish -c Release -r win-x64 \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:Version="${VERSION}" \
     -o "${OUTPUT_DIR}/circle-tracker-win-x64"
+check_publish_assets "${OUTPUT_DIR}/circle-tracker-win-x64"
 
 echo "Building macOS x64..."
 dotnet publish -c Release -r osx-x64 \
@@ -33,6 +54,7 @@ dotnet publish -c Release -r osx-x64 \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:Version="${VERSION}" \
     -o "${OUTPUT_DIR}/circle-tracker-osx-x64"
+check_publish_assets "${OUTPUT_DIR}/circle-tracker-osx-x64"
 
 echo "Building macOS ARM64..."
 dotnet publish -c Release -r osx-arm64 \
@@ -41,6 +63,11 @@ dotnet publish -c Release -r osx-arm64 \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:Version="${VERSION}" \
     -o "${OUTPUT_DIR}/circle-tracker-osx-arm64"
+check_publish_assets "${OUTPUT_DIR}/circle-tracker-osx-arm64"
+
+echo ""
+echo "Smoke testing native binary..."
+smoke_run_native "${OUTPUT_DIR}/circle-tracker-linux-x64"
 
 echo ""
 echo "Creating release archives..."
@@ -54,7 +81,7 @@ tar -czf circle-tracker-${VERSION}-osx-arm64.tar.gz circle-tracker-osx-arm64/
 cd ../..
 
 echo ""
-echo "✓ Build complete!"
+echo "Build complete!"
 echo "Release artifacts in: ${OUTPUT_DIR}"
 echo ""
 echo "Archives created:"

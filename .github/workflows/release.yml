@@ -60,6 +60,25 @@ jobs:
           -p:Version="${{ steps.version.outputs.VERSION }}" \
           -o ./publish/osx-arm64
     
+    - name: Verify publish assets
+      run: |
+        test -f ./publish/linux-x64/assets/sectionpass.wav
+        test -f ./publish/linux-x64/assets/ct.ico
+        test -f ./publish/win-x64/assets/sectionpass.wav
+        test -f ./publish/win-x64/assets/ct.ico
+        test -f ./publish/osx-x64/assets/sectionpass.wav
+        test -f ./publish/osx-x64/assets/ct.ico
+        test -f ./publish/osx-arm64/assets/sectionpass.wav
+        test -f ./publish/osx-arm64/assets/ct.ico
+        echo "publish assets ok"
+    
+    - name: Smoke test linux binary
+      run: |
+        chmod +x ./publish/linux-x64/circle-tracker
+        ./publish/linux-x64/circle-tracker --help
+        ./publish/linux-x64/circle-tracker --version
+        ./publish/linux-x64/circle-tracker --smoke-test
+    
     - name: Create archives
       run: |
         cd publish

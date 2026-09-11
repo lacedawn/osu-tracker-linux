@@ -1,7 +1,12 @@
+using Circle_Tracker;
 using Circle_Tracker.Services;
+using Circle_Tracker.Storage;
 using FluentAssertions;
+using Moq;
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace CircleTracker.Tests.ServiceTests;
@@ -337,5 +342,67 @@ public class SettingsServiceTests
             try { if (File.Exists(firstFile)) File.Delete(firstFile); } catch { }
             try { if (File.Exists(secondFile)) File.Delete(secondFile); } catch { }
         }
+    }
+
+    [Fact]
+    public void MissingCredentials_SheetsNotReady_LocalContinues()
+    {
+        var localSink = new Mock<IPlaySink>();
+
+        localSink.Setup(s => s.IsReady).Returns(true);
+
+        var sheetsSink = new Mock<IPlaySink>();
+
+        sheetsSink.Setup(s => s.IsReady).Returns(false);
+
+        var composite = new CompositePlaySink();
+
+        composite.AddSink(localSink.Object);
+        composite.AddSink(sheetsSink.Object);
+
+        composite.IsReady.Should().BeTrue();
+    }
+
+    [Fact]
+    public void MissingCredentials_SheetsNotReady_SheetsReportsNotReady()
+    {
+        var sheetsSink = new Mock<IPlaySink>();
+
+        sheetsSink.Setup(s => s.IsReady).Returns(false);
+
+        sheetsSink.Object.IsReady.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task MissingCredentials_InitSilent_SheetsStaysNotReady()
+    {
+        var mockWindow = new Mock<IMainWindow>();
+
+        var manager = new GoogleSheetsManager(mockWindow.Object, () => ",");
+
+        await manager.InitGoogleAPIAsync(true);
+
+        manager.IsReady.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SoundFilePath_MissingFile_FallsBackToAssetsPath()
+    {
+        string missingName = $"missing_sound_{Guid.NewGuid():N}.wav";
+        string expected = Path.Combine(AppPaths.AppDataDirectory, missingName);
+
+        string result = SettingsService.FindFile(missingName);
+
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void SoundFilePath_DefaultAsset_ResolvesUnderAssetsFolder()
+    {
+        var service = new SettingsService(
+            Path.Combine(Path.GetTempPath(), $"ct_snd_{Guid.NewGuid():N}.json"),
+            Path.Combine(Path.GetTempPath(), $"ct_snd_{Guid.NewGuid():N}.txt"));
+
+        service.SoundFilePath.Should().Contain(Path.Combine("assets", "sectionpass.wav"));
     }
 }

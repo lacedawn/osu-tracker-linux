@@ -16,9 +16,13 @@
   <Panel>
     <local:TrianglesControl x:Name="BackgroundTriangles" Velocity="6" TriangleCount="18" TriangleBrush="#0effffff" IsHitTestVisible="False"/>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
 
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
+        <Border Grid.Row="0" CornerRadius="8" Background="#3a2a12" BorderBrush="#facc15" BorderThickness="1" Padding="10,8" Margin="0,0,0,10" IsVisible="{Binding Settings.CredentialsWarningVisible}">
+          <TextBlock Text="{Binding Settings.CredentialsWarningText}" Foreground="#facc15" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10" Height="24">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
               <Ellipse Width="6" Height="6" Fill="{Binding Settings.TosuStatusBrush}" VerticalAlignment="Center"/>
@@ -43,7 +47,7 @@
           </Button>
         </Grid>
 
-        <Border Grid.Row="1" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,14" Background="#221c34">
+        <Border Grid.Row="2" Height="110" CornerRadius="8" ClipToBounds="True" Margin="0,0,0,14" Background="#221c34">
           <Grid>
             <Image Source="{Binding Banner.CoverImage}" Stretch="UniformToFill"/>
             <local:TrianglesControl x:Name="BannerTriangles" IsVisible="{Binding Banner.BannerTrianglesVisible}" Velocity="8" TriangleCount="14" TriangleBrush="#25ffffff" IsHitTestVisible="False"/>
@@ -73,7 +77,7 @@
           </Grid>
         </Border>
 
-        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
           <Grid Grid.Column="0" ColumnDefinitions="*,*,*,*" Margin="4,0,24,0" VerticalAlignment="Center">
             <StackPanel Grid.Column="0" HorizontalAlignment="Left">
               <TextBlock Classes="stat-label" Text="CS"/>
@@ -104,9 +108,9 @@
           </StackPanel>
         </Grid>
 
-        <Rectangle Grid.Row="3" Height="1" Fill="#28223a" Margin="0,4,0,10"/>
+        <Rectangle Grid.Row="4" Height="1" Fill="#28223a" Margin="0,4,0,10"/>
 
-        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
           <StackPanel Grid.Column="0" Spacing="4">
             <Grid ColumnDefinitions="*,*,*,*" Margin="4,0,24,0">
               <StackPanel Grid.Column="0" HorizontalAlignment="Left">
@@ -141,7 +145,7 @@
           </StackPanel>
         </Grid>
 
-        <Border Grid.Row="5" Classes="hud-card" Margin="0,0,0,10" IsVisible="{Binding SessionLive.LiveSessionCardVisible}">
+        <Border Grid.Row="6" Classes="hud-card" Margin="0,0,0,10" IsVisible="{Binding SessionLive.LiveSessionCardVisible}">
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Text="LIVE SESSION INSIGHTS" Foreground="{StaticResource AccentPurple}" FontWeight="Bold" FontSize="11"/>
@@ -182,7 +186,7 @@
           </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="6" Spacing="8">
+        <StackPanel Grid.Row="7" Spacing="8">
           <Button Classes="osu-action-blue" Content="📊 ANALYTICS DASHBOARD" HorizontalAlignment="Center" Command="{Binding OpenAnalyticsCommand}" Margin="0,0,0,4"/>
 
           <Button x:Name="SettingsToggleButton" Classes="link-toggle" HorizontalAlignment="Center" Click="SettingsToggleButton_Click">

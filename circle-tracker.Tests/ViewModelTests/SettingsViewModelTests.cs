@@ -202,4 +202,34 @@ public class SettingsViewModelTests
 
         viewModel.PendingSyncCount.Should().Be(0);
     }
+
+    [AvaloniaFact]
+    public void CredentialsWarningVisible_MissingCredentials_ShowsWarning()
+    {
+        var viewModel = new SettingsViewModel();
+
+        viewModel.CredentialsFound = false;
+
+        viewModel.CredentialsWarningVisible.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public void CredentialsWarningVisible_FoundCredentials_HidesWarning()
+    {
+        var viewModel = new SettingsViewModel();
+
+        viewModel.CredentialsFound = true;
+
+        viewModel.CredentialsWarningVisible.Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public void CredentialsWarningText_MissingCredentials_MentionsLocalContinues()
+    {
+        var viewModel = new SettingsViewModel();
+
+        viewModel.CredentialsFound = false;
+
+        viewModel.CredentialsWarningText.Should().Contain("Local SQLite");
+    }
 }
