@@ -81,7 +81,7 @@ public class DataExportServiceTests
                     "SELECT COALESCE(MAX(version), 0) FROM schema_migrations;");
             }
 
-            backupVersion.Should().Be(3);
+            backupVersion.Should().Be(4);
         }
         finally
         {

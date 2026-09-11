@@ -65,25 +65,12 @@ namespace Circle_Tracker
 
         internal static bool IsTransientSheetsApiFailure(Exception ex)
         {
-            if (ex is GoogleApiException apiEx)
-            {
-                int statusCode = (int)apiEx.HttpStatusCode;
-                return statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
-            }
-            return ex is HttpRequestException
-                || ex is IOException
-                || ex is TimeoutException
-                || ex is TaskCanceledException;
+            return SheetsFailureClassifier.IsTransient(ex);
         }
 
         internal static bool IsPermanentSheetsApiFailure(Exception ex)
         {
-            if (ex is GoogleApiException apiEx)
-            {
-                int statusCode = (int)apiEx.HttpStatusCode;
-                return statusCode >= 400 && statusCode <= 499 && statusCode != 429;
-            }
-            return false;
+            return SheetsFailureClassifier.IsPermanent(ex);
         }
 
         private static string FindFile(string relativePath)
@@ -515,9 +502,9 @@ namespace Circle_Tracker
                 }
                 catch (Exception ex) when (IsTransientSheetsApiFailure(ex))
                 {
-                    _circuitBreaker.RecordFailure();
                     if (i == MaxSubmitAttempts - 1)
                     {
+                        _circuitBreaker.RecordFailure();
                         throw;
                     }
                     _log.LogWarning("Transient error ({ErrorType}), retrying...", ex.GetType().Name);

@@ -13,7 +13,8 @@ public record SyncResult(
     bool Success,
     int SyncedCount,
     int FailedCount,
-    string? ErrorMessage
+    string? ErrorMessage,
+    int SkippedCount = 0
 )
 {
     public bool IsSuccess => Success;

@@ -379,5 +379,26 @@ namespace CircleTracker.Tests
 
             ReadManagerLastPostTime(manager).Should().Be(DateTime.MinValue);
         }
+
+        [Fact]
+        public async Task TryLogPlayAsync_TransientRetries_RecordsBreakerFailureOnce()
+        {
+            var handler = new ScriptedSheetsHandler(_ => SheetsErrorResponse(HttpStatusCode.InternalServerError, 500));
+            var manager = MakeApiManager(handler);
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            _ = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: false), CancellationToken.None);
+
+            ReadManagerBreakerState(manager).Should().Be(Circle_Tracker.Services.CircuitState.Closed);
+        }
+
+        private static Circle_Tracker.Services.CircuitState ReadManagerBreakerState(GoogleSheetsManager manager)
+        {
+            var field = typeof(GoogleSheetsManager).GetField("_circuitBreaker", BindingFlags.NonPublic | BindingFlags.Instance);
+
+            var breaker = (Circle_Tracker.Services.CircuitBreaker)field!.GetValue(manager)!;
+
+            return breaker.CurrentState;
+        }
     }
 }

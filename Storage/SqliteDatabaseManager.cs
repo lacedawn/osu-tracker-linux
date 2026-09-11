@@ -233,6 +233,24 @@ namespace Circle_Tracker.Storage
                 transaction: transaction);
         }
 
+        private static async Task EnsureV4SyncErrorObjectsAsync(SqliteConnection connection, SqliteTransaction? transaction)
+        {
+            int playsTable = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plays';",
+                transaction: transaction);
+            if (playsTable == 0) return;
+
+            int syncErrorCount = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('plays') WHERE name = 'sync_error';",
+                transaction: transaction);
+            if (syncErrorCount == 0)
+            {
+                await connection.ExecuteAsync(
+                    "ALTER TABLE plays ADD COLUMN sync_error TEXT;",
+                    transaction: transaction);
+            }
+        }
+
         private static async Task EnsureV2SyncObjectsAsync(SqliteConnection connection, SqliteTransaction? transaction)
         {
             int playsTable = await connection.ExecuteScalarAsync<int>(
@@ -407,6 +425,32 @@ namespace Circle_Tracker.Storage
             else
             {
                 await EnsureV3ClientIdObjectsAsync(connection, null);
+            }
+
+            if (currentVersion < 4)
+            {
+                await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+                try
+                {
+                    await EnsureV4SyncErrorObjectsAsync(connection, tx);
+
+                    await connection.ExecuteAsync(
+                        "INSERT INTO schema_migrations (version, applied_at, description) VALUES (@version, @appliedAt, @description);",
+                        new { version = 4, appliedAt = DateTime.UtcNow.ToString("O"), description = "Add sync error column" },
+                        transaction: tx);
+
+                    await tx.CommitAsync(ct);
+                    _log.LogInformation("Applied migration V4 (Add sync error column)");
+                }
+                catch
+                {
+                    await tx.RollbackAsync(ct);
+                    throw;
+                }
+            }
+            else
+            {
+                await EnsureV4SyncErrorObjectsAsync(connection, null);
             }
         }
 

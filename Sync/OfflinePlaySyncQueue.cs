@@ -34,6 +34,7 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
     private const int MaxBatchAttempts = 3;
     private const int BaseBatchRetryDelayMs = 500;
     private const int MaxBatchRetryJitterMs = 200;
+    private const int InterBatchDelayMs = 100;
 
     private readonly Storage.IDatabaseManager _dbManager;
     private readonly SheetsService? _sheetsService;
@@ -46,6 +47,13 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
     private readonly CircuitBreaker _circuitBreaker = new(failureThreshold: 3, openDuration: TimeSpan.FromSeconds(60));
 
     internal Func<int, CancellationToken, Task> RetryDelayProvider { get; set; } = DefaultBatchRetryDelayAsync;
+
+    internal Func<CancellationToken, Task> InterBatchDelayProvider { get; set; } = DefaultInterBatchDelayAsync;
+
+    private static Task DefaultInterBatchDelayAsync(CancellationToken ct)
+    {
+        return Task.Delay(InterBatchDelayMs, ct);
+    }
 
     private static Task DefaultBatchRetryDelayAsync(int attempt, CancellationToken ct)
     {
@@ -63,25 +71,12 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
 
     internal static bool IsTransientBatchFailure(Exception ex)
     {
-        if (ex is GoogleApiException apiEx)
-        {
-            int statusCode = (int)apiEx.HttpStatusCode;
-            return statusCode == 429 || (statusCode >= 500 && statusCode <= 599);
-        }
-        return ex is HttpRequestException
-            || ex is IOException
-            || ex is TimeoutException
-            || ex is TaskCanceledException;
+        return SheetsFailureClassifier.IsTransient(ex);
     }
 
     internal static bool IsPermanentBatchFailure(Exception ex)
     {
-        if (ex is GoogleApiException apiEx)
-        {
-            int statusCode = (int)apiEx.HttpStatusCode;
-            return statusCode >= 400 && statusCode <= 499 && statusCode != 429;
-        }
-        return false;
+        return SheetsFailureClassifier.IsPermanent(ex);
     }
 
     private async Task AppendBatchWithRetryAsync(IList<IList<object>> rows, CancellationToken ct)
@@ -258,9 +253,10 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                 }
                 catch (PermanentBatchFailureException permanentEx)
                 {
-                    _circuitBreaker.RecordFailure();
+                    string skipError = permanentEx.InnerException?.Message ?? permanentEx.Message;
+                    int marked = await MarkBatchSkippedAsync(batchIds, skipError, ct);
+                    skippedCount += marked;
                     _log.LogError(permanentEx.InnerException ?? permanentEx, "Skipping batch starting at index {Index} due to permanent failure", i);
-                    skippedCount += batch.Count;
                 }
                 catch (Exception batchEx)
                 {
@@ -272,10 +268,12 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
                     }
                     break;
                 }
+
+                await DelayBetweenBatchesAsync(i, pendingPlays.Count, ct);
             }
 
             _log.LogInformation("Successfully synced {Count} of {Total} plays to Google Sheets", totalSynced, pendingPlays.Count);
-            return new SyncResult(true, totalSynced, skippedCount, null);
+            return new SyncResult(true, totalSynced, skippedCount, null, skippedCount);
         }
         catch (Exception ex)
         {
@@ -291,6 +289,27 @@ public class OfflinePlaySyncQueue : IOfflinePlaySyncQueue, IDisposable, IAsyncDi
             "SELECT id FROM plays WHERE id IN @Ids AND sync_status = 'Pending';",
             new { Ids = batchIds })).ToHashSet();
         return batch.Where(p => liveIds.Contains(p.Id)).ToList();
+    }
+
+    private async Task<int> MarkBatchSkippedAsync(IReadOnlyList<long> batchIds, string error, CancellationToken ct)
+    {
+        const string skipSql = @"
+                        UPDATE plays
+                        SET sync_status = 'Skipped', sync_error = @Error
+                        WHERE id IN @Ids AND sync_status = 'Pending';";
+
+        await using var conn = await _dbManager.CreateConnectionAsync(ct);
+        return await conn.ExecuteAsync(skipSql, new { Ids = batchIds, Error = error });
+    }
+
+    private async Task DelayBetweenBatchesAsync(int batchStartIndex, int totalCount, CancellationToken ct)
+    {
+        if (batchStartIndex + BatchSize >= totalCount)
+        {
+            return;
+        }
+
+        await InterBatchDelayProvider(ct);
     }
 
     private async Task<HashSet<string>> ReadAlreadyAppendedAsync(IReadOnlyList<PendingPlay> batch, CancellationToken ct)

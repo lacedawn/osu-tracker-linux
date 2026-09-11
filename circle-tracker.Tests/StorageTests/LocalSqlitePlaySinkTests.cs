@@ -30,7 +30,7 @@ namespace CircleTracker.Tests.StorageTests
 
             await using var conn = await dbManager.CreateConnectionAsync();
             int migrationVersion = await conn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_migrations;");
-            migrationVersion.Should().Be(3);
+            migrationVersion.Should().Be(4);
 
             int sessionsTableCount = await conn.ExecuteScalarAsync<int>(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions';");
@@ -353,7 +353,7 @@ namespace CircleTracker.Tests.StorageTests
 
             await using var conn = await dbManager.CreateConnectionAsync();
             int count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM schema_migrations;");
-            count.Should().Be(3);
+            count.Should().Be(4);
         }
 
         [Fact]

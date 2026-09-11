@@ -766,4 +766,52 @@ public class OfflinePlaySyncQueueTests
 
         result.SyncedCount.Should().Be(10);
     }
+
+    [Fact]
+    public async Task Flush_WhenPermanent4xx_MarksSkippedNotPending()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 5);
+
+        var handler = new ScriptedQueueHandler(_ => QueueErrorResponse(HttpStatusCode.BadRequest, 400));
+        var sheetsService = CreateScriptedQueueSheetsService(handler);
+        using var queue = new OfflinePlaySyncQueue(dbManager, sheetsService, "id", "Sheet1", () => ",", () => true);
+        queue.RetryDelayProvider = (_, _) => Task.CompletedTask;
+        queue.InterBatchDelayProvider = _ => Task.CompletedTask;
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var skippedCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Skipped';");
+        var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
+
+        (result.SkippedCount, result.SyncedCount, skippedCount, pendingCount).Should().Be((5, 0, 5, 0));
+    }
+
+    [Fact]
+    public async Task Flush_WhenTransient429_StopsAtFailedBatchPreservingOrder()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        await SeedPendingPlaysAsync(dbManager, 60);
+
+        var handler = new ScriptedQueueHandler(call => call == 1
+            ? QueueAppendSuccessResponse()
+            : QueueErrorResponse((HttpStatusCode)429, 429));
+        var sheetsService = CreateScriptedQueueSheetsService(handler);
+        using var queue = new OfflinePlaySyncQueue(dbManager, sheetsService, "id", "Sheet1", () => ",", () => true);
+        queue.RetryDelayProvider = (_, _) => Task.CompletedTask;
+        queue.InterBatchDelayProvider = _ => Task.CompletedTask;
+
+        var result = await queue.FlushPendingQueueAsync();
+
+        await using var verifyConn = await dbManager.CreateConnectionAsync();
+        var syncedCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Synced';");
+        var pendingCount = await verifyConn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM plays WHERE sync_status = 'Pending';");
+
+        (result.SyncedCount, result.SkippedCount, syncedCount, pendingCount).Should().Be((50, 0, 50, 10));
+    }
 }

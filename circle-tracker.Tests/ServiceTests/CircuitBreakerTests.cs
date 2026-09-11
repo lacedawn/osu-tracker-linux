@@ -125,6 +125,22 @@ public class CircuitBreakerTests
 
         breaker.AllowRequest().Should().BeTrue();
         breaker.CurrentState.Should().Be(CircuitState.HalfOpen);
-        breaker.AllowRequest().Should().BeTrue();
+        breaker.AllowRequest().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Breaker_WhenHalfOpen_AllowsSingleProbe()
+    {
+        var breaker = new CircuitBreaker(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(50));
+
+        breaker.RecordFailure();
+        breaker.RecordFailure();
+
+        await Task.Delay(60);
+
+        bool first = breaker.AllowRequest();
+        bool second = breaker.AllowRequest();
+
+        (first, second).Should().Be((true, false));
     }
 }

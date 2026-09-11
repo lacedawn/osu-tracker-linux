@@ -18,6 +18,7 @@ public class CircuitBreaker
     private int _failureCount;
     private CircuitState _state = CircuitState.Closed;
     private DateTime _lastFailureTime = DateTime.MinValue;
+    private bool _halfOpenProbeActive;
 
     public CircuitBreaker(int failureThreshold, TimeSpan openDuration)
     {
@@ -51,11 +52,18 @@ public class CircuitBreaker
                 if (timeSinceFailure >= _openDuration)
                 {
                     _state = CircuitState.HalfOpen;
+                    _halfOpenProbeActive = true;
                     return true;
                 }
                 return false;
             }
 
+            if (_halfOpenProbeActive)
+            {
+                return false;
+            }
+
+            _halfOpenProbeActive = true;
             return true;
         }
     }
@@ -66,6 +74,7 @@ public class CircuitBreaker
         {
             _failureCount = 0;
             _state = CircuitState.Closed;
+            _halfOpenProbeActive = false;
         }
     }
 
@@ -75,6 +84,13 @@ public class CircuitBreaker
         {
             _failureCount++;
             _lastFailureTime = DateTime.UtcNow;
+            _halfOpenProbeActive = false;
+
+            if (_state == CircuitState.HalfOpen)
+            {
+                _state = CircuitState.Open;
+                return;
+            }
 
             if (_failureCount >= _failureThreshold)
             {
