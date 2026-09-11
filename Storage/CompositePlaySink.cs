@@ -141,7 +141,21 @@ namespace Circle_Tracker.Storage
             }
         }
 
-        private static async Task WriteToSinkAsync(IPlaySink sink, PlayEntryData data, PlayContext context, CancellationToken ct)
+        private static async Task<bool> WriteToSinkAsync(IPlaySink sink, PlayEntryData data, PlayContext context, CancellationToken ct)
+        {
+            try
+            {
+                await sink.TryLogPlayAsync(data, context, ct);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Error logging play to sink {SinkName}", sink.SinkName);
+                return false;
+            }
+        }
+
+        private static async Task WriteToSinkThrowOnFailureAsync(IPlaySink sink, PlayEntryData data, PlayContext context, CancellationToken ct)
         {
             try
             {
@@ -150,6 +164,7 @@ namespace Circle_Tracker.Storage
             catch (Exception ex)
             {
                 _log.LogError(ex, "Error logging play to sink {SinkName}", sink.SinkName);
+                throw;
             }
         }
 
@@ -162,11 +177,16 @@ namespace Circle_Tracker.Storage
             var sqliteSink = activeSinks.FirstOrDefault(s => s.SinkName == "Local SQLite");
             var otherSinks = activeSinks.Where(s => s != sqliteSink && !IsSheetsSink(s)).ToList();
 
-            bool sheetsSyncSucceeded;
             var readySheetsSinks = sheetsSinks.Where(s => s.IsReady).ToList();
-            if (readySheetsSinks.Count == 0)
+            bool sheetsAttempted = readySheetsSinks.Count > 0;
+            bool sheetsSyncSucceeded;
+            if (sheetsSinks.Count == 0)
             {
                 sheetsSyncSucceeded = true;
+            }
+            else if (!sheetsAttempted)
+            {
+                sheetsSyncSucceeded = false;
             }
             else
             {
@@ -175,11 +195,11 @@ namespace Circle_Tracker.Storage
 
             var updatedContext = context with { SheetsSyncSucceeded = sheetsSyncSucceeded };
 
-            var writeTasks = new List<Task>();
             if (sqliteSink != null)
             {
-                writeTasks.Add(WriteToSinkAsync(sqliteSink, data, updatedContext, ct));
+                await WriteToSinkThrowOnFailureAsync(sqliteSink, data, updatedContext, ct);
             }
+            var writeTasks = new List<Task>();
             foreach (var sink in otherSinks)
             {
                 writeTasks.Add(WriteToSinkAsync(sink, data, updatedContext, ct));

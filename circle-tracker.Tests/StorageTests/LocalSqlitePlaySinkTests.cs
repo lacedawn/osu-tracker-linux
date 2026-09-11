@@ -642,5 +642,57 @@ namespace CircleTracker.Tests.StorageTests
 
             syncedAt.Should().NotBeNullOrEmpty();
         }
+
+        [Fact]
+        public async Task Submit_WhenLocalInsertFails_ReturnsFailureAndRowRemainsPending()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            await using var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            var context = BuildSyncStatusContext("nonexistent-session-id", false);
+
+            var act = async () => await sink.TryLogPlayAsync(BuildSyncStatusPlayData(906), context);
+
+            await act.Should().ThrowAsync<Exception>();
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            int syncedCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays WHERE beatmap_id = 906 AND sync_status = 'Synced';");
+
+            syncedCount.Should().Be(0);
+        }
+
+        [Fact]
+        public async Task Shutdown_WhenItemsQueued_AllItemsPersisted()
+        {
+            string dbName = $"TestDb_{Guid.NewGuid():N}";
+            string connStr = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            var sink = new LocalSqlitePlaySink(dbManager);
+            await sink.InitializeAsync();
+
+            int total = 10;
+            var pending = new List<Task>(total);
+
+            for (int i = 0; i < total; i++)
+            {
+                pending.Add(sink.TryLogPlayAsync(BuildSyncStatusPlayData(910 + i), BuildSyncStatusContext(session.SessionId, null)));
+            }
+
+            sink.Dispose();
+
+            await Task.WhenAll(pending);
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            int count = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM plays WHERE beatmap_id >= 910 AND beatmap_id < 920;");
+
+            count.Should().Be(total);
+        }
     }
 }

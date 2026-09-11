@@ -73,27 +73,34 @@ namespace Circle_Tracker.Storage
         private async Task ProcessQueueAsync()
         {
             var reader = _channel.Reader;
-            while (await reader.WaitToReadAsync(_cts.Token).ConfigureAwait(false))
+            try
             {
-                while (reader.TryRead(out var item))
+                while (await reader.WaitToReadAsync().ConfigureAwait(false))
                 {
-                    try
+                    while (reader.TryRead(out var item))
                     {
-                        await InsertPlayAsync(item.Data, item.Context, _cts.Token).ConfigureAwait(false);
-                        Interlocked.Increment(ref _totalPlaysRecorded);
-                        OnPlayCommitted?.Invoke();
-                        if (item.Context.SubmitSoundEnabled && !string.IsNullOrEmpty(item.Context.SoundFilePath))
+                        try
                         {
-                            SoundHelper.PlaySound(item.Context.SoundFilePath);
+                            await InsertPlayAsync(item.Data, item.Context, _cts.Token).ConfigureAwait(false);
+                            Interlocked.Increment(ref _totalPlaysRecorded);
+                            OnPlayCommitted?.Invoke();
+                            if (item.Context.SubmitSoundEnabled && !string.IsNullOrEmpty(item.Context.SoundFilePath))
+                            {
+                                SoundHelper.PlaySound(item.Context.SoundFilePath);
+                            }
+                            item.Completion?.TrySetResult(true);
                         }
-                        item.Completion?.TrySetResult(true);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.LogError(ex, "Failed to insert play into SQLite");
-                        item.Completion?.TrySetException(ex);
+                        catch (Exception ex)
+                        {
+                            _log.LogError(ex, "Failed to insert play into SQLite");
+                            item.Completion?.TrySetException(ex);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "SQLite background write loop terminated unexpectedly");
             }
         }
 
@@ -170,12 +177,16 @@ namespace Circle_Tracker.Storage
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _channel.Writer.TryComplete();
-            _cts.Cancel();
             try
             {
                 _workerTask.Wait(TimeSpan.FromSeconds(5));
             }
             catch (AggregateException) { }
+            try
+            {
+                _cts.Cancel();
+            }
+            catch (ObjectDisposedException) { }
             _cts.Dispose();
         }
 
@@ -183,13 +194,17 @@ namespace Circle_Tracker.Storage
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _channel.Writer.TryComplete();
-            _cts.Cancel();
             try
             {
                 await _workerTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
             catch (TimeoutException) { }
+            try
+            {
+                _cts.Cancel();
+            }
+            catch (ObjectDisposedException) { }
             _cts.Dispose();
         }
     }

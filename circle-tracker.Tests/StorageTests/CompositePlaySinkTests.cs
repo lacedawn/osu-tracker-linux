@@ -292,5 +292,59 @@ namespace CircleTracker.Tests.StorageTests
 
             status.Should().Be("Synced");
         }
+
+        [Fact]
+        public async Task Submit_WhenSheetsConfiguredButNotReady_RowStaysPending()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: false);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+
+            await composite.TryLogPlayAsync(BuildCompositePlayData(706), BuildCompositePlayContext(session.SessionId));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 706;");
+
+            status.Should().Be("Pending");
+        }
+
+        [Fact]
+        public async Task Submit_WhenSheetsSucceeds_RowMarkedSynced()
+        {
+            string connStr = $"Data Source=TestDb_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            await using var dbManager = new SqliteDatabaseManager(connStr);
+            await dbManager.InitializeAsync();
+            var session = new SessionManager(dbManager);
+            await session.InitializeAsync();
+            await using var sqliteSink = new LocalSqlitePlaySink(dbManager);
+            await sqliteSink.InitializeAsync();
+
+            var (sheets, sheetsPlay) = CreateSheetsDouble(isReady: true);
+            sheets.Setup(s => s.TryLogPlayAsync(It.IsAny<PlayEntryData>(), It.IsAny<PlayContext>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var composite = new CompositePlaySink();
+            composite.AddSink(sqliteSink, () => true);
+            composite.AddSink(sheetsPlay.Object, () => true);
+
+            await composite.TryLogPlayAsync(BuildCompositePlayData(707), BuildCompositePlayContext(session.SessionId));
+
+            await using var conn = await dbManager.CreateConnectionAsync();
+            string? status = await conn.ExecuteScalarAsync<string>("SELECT sync_status FROM plays WHERE beatmap_id = 707;");
+
+            status.Should().Be("Synced");
+        }
     }
 }
