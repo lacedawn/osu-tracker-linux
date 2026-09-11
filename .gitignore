@@ -1,6 +1,7 @@
 bin/
 obj/
 publish/
+releases/
 TestResults/
 coverage.cobertura.xml
 *.user
