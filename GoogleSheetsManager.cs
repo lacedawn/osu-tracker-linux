@@ -326,17 +326,30 @@ namespace Circle_Tracker
             return InitGoogleAPIAsync(silent);
         }
 
-        public async Task TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
+        public async Task<bool> TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default)
         {
             try
             {
-                await AppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
+                return await AppendPlayEntry(data, context.IsReplay, context.RawMods, context.CurrentGameMode,
                     _lastPostTime, t => _lastPostTime = t, context.SoundFilePath, context.SubmitSoundEnabled, ct);
             }
             catch (Exception ex)
             {
                 _log.LogError(ex, "Exception in AppendPlayEntry");
+                return false;
             }
+        }
+
+        async Task IPlaySink.TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct)
+        {
+            await TryLogPlayAsync(data, context, ct);
+        }
+
+        private static bool IsRetryableSkipReason(string skipReason)
+        {
+            return skipReason.Contains("not connected")
+                || skipReason.Contains("Circuit breaker")
+                || skipReason.Contains("Rate limited");
         }
 
         internal string? GetSkipReason(PlayEntryData data, bool isReplay, int rawMods,
@@ -475,7 +488,7 @@ namespace Circle_Tracker
             }
         }
 
-        private async Task AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
+        private async Task<bool> AppendPlayEntry(PlayEntryData data, bool isReplay, int rawMods, int currentGameMode,
             DateTime lastPostTime, Action<DateTime> setLastPostTime, string? soundFilePath,
             bool submitSoundEnabled, CancellationToken ct)
         {
@@ -483,7 +496,7 @@ namespace Circle_Tracker
             if (skipReason != null)
             {
                 _log.LogInformation("Skipped post: {SkipReason}", skipReason);
-                return;
+                return !IsRetryableSkipReason(skipReason);
             }
             setLastPostTime(DateTime.Now);
             List<object> rowData = BuildRowData(data);
@@ -492,6 +505,7 @@ namespace Circle_Tracker
             if (submitSoundEnabled && !string.IsNullOrEmpty(soundFilePath))
                 SoundHelper.PlaySound(soundFilePath);
             await ExpandSheetIfNeededAsync(response, ct);
+            return true;
         }
     }
 }

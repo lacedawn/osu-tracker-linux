@@ -1,8 +1,11 @@
 using Circle_Tracker;
+using Circle_Tracker.Storage;
 using FluentAssertions;
 using Moq;
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace CircleTracker.Tests
@@ -215,6 +218,41 @@ namespace CircleTracker.Tests
 
             reason.Should().Contain("Circuit breaker");
             reason.Should().Contain("temporarily unavailable");
+        }
+
+        private static PlayContext BuildSheetsPlayContext(bool isReplay)
+        {
+            return new PlayContext(
+                SessionId: "test-session",
+                IsReplay: isReplay,
+                RawMods: 0,
+                CurrentGameMode: 0,
+                DetectedClient: "test",
+                SoundFilePath: null,
+                SubmitSoundEnabled: false
+            );
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_WhenSheetsServiceMissing_ReturnsFalse()
+        {
+            var manager = MakeManager(apiReady: true);
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            bool result = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: false), CancellationToken.None);
+
+            result.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task TryLogPlayAsync_WhenReplayDetected_ReturnsTrue()
+        {
+            var manager = MakeManager(apiReady: true);
+            var data = MakeData(hits: 50, h300: 50, h100: 0);
+
+            bool result = await manager.TryLogPlayAsync(data, BuildSheetsPlayContext(isReplay: true), CancellationToken.None);
+
+            result.Should().BeTrue();
         }
     }
 }

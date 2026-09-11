@@ -84,8 +84,15 @@ namespace Circle_Tracker.Storage
             {
                 try
                 {
-                    await sheetsSink.TryLogPlayAsync(data, context, ct);
-                    sheetsSyncSucceeded = true;
+                    if (sheetsSink is ISheetsSink sheetsSyncSink)
+                    {
+                        sheetsSyncSucceeded = await sheetsSyncSink.TryLogPlayAsync(data, context, ct);
+                    }
+                    else
+                    {
+                        await sheetsSink.TryLogPlayAsync(data, context, ct);
+                        sheetsSyncSucceeded = true;
+                    }
                 }
                 catch (Exception ex)
                 {

@@ -76,6 +76,11 @@ public class FullPipelinePlayLoggingIntegrationTests
         var mockSheets = new Mock<ISheetsSink>();
         mockSheets.Setup(s => s.SheetsApiReady).Returns(true);
         mockSheets.Setup(s => s.InitGoogleAPIAsync(It.IsAny<bool>())).Returns(Task.CompletedTask);
+        mockSheets.Setup(s => s.TryLogPlayAsync(
+                It.IsAny<PlayEntryData>(),
+                It.IsAny<PlayContext>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var sheetsPlaySink = mockSheets.As<IPlaySink>();
         sheetsPlaySink.Setup(s => s.SinkName).Returns("Google Sheets");
@@ -150,7 +155,7 @@ public class FullPipelinePlayLoggingIntegrationTests
         rowCount.Should().Be(1);
         isComplete.Should().Be(1);
         hit300.Should().Be(50);
-        harness.SheetsPlaySink.Verify(s => s.TryLogPlayAsync(
+        harness.SheetsSink.Verify(s => s.TryLogPlayAsync(
             It.IsAny<PlayEntryData>(),
             It.IsAny<PlayContext>(),
             It.IsAny<CancellationToken>()), Times.Once);

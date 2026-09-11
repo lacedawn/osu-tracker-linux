@@ -1,4 +1,6 @@
+using Circle_Tracker.Storage;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Circle_Tracker
@@ -14,5 +16,6 @@ namespace Circle_Tracker
         Action? OnSettingsChanged { get; set; }
 
         Task InitGoogleAPIAsync(bool silent = false);
+        Task<bool> TryLogPlayAsync(PlayEntryData data, PlayContext context, CancellationToken ct = default);
     }
 }
