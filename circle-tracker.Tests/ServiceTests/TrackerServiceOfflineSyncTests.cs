@@ -217,4 +217,48 @@ public class TrackerServiceOfflineSyncTests
 
         mockQueue.Verify(q => q.FlushPendingQueueAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task DoubleEnsure_CreatesSingleQueue()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        var mockSheetsSink = new Mock<ISheetsSink>();
+
+        mockSheetsSink.Setup(s => s.SheetsApiReady).Returns(true);
+
+        int factoryCount = 0;
+        var mockQueue = new Mock<IOfflinePlaySyncQueue>();
+        var service = CreateService(dbManager, mockSheetsSink, () =>
+        {
+            Interlocked.Increment(ref factoryCount);
+            return mockQueue.Object;
+        });
+
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() => service.RefreshOfflineSyncState())).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        factoryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DoesNotDeadlock()
+    {
+        using var dbManager = await CreateInitializedDbManagerAsync();
+        var mockSheetsSink = new Mock<ISheetsSink>();
+
+        mockSheetsSink.Setup(s => s.SheetsApiReady).Returns(true);
+
+        var mockQueue = new Mock<IOfflinePlaySyncQueue>();
+
+        mockQueue.Setup(q => q.StopBackgroundSyncAsync()).Returns(Task.CompletedTask);
+
+        var service = CreateService(dbManager, mockSheetsSink, () => mockQueue.Object);
+
+        service.RefreshOfflineSyncState();
+
+        Func<Task> act = async () => await service.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+        await act.Should().NotThrowAsync();
+    }
 }

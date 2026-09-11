@@ -55,7 +55,19 @@ public class DefaultTosuTransport : ITosuTransport
                     result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None).ConfigureAwait(false);
+                        using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                        try
+                        {
+                            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", closeCts.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                        catch (WebSocketException)
+                        {
+                        }
+
                         _client.IsConnected = false;
                         return false;
                     }

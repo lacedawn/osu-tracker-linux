@@ -18,6 +18,9 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
 
     private readonly SemaphoreSlim _sheetsLock = new SemaphoreSlim(1, 1);
     private readonly ConcurrentDictionary<Task, byte> _activeSubmissionTasks = new();
+    private readonly object _dedupLock = new();
+    private readonly CancellationTokenSource _disposeCts = new();
+    private bool _disposed;
 
     private string _lastLoggedBeatmapChecksum = "";
     private int _lastLoggedBeatmapId = 0;
@@ -26,7 +29,16 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
     private int _consecutivePlayCount = 0;
     private bool _lastLoggedComplete = false;
 
-    public int ConsecutivePlayCount => _consecutivePlayCount;
+    public int ConsecutivePlayCount
+    {
+        get
+        {
+            lock (_dedupLock)
+            {
+                return _consecutivePlayCount;
+            }
+        }
+    }
 
     public event EventHandler<(PlayEntryData Data, PlayContext Context)>? PlayLogged;
 
@@ -56,21 +68,34 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
         _gameStateManager = gameStateManager;
     }
 
-    public async Task FlushPendingSubmissionsAsync(CancellationToken ct = default)
+    public async Task<bool> FlushPendingSubmissionsAsync(CancellationToken ct = default)
     {
-        var pending = _activeSubmissionTasks.Keys.ToArray();
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        CancellationToken externalToken = ct;
 
-        if (pending.Length > 0)
+        while (true)
         {
+            Task[] pending = _activeSubmissionTasks.Keys.ToArray();
+
+            if (pending.Length == 0)
+            {
+                return true;
+            }
+
             try
             {
-                await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken, timeoutCts.Token);
+                await Task.WhenAll(pending).WaitAsync(Timeout.InfiniteTimeSpan, linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-            }
-            catch (TimeoutException)
-            {
+                if (externalToken.IsCancellationRequested && !timeoutCts.IsCancellationRequested)
+                {
+                    externalToken = CancellationToken.None;
+                    continue;
+                }
+
+                return _activeSubmissionTasks.IsEmpty;
             }
         }
     }
@@ -127,24 +152,34 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
         if (totalBeatmapHits < MinHitsToSubmit || gameStateManager.IsReplay || currentGameMode != 0)
             return;
 
-        bool isSameMap = (!string.IsNullOrEmpty(beatmapState.CurrentBeatmapChecksum) && beatmapState.CurrentBeatmapChecksum == _lastLoggedBeatmapChecksum)
-            || (beatmapState.BeatmapID > 0 && beatmapState.BeatmapID == _lastLoggedBeatmapId)
-            || (!string.IsNullOrEmpty(beatmapState.BeatmapString) && beatmapState.BeatmapString == _lastLoggedBeatmapString);
+        string snapshotChecksum = beatmapState.CurrentBeatmapChecksum;
+        int snapshotBeatmapId = beatmapState.BeatmapID;
+        string snapshotBeatmapString = beatmapState.BeatmapString;
+        int snapshotRawMods = beatmapState.RawMods;
+        int snapshotPlayCount;
 
-        if (isSameMap && beatmapState.RawMods == _lastLoggedMods && !_lastLoggedComplete)
+        lock (_dedupLock)
         {
-            _consecutivePlayCount++;
-        }
-        else
-        {
-            _consecutivePlayCount = 1;
-            _lastLoggedBeatmapChecksum = beatmapState.CurrentBeatmapChecksum;
-            _lastLoggedBeatmapId = beatmapState.BeatmapID;
-            _lastLoggedBeatmapString = beatmapState.BeatmapString;
-            _lastLoggedMods = beatmapState.RawMods;
-        }
+            bool isSameMap = (!string.IsNullOrEmpty(snapshotChecksum) && snapshotChecksum == _lastLoggedBeatmapChecksum)
+                || (snapshotBeatmapId > 0 && snapshotBeatmapId == _lastLoggedBeatmapId)
+                || (!string.IsNullOrEmpty(snapshotBeatmapString) && snapshotBeatmapString == _lastLoggedBeatmapString);
 
-        _lastLoggedComplete = complete;
+            if (isSameMap && snapshotRawMods == _lastLoggedMods && !_lastLoggedComplete)
+            {
+                _consecutivePlayCount++;
+            }
+            else
+            {
+                _consecutivePlayCount = 1;
+                _lastLoggedBeatmapChecksum = snapshotChecksum;
+                _lastLoggedBeatmapId = snapshotBeatmapId;
+                _lastLoggedBeatmapString = snapshotBeatmapString;
+                _lastLoggedMods = snapshotRawMods;
+            }
+
+            _lastLoggedComplete = complete;
+            snapshotPlayCount = _consecutivePlayCount;
+        }
 
         float clockRate = beatmapState.LastClockRate > 0 ? beatmapState.LastClockRate : (beatmapState.Doubletime ? 1.5f : beatmapState.Halftime ? 0.75f : 1f);
         int playTime = (int)(Math.Max(0, time - beatmapState.FirstHitObjectTime) / clockRate / 1000f);
@@ -176,39 +211,50 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
             Complete: complete,
             PlayTimeSeconds: playTime,
             ModsString: beatmapState.GetModsString(),
-            PlayCount: _consecutivePlayCount,
+            PlayCount: snapshotPlayCount,
             AccuracyReliable: accuracyReliable,
             BeatmapTitle: beatmapState.BeatmapTitle,
             BeatmapArtist: beatmapState.BeatmapArtist,
             BeatmapVersion: beatmapState.BeatmapVersion,
             BeatmapHp: beatmapState.BeatmapHp,
-            BeatmapChecksum: beatmapState.CurrentBeatmapChecksum
+            BeatmapChecksum: snapshotChecksum
         );
 
         var context = new PlayContext(
             SessionId: _sessionManager.SessionId,
             IsReplay: gameStateManager.IsReplay,
-            RawMods: beatmapState.RawMods,
+            RawMods: snapshotRawMods,
             CurrentGameMode: currentGameMode,
             DetectedClient: gameStateManager.DetectedClient,
             SoundFilePath: soundFilePath,
             SubmitSoundEnabled: submitSoundEnabled
         );
 
+        CancellationToken disposeToken;
+
+        try
+        {
+            disposeToken = _disposeCts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            disposeToken = CancellationToken.None;
+        }
+
         Task submissionTask = Task.Run(async () =>
         {
-            await _sheetsLock.WaitAsync(CancellationToken.None);
+            await _sheetsLock.WaitAsync(disposeToken).ConfigureAwait(false);
             try
             {
-                await _playSink.TryLogPlayAsync(data, context);
-                await _sessionManager.IncrementPlaysAsync();
+                await _playSink.TryLogPlayAsync(data, context, disposeToken).ConfigureAwait(false);
+                await _sessionManager.IncrementPlaysAsync(disposeToken).ConfigureAwait(false);
                 PlayLogged?.Invoke(this, (data, context));
             }
             finally
             {
                 _sheetsLock.Release();
             }
-        }, CancellationToken.None);
+        });
 
         _activeSubmissionTasks.TryAdd(submissionTask, 0);
 
@@ -220,6 +266,22 @@ public class PlaySubmissionService : IPlaySubmissionService, IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        try
+        {
+            _disposeCts.Cancel();
+        }
+        catch
+        {
+        }
+
         _sheetsLock.Dispose();
+        _disposeCts.Dispose();
     }
 }

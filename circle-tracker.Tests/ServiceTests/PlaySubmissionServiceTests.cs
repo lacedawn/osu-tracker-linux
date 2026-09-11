@@ -323,4 +323,49 @@ public class PlaySubmissionServiceTests
 
         sessionManager.TotalPlays.Should().Be(0);
     }
+
+    [Fact]
+    public async Task ConcurrentTick_ReadCount_NoRace()
+    {
+        var sink = new Mock<IPlaySink>();
+
+        sink.Setup(s => s.TryLogPlayAsync(
+            It.IsAny<PlayEntryData>(),
+            It.IsAny<PlayContext>(),
+            It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+
+        beatmapState.Setup(b => b.CurrentBeatmapChecksum).Returns("checksum-concurrent");
+        beatmapState.Setup(b => b.BeatmapID).Returns(4242);
+        beatmapState.Setup(b => b.BeatmapString).Returns("Artist - Title [Diff]");
+        beatmapState.Setup(b => b.RawMods).Returns(0);
+
+        var gameState = new Mock<IGameStateManager>();
+
+        gameState.Setup(g => g.IsReplay).Returns(false);
+
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        var readTasks = Enumerable.Range(0, 5).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                _ = service.ConsecutivePlayCount;
+            }
+        })).ToArray();
+
+        for (int i = 0; i < 20; i++)
+        {
+            service.TryPostBeatmapEntry(complete: false, totalBeatmapHits: 50);
+        }
+
+        await Task.WhenAll(readTasks);
+        await service.FlushPendingSubmissionsAsync();
+
+        service.ConsecutivePlayCount.Should().Be(20);
+    }
 }

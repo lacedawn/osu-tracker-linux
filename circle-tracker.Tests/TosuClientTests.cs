@@ -589,5 +589,45 @@ namespace CircleTracker.Tests
 
             secondRunner.Should().BeSameAs(initialRunner);
         }
+
+        [Fact]
+        public async Task Dispose_WaitsRunner_NoPostDisposePublish()
+        {
+            var mockTransport = new Mock<ITosuTransport>();
+
+            mockTransport
+                .Setup(t => t.RunWebSocketSessionAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .Returns(async (byte[] _, CancellationToken ct) =>
+                {
+                    await Task.Delay(50, ct);
+                    return false;
+                });
+
+            mockTransport
+                .Setup(t => t.PollHttpSnapshotAsync(It.IsAny<CancellationToken>()))
+                .Returns(async (CancellationToken ct) =>
+                {
+                    await Task.Delay(50, ct);
+                    return (TosuState?)null;
+                });
+
+            var client = new TosuClient(mockTransport.Object);
+            int postDisposeEvents = 0;
+
+            client.StateUpdated += (_, _) => Interlocked.Increment(ref postDisposeEvents);
+            client.ConnectionStateChanged += (_, _) => Interlocked.Increment(ref postDisposeEvents);
+
+            await client.ConnectAsync();
+            await Task.Delay(20);
+
+            client.Dispose();
+            int eventsAtDispose = Volatile.Read(ref postDisposeEvents);
+
+            await Task.Delay(150);
+
+            client.RunnerTask!.IsCompleted.Should().BeTrue();
+
+            Volatile.Read(ref postDisposeEvents).Should().Be(eventsAtDispose);
+        }
     }
 }

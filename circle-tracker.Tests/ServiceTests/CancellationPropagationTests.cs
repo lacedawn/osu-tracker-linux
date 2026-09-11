@@ -30,7 +30,7 @@ public class CancellationPropagationTests
         
         var mockTracker = new Mock<ITrackerService>();
         mockTracker.Setup(t => t.SessionManager).Returns(sessionManager);
-        mockTracker.Setup(t => t.FlushPendingSubmissionsAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        mockTracker.Setup(t => t.FlushPendingSubmissionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         mockTracker.Setup(t => t.SaveSettings());
         mockTracker.Setup(t => t.PlaySink).Returns((IPlaySink)null!);
 
@@ -48,6 +48,37 @@ public class CancellationPropagationTests
 
         mockTracker.Verify(t => t.FlushPendingSubmissionsAsync(It.IsAny<CancellationToken>()), Times.Once);
         mockTosuClient.Verify(c => c.DisconnectAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancel_DrainsPendingPlays()
+    {
+        var sink = new Mock<IPlaySink>();
+
+        sink.Setup(s => s.TryLogPlayAsync(
+            It.IsAny<PlayEntryData>(),
+            It.IsAny<PlayContext>(),
+            It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        using var db = new SqliteDatabaseManager(":memory:");
+        var sessionManager = new SessionManager(db);
+        var beatmapState = new Mock<IBeatmapStateTracker>();
+        var gameState = new Mock<IGameStateManager>();
+
+        gameState.Setup(g => g.IsReplay).Returns(false);
+
+        var service = new PlaySubmissionService(sink.Object, sessionManager, beatmapState.Object, gameState.Object);
+
+        service.TryPostBeatmapEntry(complete: true, totalBeatmapHits: 50);
+
+        using var cts = new CancellationTokenSource();
+
+        cts.Cancel();
+
+        bool flushed = await service.FlushPendingSubmissionsAsync(cts.Token);
+
+        flushed.Should().BeTrue();
     }
 
     [Fact]

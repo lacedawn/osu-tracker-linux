@@ -16,8 +16,40 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
     private const int HttpPollIntervalMs = 500;
     private const int WsRetryIntervalMs = 5000;
 
-    public string Host { get; set; } = "127.0.0.1";
-    public int Port { get; set; } = 24050;
+    private string _host = "127.0.0.1";
+    private int _port = 24050;
+
+    public string Host
+    {
+        get => Volatile.Read(ref _host);
+        set
+        {
+            Task? runner = Volatile.Read(ref _runnerTask);
+
+            if (runner != null && !runner.IsCompleted)
+            {
+                throw new InvalidOperationException("Host must be configured before ConnectAsync and not mutated while running.");
+            }
+
+            Volatile.Write(ref _host, value);
+        }
+    }
+
+    public int Port
+    {
+        get => Volatile.Read(ref _port);
+        set
+        {
+            Task? runner = Volatile.Read(ref _runnerTask);
+
+            if (runner != null && !runner.IsCompleted)
+            {
+                throw new InvalidOperationException("Port must be configured before ConnectAsync and not mutated while running.");
+            }
+
+            Volatile.Write(ref _port, value);
+        }
+    }
 
     private readonly object _stateLock = new();
     private readonly SemaphoreSlim _connectLock = new(1, 1);
@@ -54,7 +86,7 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
                 }
             }
 
-            if (changed)
+            if (changed && !_disposed)
             {
                 ConnectionStateChanged?.Invoke(this, value);
             }
@@ -79,7 +111,7 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
                 _latestState = value;
             }
 
-            if (value != null)
+            if (value != null && !_disposed)
             {
                 StateUpdated?.Invoke(this, value);
             }
@@ -242,12 +274,37 @@ public class TosuClient : ITosuClient, IDisposable, IAsyncDisposable
         try
         {
             _cts?.Cancel();
+        }
+        catch { }
+
+        Task? runner = Volatile.Read(ref _runnerTask);
+
+        if (runner != null)
+        {
+            try
+            {
+                runner.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch { }
+        }
+
+        try
+        {
             _cts?.Dispose();
         }
         catch { }
 
-        _connectLock.Dispose();
-        _httpClient.Dispose();
+        try
+        {
+            _connectLock.Dispose();
+        }
+        catch { }
+
+        try
+        {
+            _httpClient.Dispose();
+        }
+        catch { }
     }
 
     public async ValueTask DisposeAsync()

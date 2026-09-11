@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Circle_Tracker.Services;
 
-public class TrackerService : ITrackerService, IMainWindow
+public class TrackerService : ITrackerService, IMainWindow, IAsyncDisposable, IDisposable
 {
     public static readonly TimeSpan OfflineSyncInterval = TimeSpan.FromMinutes(5);
 
@@ -121,13 +121,21 @@ public class TrackerService : ITrackerService, IMainWindow
         await _tracker.InitGoogleAPIAsync(silent).ConfigureAwait(false);
         RefreshOfflineSyncState();
     }
-    public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.SubmissionService.FlushPendingSubmissionsAsync(ct);
+    public Task<bool> FlushPendingSubmissionsAsync(CancellationToken ct = default) => _tracker.SubmissionService.FlushPendingSubmissionsAsync(ct);
     public ISessionAnalyticsService? GetSessionAnalyticsService() => _tracker.GetSessionAnalyticsService();
 
     internal static string BuildAppendRange(string sheetName) => $"'{sheetName}'!A:A";
 
     public async Task SyncOfflinePlaysToSheetsAsync(CancellationToken ct = default)
     {
+        IOfflinePlaySyncQueue? backgroundQueue = OfflineSyncQueue;
+
+        if (backgroundQueue != null)
+        {
+            await backgroundQueue.FlushPendingQueueAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
         if (_tracker.SessionManager.GetDatabaseManager() is not SqliteDatabaseManager sqliteDb)
             return;
 
@@ -200,7 +208,12 @@ public class TrackerService : ITrackerService, IMainWindow
 
     public async Task StopOfflineSyncAsync(CancellationToken ct = default)
     {
-        IOfflinePlaySyncQueue? queue = TakeOfflineSyncQueue();
+        IOfflinePlaySyncQueue? queue;
+
+        lock (_syncQueueLock)
+        {
+            queue = _syncQueue;
+        }
 
         if (queue == null)
             return;
@@ -217,40 +230,49 @@ public class TrackerService : ITrackerService, IMainWindow
 
         try
         {
-            await queue.FlushPendingQueueAsync(ct).ConfigureAwait(false);
+            using var flushCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            flushCts.CancelAfter(TimeSpan.FromSeconds(5));
+            await queue.FlushPendingQueueAsync(flushCts.Token).ConfigureAwait(false);
         }
         catch
         {
         }
 
-        DisposeSyncQueue(queue);
+        bool removed = false;
+
+        lock (_syncQueueLock)
+        {
+            if (ReferenceEquals(_syncQueue, queue))
+            {
+                _syncQueue = null;
+                removed = true;
+            }
+        }
+
+        if (removed)
+        {
+            await DisposeSyncQueueAsync(queue).ConfigureAwait(false);
+        }
     }
 
     private void EnsureOfflineSyncStarted()
     {
-        lock (_syncQueueLock)
-        {
-            if (_syncQueue != null)
-                return;
-        }
-
-        IOfflinePlaySyncQueue? queue = CreateOfflineSyncQueue();
-
-        if (queue == null)
-            return;
+        IOfflinePlaySyncQueue? queueToStart;
 
         lock (_syncQueueLock)
         {
             if (_syncQueue != null)
-            {
-                DisposeSyncQueue(queue);
                 return;
-            }
 
-            _syncQueue = queue;
+            queueToStart = CreateOfflineSyncQueue();
+
+            if (queueToStart == null)
+                return;
+
+            _syncQueue = queueToStart;
         }
 
-        queue.StartBackgroundSync(OfflineSyncInterval);
+        queueToStart.StartBackgroundSync(OfflineSyncInterval);
         _log.LogInformation("Offline sync queue started with interval {Interval}", OfflineSyncInterval);
     }
 
@@ -284,23 +306,44 @@ public class TrackerService : ITrackerService, IMainWindow
 
     private void DetachOfflineSyncQueue()
     {
-        IOfflinePlaySyncQueue? queue = TakeOfflineSyncQueue();
+        IOfflinePlaySyncQueue? queue;
+
+        lock (_syncQueueLock)
+        {
+            queue = _syncQueue;
+        }
 
         if (queue == null)
             return;
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await queue.StopBackgroundSyncAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-            }
+        _ = DetachOfflineSyncQueueAsync(queue);
+    }
 
-            DisposeSyncQueue(queue);
-        });
+    private async Task DetachOfflineSyncQueueAsync(IOfflinePlaySyncQueue queue)
+    {
+        try
+        {
+            await queue.StopBackgroundSyncAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
+        bool removed = false;
+
+        lock (_syncQueueLock)
+        {
+            if (ReferenceEquals(_syncQueue, queue))
+            {
+                _syncQueue = null;
+                removed = true;
+            }
+        }
+
+        if (removed)
+        {
+            await DisposeSyncQueueAsync(queue).ConfigureAwait(false);
+        }
     }
 
     private IOfflinePlaySyncQueue? TakeOfflineSyncQueue()
@@ -313,14 +356,75 @@ public class TrackerService : ITrackerService, IMainWindow
         }
     }
 
-    private static void DisposeSyncQueue(IOfflinePlaySyncQueue queue)
+    private static async Task DisposeSyncQueueAsync(IOfflinePlaySyncQueue queue)
     {
         try
         {
             if (queue is IAsyncDisposable asyncDisposable)
-                asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
             else if (queue is IDisposable disposable)
                 disposable.Dispose();
+        }
+        catch
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        IOfflinePlaySyncQueue? queue = TakeOfflineSyncQueue();
+
+        if (queue != null)
+        {
+            try
+            {
+                await queue.StopBackgroundSyncAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
+            await DisposeSyncQueueAsync(queue).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await _tracker.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        IOfflinePlaySyncQueue? queue = TakeOfflineSyncQueue();
+
+        if (queue != null)
+        {
+            try
+            {
+                queue.StopBackgroundSyncAsync().Wait(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (queue is IDisposable disposable)
+                    disposable.Dispose();
+                else if (queue is IAsyncDisposable asyncDisposable)
+                    Task.Run(async () => await asyncDisposable.DisposeAsync().ConfigureAwait(false)).Wait(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            _tracker.Dispose();
         }
         catch
         {

@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 namespace Circle_Tracker
 {
 
-    public class Tracker
+    public class Tracker : IDisposable, IAsyncDisposable
     {
         private static readonly ILogger<Tracker> _log = AppLogger.For<Tracker>();
 
@@ -58,7 +58,7 @@ namespace Circle_Tracker
         private DateTime LastPostTime { get; set; }
         private int _tickLock = 0;
         private readonly object _snapshotLock = new();
-        private volatile TrackerSnapshot? _lastSnapshot;
+        private TrackerSnapshot? _lastSnapshot;
         private string? _tosuProfileName;
         private readonly IPlaySubmissionService _submissionService;
         public IPlaySubmissionService SubmissionService => _submissionService;
@@ -255,8 +255,22 @@ namespace Circle_Tracker
 
         public TrackerSnapshot GetSnapshot()
         {
+            TrackerSnapshot? cached = Volatile.Read(ref _lastSnapshot);
+
+            if (cached is not null)
+            {
+                return cached;
+            }
+
             lock (_snapshotLock)
             {
+                cached = _lastSnapshot;
+
+                if (cached is not null)
+                {
+                    return cached;
+                }
+
                 return BuildSnapshotLocked();
             }
         }
@@ -285,6 +299,17 @@ namespace Circle_Tracker
                 return;
             }
 
+            List<(bool Complete, int TotalHits, decimal Accuracy, int C300, int C100, int C50, int Miss, int Time, int GameMode, string? SoundPath, bool SoundEnabled)> deferredSubmissions = new();
+            List<int> deferredPpMods = new();
+            GameStatus loggedCurrent = GameStatus.Menu;
+            bool loggedTransition = false;
+            bool loggedCompleted = false;
+            int loggedHits = 0;
+            bool loggedRetry = false;
+            int loggedRetryTime = 0;
+            int loggedRetryPrevTime = 0;
+            int loggedRetryHits = 0;
+
             lock (_snapshotLock)
             {
                 _tosuProfileName = state.Profile?.Name;
@@ -298,7 +323,7 @@ namespace Circle_Tracker
                 {
                     _beatmapState.CurrentBeatmapChecksum = newChecksum;
                     _beatmapState.UpdateBeatmapFromState(state);
-                    _beatmapState.FireUpdateDifficultyFromPpApi(state.Play?.Mods?.Number ?? 0);
+                    deferredPpMods.Add(state.Play?.Mods?.Number ?? 0);
                 }
 
                 _currentGameMode = state.Play?.Mode?.Number ?? state.Settings?.Mode?.Number ?? 0;
@@ -320,9 +345,11 @@ namespace Circle_Tracker
                     if (previousGameState == GameStatus.Playing && currentGameState != GameStatus.Playing)
                     {
                         bool beatmapCompleted = currentGameState == GameStatus.ResultsScreen;
-                        _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}",
-                            currentGameState, beatmapCompleted, TotalBeatmapHits);
-                        _submissionService.TryPostBeatmapEntry(beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
+                        loggedCurrent = currentGameState;
+                        loggedTransition = true;
+                        loggedCompleted = beatmapCompleted;
+                        loggedHits = TotalBeatmapHits;
+                        deferredSubmissions.Add((beatmapCompleted, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
 
                         Play300c = 0;
                         Play100c = 0;
@@ -335,7 +362,6 @@ namespace Circle_Tracker
                     else if (previousGameState != GameStatus.Playing && currentGameState == GameStatus.Playing)
                     {
                         justEnteredPlaying = true;
-                        _log.LogDebug("Entered Playing from {PreviousState}, skipping first tick hit processing (stale data)", previousGameState);
                         Play300c = 0;
                         Play100c = 0;
                         Play50c = 0;
@@ -353,7 +379,7 @@ namespace Circle_Tracker
                     {
                         _beatmapState.UpdateModsFromBitfield(newMods);
                         _beatmapState.UpdateBeatmapFromState(state);
-                        _beatmapState.FireUpdateDifficultyFromPpApi(newMods);
+                        deferredPpMods.Add(newMods);
                     }
                 }
 
@@ -410,9 +436,11 @@ namespace Circle_Tracker
                         {
                             if (TotalBeatmapHits >= PlaySubmissionService.MinHitsToSubmit)
                             {
-                                _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}",
-                                    newSongTime, Time, TotalBeatmapHits);
-                                _submissionService.TryPostBeatmapEntry(false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled);
+                                loggedRetry = true;
+                                loggedRetryTime = newSongTime;
+                                loggedRetryPrevTime = Time;
+                                loggedRetryHits = TotalBeatmapHits;
+                                deferredSubmissions.Add((false, TotalBeatmapHits, Accuracy, Play300c, Play100c, Play50c, PlayMissc, Time, _currentGameMode, _settings.SoundFilePath, _settings.SubmitSoundEnabled));
                             }
                             Play300c = 0;
                             Play100c = 0;
@@ -433,7 +461,27 @@ namespace Circle_Tracker
                 }
 
                 var snapshot = BuildSnapshotLocked();
-                _lastSnapshot = snapshot;
+                Volatile.Write(ref _lastSnapshot, snapshot);
+            }
+
+            foreach (int mods in deferredPpMods)
+            {
+                _beatmapState.FireUpdateDifficultyFromPpApi(mods);
+            }
+
+            foreach (var submission in deferredSubmissions)
+            {
+                _submissionService.TryPostBeatmapEntry(submission.Complete, submission.TotalHits, submission.Accuracy, submission.C300, submission.C100, submission.C50, submission.Miss, submission.Time, submission.GameMode, submission.SoundPath, submission.SoundEnabled);
+            }
+
+            if (loggedTransition)
+            {
+                _log.LogInformation("Transitioned from Playing to {NewGameState}. Completed={Completed}. Hits={Hits}", loggedCurrent, loggedCompleted, loggedHits);
+            }
+
+            if (loggedRetry)
+            {
+                _log.LogInformation("Retry detected (Time rewound: {NewSongTime} < {Time}). Hits={Hits}", loggedRetryTime, loggedRetryPrevTime, loggedRetryHits);
             }
         }
 
@@ -453,7 +501,7 @@ namespace Circle_Tracker
 
         public void TickEverySecond()
         {
-            var snap = _lastSnapshot;
+            TrackerSnapshot? snap = Volatile.Read(ref _lastSnapshot);
             if (snap == null) return;
 
             if (snap.IsPlaying)
@@ -465,6 +513,133 @@ namespace Circle_Tracker
             _form.UpdateTime();
         }
 
-        public Task FlushPendingSubmissionsAsync(CancellationToken ct = default) => _submissionService.FlushPendingSubmissionsAsync(ct);
+        public Task<bool> FlushPendingSubmissionsAsync(CancellationToken ct = default) => _submissionService.FlushPendingSubmissionsAsync(ct);
+
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                _settings.SettingsChanged -= SyncSheetsSettings;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (_submissionService is IDisposable disposableSubmission)
+                {
+                    disposableSubmission.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
+            DisposePlaySink(_playSink);
+            DisposePlaySink(_localSqliteSink);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                _settings.SettingsChanged -= SyncSheetsSettings;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _submissionService.FlushPendingSubmissionsAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (_submissionService is IDisposable disposableSubmission)
+                {
+                    disposableSubmission.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
+            await DisposePlaySinkAsync(_playSink).ConfigureAwait(false);
+
+            if (_localSqliteSink != null && !ReferenceEquals(_localSqliteSink, _playSink))
+            {
+                await DisposePlaySinkAsync(_localSqliteSink).ConfigureAwait(false);
+            }
+        }
+
+        private static void DisposePlaySink(object? sink)
+        {
+            try
+            {
+                if (sink is CompositePlaySink composite)
+                {
+                    foreach (SinkRegistration registration in composite.Registrations)
+                    {
+                        DisposePlaySink(registration.Sink);
+                    }
+
+                    return;
+                }
+
+                if (sink is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static async Task DisposePlaySinkAsync(object? sink)
+        {
+            try
+            {
+                if (sink is CompositePlaySink composite)
+                {
+                    foreach (SinkRegistration registration in composite.Registrations)
+                    {
+                        await DisposePlaySinkAsync(registration.Sink).ConfigureAwait(false);
+                    }
+
+                    return;
+                }
+
+                if (sink is IAsyncDisposable asyncDisposable)
+                {
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                }
+                else if (sink is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 }

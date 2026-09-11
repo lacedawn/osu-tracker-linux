@@ -12,8 +12,25 @@ public class BeatmapStateTracker : IBeatmapStateTracker
     private readonly ITosuClient? _tosuClient;
     private CancellationTokenSource? _ppApiCts;
     private readonly object _difficultyLock = new();
+    private string _currentBeatmapChecksum = "";
 
-    public string CurrentBeatmapChecksum { get; set; } = "";
+    public string CurrentBeatmapChecksum
+    {
+        get
+        {
+            lock (_difficultyLock)
+            {
+                return _currentBeatmapChecksum;
+            }
+        }
+        set
+        {
+            lock (_difficultyLock)
+            {
+                _currentBeatmapChecksum = value;
+            }
+        }
+    }
     public int BeatmapID { get; set; }
     public int BeatmapSetID { get; set; }
     public string BeatmapString { get; set; } = "";
@@ -47,15 +64,18 @@ public class BeatmapStateTracker : IBeatmapStateTracker
 
     public string GetModsString()
     {
-        string mods = "";
-        if (Auto) mods += "AT";
-        if (EZ) mods += "EZ";
-        if (Halftime) mods += "HT";
-        if (Hidden) mods += "HD";
-        if (Hardrock) mods += "HR";
-        if (Doubletime) mods += "DT";
-        if (Flashlight) mods += "FL";
-        return mods;
+        lock (_difficultyLock)
+        {
+            string mods = "";
+            if (Auto) mods += "AT";
+            if (EZ) mods += "EZ";
+            if (Halftime) mods += "HT";
+            if (Hidden) mods += "HD";
+            if (Hardrock) mods += "HR";
+            if (Doubletime) mods += "DT";
+            if (Flashlight) mods += "FL";
+            return mods;
+        }
     }
 
     public void UpdateModsFromBitfield(int rawMods)
@@ -104,7 +124,7 @@ public class BeatmapStateTracker : IBeatmapStateTracker
 
         if (!string.IsNullOrEmpty(bm.Checksum))
         {
-            CurrentBeatmapChecksum = bm.Checksum;
+            _currentBeatmapChecksum = bm.Checksum;
         }
         }
     }
@@ -132,7 +152,7 @@ public class BeatmapStateTracker : IBeatmapStateTracker
         string checksumAtCall;
         lock (_difficultyLock)
         {
-            checksumAtCall = CurrentBeatmapChecksum;
+            checksumAtCall = _currentBeatmapChecksum;
         }
 
         try
@@ -141,7 +161,7 @@ public class BeatmapStateTracker : IBeatmapStateTracker
             ct.ThrowIfCancellationRequested();
             lock (_difficultyLock)
             {
-                if (!string.IsNullOrEmpty(checksumAtCall) && CurrentBeatmapChecksum != checksumAtCall)
+                if (!string.IsNullOrEmpty(checksumAtCall) && _currentBeatmapChecksum != checksumAtCall)
                     return;
                 ApplyDifficultyResult(ppResult);
             }

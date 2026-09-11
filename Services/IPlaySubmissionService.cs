@@ -9,7 +9,7 @@ public interface IPlaySubmissionService
 {
     event EventHandler<(PlayEntryData Data, PlayContext Context)>? PlayLogged;
     int ConsecutivePlayCount { get; }
-    Task FlushPendingSubmissionsAsync(CancellationToken ct = default);
+    Task<bool> FlushPendingSubmissionsAsync(CancellationToken ct = default);
     void TryPostBeatmapEntry(
         bool complete,
         IBeatmapStateTracker beatmapState,

@@ -9,6 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Circle_Tracker
 {
@@ -40,10 +42,20 @@ namespace Circle_Tracker
             {
                 _log.LogInformation("Circle Tracker started");
                 _serviceProvider = ConfigureServices();
+                ConfigureTosuEndpoint(_serviceProvider);
                 BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
             }
             finally
             {
+                try
+                {
+                    ShutdownAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Error during shutdown drain");
+                }
+
                 SingleInstanceLock.Release(_lockFile, lockPath);
             }
         }
@@ -88,5 +100,110 @@ namespace Circle_Tracker
         }
 
         public static IServiceProvider? GetServiceProvider() => _serviceProvider;
+
+        private static void ConfigureTosuEndpoint(IServiceProvider provider)
+        {
+            try
+            {
+                ISettingsService settings = provider.GetRequiredService<ISettingsService>();
+                ITosuClient tosuClient = provider.GetRequiredService<ITosuClient>();
+                tosuClient.Host = settings.TosuHost;
+                tosuClient.Port = settings.TosuPort;
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to configure tosu endpoint before start");
+            }
+        }
+
+        private static async Task ShutdownAsync()
+        {
+            IServiceProvider? provider = _serviceProvider;
+
+            if (provider == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ITrackerService? trackerService = provider.GetService<ITrackerService>();
+
+                if (trackerService != null)
+                {
+                    using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+                    try
+                    {
+                        await trackerService.FlushPendingSubmissionsAsync(drainCts.Token).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        await trackerService.FlushOfflineSyncAsync(drainCts.Token).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        await trackerService.StopOfflineSyncAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        if (trackerService is IAsyncDisposable asyncTracker)
+                        {
+                            await asyncTracker.DisposeAsync().ConfigureAwait(false);
+                        }
+                        else if (trackerService is IDisposable disposableTracker)
+                        {
+                            disposableTracker.Dispose();
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                ITosuClient? tosuClient = provider.GetService<ITosuClient>();
+
+                if (tosuClient is IAsyncDisposable asyncTosu)
+                {
+                    await asyncTosu.DisposeAsync().ConfigureAwait(false);
+                }
+                else if (tosuClient is IDisposable disposableTosu)
+                {
+                    disposableTosu.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (provider is IDisposable disposableProvider)
+                {
+                    disposableProvider.Dispose();
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 }
